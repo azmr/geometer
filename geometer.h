@@ -26,6 +26,8 @@ typedef struct state
 	font DefaultFont;
 	b32 CloseApp;
 
+	uint DragIndex;
+	v2 SavedPoint;
 	b32 PointSnap;
 	uint PointIndex;
 	uint NumLinePoints;

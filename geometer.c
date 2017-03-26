@@ -122,17 +122,48 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
-#define DEBUGClick(button) (PixelLocationInBuffer(ScreenBuffer, (size_t)Mouse.P.X, (size_t)Mouse.P.X) &&  \
+#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
-	if(DEBUGClick(LMB))
+	if(DEBUGClick(LMB) && !State->DragIndex)
 	{
-		State->Points[State->PointIndex] = SnapMouseP;
-		State->LinePoints[State->NumLinePoints] = State->PointIndex;
-		++State->PointIndex;
+		if(Snapping)
+		{
+			State->LinePoints[State->NumLinePoints] = Closest;
+		}
+		else
+		{
+			State->Points[State->PointIndex] = SnapMouseP;
+			State->LinePoints[State->NumLinePoints] = State->PointIndex;
+			++State->PointIndex;
+		}
 		++State->NumLinePoints;
 		State->LinePoints[State->NumLinePoints] = 0;
 		/* ClosestPoint = Mouse.P; */
 		/* SnapMouseP = Mouse.P; */
+	}
+
+	// NOTE: put before next conditional so it doesn't turn itself off automatically.
+	if(State->DragIndex)
+	{
+		if(DEBUGClick(LMB))
+		{
+			State->DragIndex = 0;
+		}
+		else if(DEBUGClick(RMB))
+		{
+			State->Points[State->DragIndex] = State->SavedPoint;
+			State->DragIndex = 0;
+		}
+		else
+		{
+			State->Points[State->DragIndex] = Mouse.P;
+		}
+		Snapping = 0;
+	}
+	else if(DEBUGClick(RMB) && Snapping)
+	{
+		State->SavedPoint = State->Points[Closest];
+		State->DragIndex = Closest;
 	}
 
 #define DEBUGPress(button) (Input.Old->Controllers[0].Button.button.EndedDown && !Input.New->Controllers[0].Button.button.EndedDown)
@@ -168,7 +199,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(LineI)
 			{
 				// IMPORTANT TODO: spatially separate, maybe hierarchically
-				// IMPORTANT TODO: don't recompute every frame
+				// IMPORTANT TODO: don't recompute every frame, but don't create excess
 				// IMPORTANT TODO: don't allow any duplicate points
 				for(uint IntersectI = 0; IntersectI < LineI; ++IntersectI)
 				{
@@ -222,8 +253,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
 
 	char Message[512];
-	stbsp_sprintf(Message, "Frame time: %.2f, DistSq: %.2f",
-			State->dt*1000.f, ClosestDistSq);
+	stbsp_sprintf(Message, "Frame time: %.2f, Drag: %u",
+			State->dt*1000.f, State->DragIndex);
 	DrawString(ScreenBuffer, &State->DefaultFont, Message, 15, 10, 0, BLACK);
 }
 
