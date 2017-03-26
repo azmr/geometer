@@ -19,19 +19,14 @@ typedef struct line_points
 } line_points;
 line_points ZeroLineP = {0};
 
-/* // NOTE: not to be stored, just more handy for moving around */
-/* typedef struct line */
-/* { */
-/* 	v2 P1; */
-/* 	v2 P2; */
-/* } */
-
 typedef struct state
 {
+	u64 FrameCount;
 	f32 dt;
 	font DefaultFont;
 	b32 CloseApp;
-	u64 FrameCount;
+
+	b32 PointSnap;
 	uint PointIndex;
 	uint NumLinePoints;
 	// TODO: allocate dynamically
@@ -45,6 +40,8 @@ typedef struct state
 } state;
 
 #define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
+
+DECLARE_DEBUG_FUNCTION;
 
 #define GEOMETER_H
 #endif
