@@ -32,9 +32,15 @@ typedef struct state
 	font DefaultFont;
 	b32 CloseApp;
 	u64 FrameCount;
-	uint PointsIndex;
+	uint PointIndex;
+	uint NumLinePoints;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
+	union
+	{
+		uint LinePoints[NUM_POINTS*2];
+		line_points Lines[NUM_POINTS];
+	};
 	v2 Points[NUM_POINTS];
 } state;
 
