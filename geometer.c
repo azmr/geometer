@@ -50,6 +50,56 @@ ClosestPointIndex(v2 *Subset, uint EndIndex, v2 Comp, f32 *ClosestDist)
 	return Result;
 }
 
+internal void
+ResetPoints(state *State)
+{
+	// NOTE: Point index 0 is reserved for null points (not defined in lines)
+	State->PointIndex = 1;
+	// TODO: make start at 1
+	State->NumLinePoints = 0;
+}
+
+
+/// returns index of point (may be new or existing)
+// TODO: less definite name? ProposePoint, ConsiderNewPoint...?
+internal uint
+AddPoint(state *State, v2 P, uint PointTypes)
+{
+	uint Result = 0;
+	b32 FoundMatch = 0;
+	for(uint i = 1; i < State->PointIndex; ++i)
+	{
+		if(V2Equals(P, State->Points[i]))
+		{
+			// NOTE: Use existing point
+			FoundMatch = 1;
+			State->PointStatus[i] &= PointTypes;
+			Result = i;
+			break;
+		}
+	}
+
+	if(!FoundMatch)
+	{
+		if(State->PointIndex >= ArrayCount(State->Points))
+		{
+			// NOTE: No more space in array for new point
+			Result = 0;
+		}
+		else
+		{
+			// NOTE: Create new point
+			Result = State->PointIndex;
+			State->Points[Result] = P;
+			State->PointStatus[Result] &= PointTypes;
+			++State->PointIndex;
+			
+		}
+	}
+
+	return Result;
+}
+
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	state *State = (state *)Memory->PermanentStorage;
@@ -68,14 +118,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	if(!Memory->IsInitialized)
 	{
-		// NOTE: Point index 0 is reserved for null points (not defined in lines)
-		State->PointIndex = 1;
-		// TODO: make start at 1
-		State->NumLinePoints = 0;
+		ResetPoints(State);
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
 
 		Memory->IsInitialized = 1;
 	}
+	Assert(!State->OverflowTest);
 
 	// Clear BG
 	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
@@ -99,7 +147,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP = Mouse.P;
 	v2 ClosestPoint = Mouse.P;
 	Closest = ClosestPointIndex(State->Points, State->PointIndex, Mouse.P, &ClosestDistSq);
-	b32 Snapping = 0;
+	b32 SnapIndex = 0;
 	if(Closest)
 	{
 		ClosestPoint = State->Points[Closest];
@@ -111,7 +159,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(State->PointSnap)
 			{
 				SnapMouseP = ClosestPoint;
-				Snapping = 1;
+				SnapIndex = Closest;
 			}
 
 		}
@@ -126,15 +174,23 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
 	if(DEBUGClick(LMB) && !State->DragIndex)
 	{
-		if(Snapping)
+		if(SnapIndex)
 		{
-			State->LinePoints[State->NumLinePoints] = Closest;
+			State->LinePoints[State->NumLinePoints] = SnapIndex;
 		}
 		else
 		{
 			State->Points[State->PointIndex] = SnapMouseP;
 			State->LinePoints[State->NumLinePoints] = State->PointIndex;
 			++State->PointIndex;
+		}
+
+		// TODO: confirm this won't make points lines that shouldn't be
+		if(State->NumLinePoints && (State->NumLinePoints % 2) == 0)
+		{
+			// NOTE: completed lines, set both points'
+			State->PointStatus[State->LinePoints[State->NumLinePoints]]     &= POINT_Line;
+			State->PointStatus[State->LinePoints[State->NumLinePoints - 1]] &= POINT_Line;
 		}
 		++State->NumLinePoints;
 		State->LinePoints[State->NumLinePoints] = 0;
@@ -143,6 +199,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	// NOTE: put before next conditional so it doesn't turn itself off automatically.
+	// TODO: Do I actually want to be able to drag points?
 	if(State->DragIndex)
 	{
 		if(DEBUGClick(LMB))
@@ -158,29 +215,27 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			State->Points[State->DragIndex] = Mouse.P;
 		}
-		Snapping = 0;
+		SnapIndex = 0;
 	}
-	else if(DEBUGClick(RMB) && Snapping)
+	else if(DEBUGClick(RMB) && SnapIndex)
 	{
-		State->SavedPoint = State->Points[Closest];
-		State->DragIndex = Closest;
+		State->SavedPoint = State->Points[SnapIndex];
+		State->DragIndex = SnapIndex;
 	}
 
 #define DEBUGPress(button) (Input.Old->Controllers[0].Button.button.EndedDown && !Input.New->Controllers[0].Button.button.EndedDown)
 	if(DEBUGPress(Back))
 	{
-		State->PointIndex = 1;
-		State->NumLinePoints = 0;
+		ResetPoints(State);
 	}
 	// NOTE: only gets even numbers if there's an unfinished point
-	uint PointI = State->PointIndex;
 	uint NumLinePoints = State->NumLinePoints;
 	uint NumLines = NumLinePoints/2; // completed lines
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
 	line_points *Lines = State->Lines;
 
-	for(uint i = 1; i < PointI; ++i)
+	for(uint i = 1; i < State->PointIndex; ++i)
 	{
 		DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
 	}
@@ -196,34 +251,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
 			DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
 
-			if(LineI)
+			if(LineI && !State->DragIndex)
 			{
 				// IMPORTANT TODO: spatially separate, maybe hierarchically
 				// IMPORTANT TODO: don't recompute every frame, but don't create excess
 				// IMPORTANT TODO: don't allow any duplicate points
-				for(uint IntersectI = 0; IntersectI < LineI; ++IntersectI)
+				for(uint IntersectCheckI = 0; IntersectCheckI < LineI; ++IntersectCheckI)
 				{
 					v2 Intersect;
 					b32 LinesIntersected = IntersectSegmentsWinding(LINE(LineI),
-							LINE(IntersectI), &Intersect);
+							LINE(IntersectCheckI), &Intersect);
 
 					if(LinesIntersected)
 					{
-						b32 FoundMatch = 0;
-						for(uint i = 1; i < PointI; ++i)
-						{
-							if(V2Equals(Intersect, Points[i]))
-							{
-								FoundMatch = 1;
-							}
-						}
-
-						if(!FoundMatch)
-						{
-							State->Points[PointI] = Intersect;
-							++State->PointIndex;
-							PointI = State->PointIndex;
-						}
+						AddPoint(State, Intersect, POINT_Intersection);
 					}
 				}
 			}
@@ -240,11 +281,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			--State->NumLinePoints;
 			--State->PointIndex;
-			PointI = State->PointIndex;
 		}
 	}
 
-	if(Snapping)
+	if(SnapIndex)
 	{
 		// NOTE: Overdraws...
 		DrawPoint(ScreenBuffer, ClosestPoint, 1, BLUE);

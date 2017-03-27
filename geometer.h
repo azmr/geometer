@@ -19,6 +19,15 @@ typedef struct line_points
 } line_points;
 line_points ZeroLineP = {0};
 
+// TODO: make these as orthogonal as possible?
+typedef enum
+{
+	POINT_Free         = 0,
+	POINT_Line         = (1 << 0),
+	POINT_Intersection = (1 << 1),
+	POINT_Centre       = (1 << 2),
+} PointFlags;
+
 typedef struct state
 {
 	u64 FrameCount;
@@ -33,12 +42,17 @@ typedef struct state
 	uint NumLinePoints;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
+
 	union
 	{
 		uint LinePoints[NUM_POINTS*2];
 		line_points Lines[NUM_POINTS];
 	};
 	v2 Points[NUM_POINTS];
+	// TODO: parallel bitflag array representing point types: line, intersection, centrepoint...
+	u8 PointStatus[NUM_POINTS];
+	// NOTE: woefully underspecced:
+	u64 OverflowTest;
 } state;
 
 #define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
