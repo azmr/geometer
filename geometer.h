@@ -22,7 +22,7 @@ line_points ZeroLineP = {0};
 // TODO: make these as orthogonal as possible?
 typedef enum
 {
-	POINT_Free         = 0,
+	POINT_Free         = 0, // also temporary points unless this becomes an issue
 	POINT_Line         = (1 << 0),
 	POINT_Intersection = (1 << 1),
 	POINT_Centre       = (1 << 2),
@@ -38,16 +38,17 @@ typedef struct state
 	uint DragIndex;
 	v2 SavedPoint;
 	b32 PointSnap;
-	uint PointIndex;
+	uint LastPoint;
+	uint NumPoints;
+	uint LastLinePoint;
 	uint NumLinePoints;
+	uint LastIntersectPoint;
+	uint NumIntersectPoints;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
-	union
-	{
-		uint LinePoints[NUM_POINTS*2];
-		line_points Lines[NUM_POINTS];
-	};
+	uint LinePoints[NUM_POINTS*2];
+	uint IntersectPoints[NUM_POINTS];
 	v2 Points[NUM_POINTS];
 	// TODO: parallel bitflag array representing point types: line, intersection, centrepoint...
 	u8 PointStatus[NUM_POINTS];
