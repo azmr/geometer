@@ -37,20 +37,18 @@ typedef struct state
 
 	uint DragIndex;
 	v2 SavedPoint;
+	b32 MidEdit;
 	b32 PointSnap;
+
 	uint LastPoint;
 	uint NumPoints;
 	uint LastLinePoint;
 	uint NumLinePoints;
-	uint LastIntersectPoint;
-	uint NumIntersectPoints;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
 	uint LinePoints[NUM_POINTS*2];
-	uint IntersectPoints[NUM_POINTS];
 	v2 Points[NUM_POINTS];
-	// TODO: parallel bitflag array representing point types: line, intersection, centrepoint...
 	u8 PointStatus[NUM_POINTS];
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;

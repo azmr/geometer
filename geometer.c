@@ -54,14 +54,43 @@ internal void
 ResetPoints(state *State)
 {
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-	State->LastPoint          = 0;
-	State->LastLinePoint      = 0;
-	State->LastIntersectPoint = 0;
-	State->NumPoints          = 0;
-	State->NumLinePoints      = 0;
-	State->NumIntersectPoints = 0;
+	State->LastPoint     = 0;
+	State->LastLinePoint = 0;
+	State->NumPoints     = 0;
+	State->NumLinePoints = 0;
+	State->MidEdit       = 0;
 }
 
+// NOTE: less than numlinepoints if any points are reused
+internal uint
+NumPointsOfType(u8 *Statuses, uint EndIndex, uint PointTypes)
+{
+	// TODO: could be done 16x faster with SIMD (maybe just for practice)
+	uint Result = 0;
+	for(uint i = 1; i <= EndIndex; ++i)
+	{
+		if(Statuses[i] & PointTypes)
+		{
+			++Result;
+		}
+	}
+	return Result;
+}
+
+internal uint
+FindMatchPoint(state *State, v2 P, uint PointStatus)
+{
+	uint Result = 0;
+	for(uint i = 1; i <= State->LastPoint; ++i)
+	{
+		if(V2Equals(P, State->Points[i]) && (State->PointStatus[i] & PointStatus))
+		{
+			Result = i;
+			break;
+		}
+	}
+	return Result;
+}
 
 /// returns index of point (may be new or existing)
 // TODO: less definite name? ProposePoint, ConsiderNewPoint...?
@@ -69,53 +98,34 @@ ResetPoints(state *State)
 internal uint
 AddPoint(state *State, v2 P, uint PointTypes)
 {
-	uint Result = 0;
-	b32 FoundMatch = 0;
-	for(uint i = 1; i <= State->LastPoint; ++i)
+	uint Result = FindMatchPoint(State, P, ~(uint)POINT_Free);
+	if(Result)
 	{
-		if(V2Equals(P, State->Points[i]))
-		{
-			// NOTE: Use existing point
-			FoundMatch = 1;
-			State->PointStatus[i] |= PointTypes;
-			Result = i;
-			break;
-		}
+		// NOTE: Use existing point, but add any new status
+		State->PointStatus[Result] |= PointTypes;
 	}
 
-	if(!FoundMatch)
+	else if(State->LastPoint < ArrayCount(State->Points))
 	{
-		if(State->LastPoint >= ArrayCount(State->Points))
-		{
-			// NOTE: No more space in array for new point
-			Result = 0;
-		}
-		else
-		{
-			// NOTE: Create new point
-			Result = ++State->LastPoint;
-			State->Points[Result] = P;
-			State->PointStatus[Result] |= PointTypes;
-			++State->NumPoints;
+		// NOTE: Enough space in array
+		// NOTE: Create new point
+		Result = ++State->LastPoint;
+		State->Points[Result] = P;
+		State->PointStatus[Result] |= PointTypes;
+		++State->NumPoints;
 
-			if(PointTypes & POINT_Intersection)
-			{
-				State->IntersectPoints[++State->LastIntersectPoint] = Result;
-					++State->NumIntersectPoints;
-				
-			}
+	}
 
-			if(PointTypes & POINT_Line)
-			{
-				++State->NumLinePoints;
-				++State->LastLinePoint;
-			}
-		}
+	if(PointTypes & POINT_Line)
+	{
+		++State->NumLinePoints;
+		State->LinePoints[++State->LastLinePoint] = Result;
 	}
 
 	return Result;
 }
 
+// TODO: implement undo/redo
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	state *State = (state *)Memory->PermanentStorage;
@@ -185,32 +195,52 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// TODO: ???
 	}
 
-	b32 MidEditing = State->NumLinePoints % 2;
 	// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
 #define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
 #define DEBUGPress(button) (Input.Old->Controllers[0].Button.button.EndedDown && !Input.New->Controllers[0].Button.button.EndedDown)
 	if(DEBUGClick(LMB) && !State->DragIndex)
 	{
-		if(SnapIndex)
+		// TODO: confirm this won't make points for duplicate lines
+		if(!State->MidEdit)
 		{
-			State->LinePoints[++State->LastLinePoint] = SnapIndex;
-			++State->NumLinePoints;
+			// NOTE: Starting a line, save the first point
+			State->SavedPoint = SnapMouseP;
+			State->MidEdit = 1;
 		}
 		else
 		{
-			State->Points[++State->LastPoint] = SnapMouseP;
-			State->LinePoints[++State->LastLinePoint] = State->LastPoint;
-			++State->NumPoints;
-			++State->NumLinePoints;
-		}
+			// NOTE: completed line, set both points' status
+			b32 ExistingLine = 0;
+			for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; LinePointI += 2)
+			{
+				uint PointAIndex = FindMatchPoint(State, State->SavedPoint, POINT_Line);
+				if(PointAIndex)
+				{
+					uint PointBIndex;
+					if(PointAIndex % 2)
+					{
+						// NOTE: first of 2 line points
+						PointBIndex = PointAIndex + 1;
+					}
+					else
+					{
+						// NOTE: second of 2 line points
+						PointBIndex = PointAIndex - 1;
+					}
 
-		// TODO: confirm this won't make points for duplicate lines
-		if(MidEditing)
-		{
-			// NOTE: completed lines, set both points'
-			State->PointStatus[State->LinePoints[State->LastLinePoint]]   &= POINT_Line;
-			State->PointStatus[State->LinePoints[State->LastLinePoint-1]] &= POINT_Line;
+					if(PointBIndex == FindMatchPoint(State, SnapMouseP, POINT_Line))
+					{
+						ExistingLine = 1;
+					}
+				}
+			}
+			if(!ExistingLine)
+			{
+				AddPoint(State, State->SavedPoint, POINT_Line);
+				AddPoint(State, SnapMouseP, POINT_Line);
+			}
+			State->MidEdit = 0;
 		}
 		// NOTE: ensures that the line is not improperly considered valid:
 		State->LinePoints[State->LastLinePoint + 1] = 0;
@@ -238,7 +268,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// Snapping is off while dragging; TODO: maybe change this when points can be combined
 		SnapIndex = 0;
 	}
-	else if(DEBUGClick(MMB) && SnapIndex && !MidEditing)
+	else if(DEBUGClick(MMB) && SnapIndex && !State->MidEdit)
 	{
 		// Move point
 		State->SavedPoint = State->Points[SnapIndex];
@@ -285,18 +315,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 	}
 
-	if(MidEditing)
+	if(State->MidEdit)
 	{
 		// NOTE: Mid-way through drawing a line
-		DrawCircleFill(ScreenBuffer, Points[LinePoints[State->LastLinePoint]], 3.f, LIGHT_GREY);
-		CircleLine(ScreenBuffer, Points[LinePoints[State->LastLinePoint]], 5.f, LIGHT_GREY);
-		DEBUGDrawLine(ScreenBuffer, Points[LinePoints[State->LastLinePoint]], SnapMouseP, LIGHT_GREY);
+		DrawCircleFill(ScreenBuffer, State->SavedPoint, 3.f, LIGHT_GREY);
+		CircleLine(ScreenBuffer, State->SavedPoint, 5.f, LIGHT_GREY);
+		DEBUGDrawLine(ScreenBuffer, State->SavedPoint, SnapMouseP, LIGHT_GREY);
 		if(DEBUGClick(RMB))
 		{
-			--State->LastLinePoint;
-			--State->NumLinePoints;
-			--State->LastPoint;
-			--State->NumPoints;
+			State->MidEdit = 0;
 		}
 	}
 
@@ -309,9 +336,22 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
 
 	char Message[512];
-	stbsp_sprintf(Message, "Frame time: %.2f, (%.2f, %.2f), Lines: %u, Intersections: %u",
-			State->dt*1000.f, Mouse.P.X, Mouse.P.Y, NumLines, State->NumIntersectPoints);
-	DrawString(ScreenBuffer, &State->DefaultFont, Message, 15, 10, 0, BLACK);
+	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, MidEdit: %b"
+				"\nFrame time: %.2f, (%.2f, %.2f)",
+				State->NumLinePoints,
+				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),
+				State->MidEdit,
+				State->dt*1000.f, Mouse.P.X, Mouse.P.Y);
+	DrawString(ScreenBuffer, &State->DefaultFont, Message, 15.f, 10.f, 15.f, BLACK);
+
+	char PointInfo[512];
+	stbsp_sprintf(PointInfo, " #  CIL\n\n");
+	for(uint i = 1; i <= State->NumPoints; ++i)
+	{
+		stbsp_sprintf(PointInfo, "%s%02u  %03b\n", PointInfo, i, State->PointStatus[i]);
+	}
+	DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, 15.f,
+			ScreenSize.X - 80.f, ScreenSize.Y - 30.f, BLACK);
 }
 
 DECLARE_DEBUG_RECORDS;
