@@ -201,12 +201,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	// Clear BG
 	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
 
-	controller Keyboard = Input.New->Controllers[KEYBOARD];
-	Keyboard;
+	keyboard_state Keyboard = Input.New->Keyboard;
 	// TODO: move out of screen space
 	mouse_state Mouse = Input.New->Mouse;
 
-	if(Held(Keyboard.Button.DPadRight)) // 'S' on this computer
+	if(Held(Keyboard.Shift)) // 'S' on this computer
 	{
 		State->PointSnap = 0;
 	}
@@ -409,11 +408,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	char Message[512];
 	f32 TextSize = 15.f;
-	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, MidEdit: %b\n\n"
+	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, ShiftDown: %u"
 				"\nFrame time: %.2f, (%.2f, %.2f)",
 				State->NumLinePoints,
 				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),
-				State->MidEdit,
+				Keyboard.Shift,
+				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f, Mouse.P.X, Mouse.P.Y);
 	DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 

@@ -84,15 +84,13 @@ WinMain(HINSTANCE Instance,
 	b32 Fullscreen = 0;
 	while(GlobalRunning)
 	{
-		// TODO: failed on pressing escape
 		FrameTimer.Start = Win32GetWallClock();
 		/* FrameTimer = Win32StartFrameTimer(FrameTimer); */
-		old_new_controller Keyboard = UpdateController(Input, 0);
-		/* controller_input Keyboards[2]; */
-		/* Keyboard.New = &Keyboards[0]; */
-		/* Keyboard.Old = &Keyboards[1]; */
+		/* old_new_controller Keyboard = UpdateController(Input, 0); */
+		UpdateKeyboard(Input);
 
-		Win32ProcessPendingMessages(Keyboard.New);
+		/* Win32ProcessPendingMessages(Keyboard.New); */
+		Win32ProcessKeyboardMessages(&Input.New->Keyboard);
 		// TODO: zero controllers
 		Win32ProcessXInputControllers(&Input);
 		Win32GetWindowDimensionAndOffset(&Window, Win32Buffer.Width, Win32Buffer.Height);
