@@ -79,7 +79,8 @@ NumPointsOfType(u8 *Statuses, uint EndIndex, uint PointTypes)
 	uint Result = 0;
 	for(uint i = 1; i <= EndIndex; ++i)
 	{
-		if(Statuses[i] & PointTypes)
+		// TODO: Do I want inclusive as well as exclusive?
+		if(Statuses[i] == PointTypes)
 		{
 			++Result;
 		}
@@ -171,9 +172,105 @@ MatchingPointIndex(uint PointIndex)
 	return Result;
 }
 
+/// returns number of intersections
+internal uint
+AddIntersections(state *State, uint PointA, uint PointB, uint LineEndIndex)
+{
+	uint Result = 0;
+	for(uint IntersectCheckI = 1; IntersectCheckI <= LineEndIndex; IntersectCheckI+=2)
+	{
+		// TODO: lines intersecting themselves?
+		// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
+		v2 Intersect;
+		// IMPORTANT TODO: spatially separate, maybe hierarchically
+		if(IntersectSegmentsWinding(State->Points[PointA], State->Points[PointB],
+					State->Points[State->LinePoints[IntersectCheckI]], State->Points[State->LinePoints[IntersectCheckI+1]],
+					&Intersect))
+		{
+			AddPoint(State, Intersect, POINT_Intersection);
+			++Result;
+		}
+	}
+	return Result;
+}
+
+/// returns first point of the pair that make up the line
+internal uint
+AddLine(state *State, v2 PointA, v2 PointB)
+{
+	// TODO: could optimise out checking indices if already known (as optional params?)
+	uint Result = 0;
+	// NOTE: avoids duplicate lines
+	b32 ExistingLine = 0;
+	uint PointAIndex = FindPointAtPos(State, PointA, POINT_Line);
+	if(PointAIndex)
+	{
+		for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; ++LinePointI)
+		{
+			if(PointAIndex == State->LinePoints[LinePointI])
+			{
+				uint PointBLineIndex = MatchingPointIndex(LinePointI);
+
+				uint TestPointIndex = FindPointAtPos(State, PointB, POINT_Line); 
+				if(State->LinePoints[PointBLineIndex] == TestPointIndex ||
+						PointAIndex == TestPointIndex)
+				{
+					ExistingLine = 1;
+					break;
+				}
+			}
+		}
+	}
+
+	if(!ExistingLine)
+	{
+		uint A = AddPoint(State, PointA, POINT_Line);
+		uint B = AddPoint(State, PointB, POINT_Line);
+		AddIntersections(State, A, B, State->LastLinePoint-2);
+		Result = State->LastLinePoint-1;
+	}
+	return Result;
+}
+
+internal void
+InvalidateLinesAtPoint(state *State, uint PointIndex)
+{
+	// TODO: invalidate both points or just one?
+	// TODO: do I want this here or in drawing/adding..?
+	for(uint i = 1; i <= State->LastLinePoint; ++i)
+	{
+		if(State->LinePoints[i] == PointIndex)
+		{
+			State->LinePoints[i] = 0;
+			State->LinePoints[MatchingPointIndex(i)] = 0;
+		}
+	}
+}
+
+/// returns number of points removed
+internal uint
+RemovePointsOfType(state *State, uint PointType)
+{
+	uint Result = 0;
+	for(uint i = 1; i <= State->LastPoint; ++i)
+	{
+		if(State->PointStatus[i] & PointType)
+		{
+			if(State->PointStatus[i] & POINT_Line)
+			{
+				InvalidateLinesAtPoint(State, i);
+			}
+			State->PointStatus[i] = POINT_Free;
+			++Result;
+		}
+	}
+	return Result;
+}
+
 // TODO: implement undo/redo
 UPDATE_AND_RENDER(UpdateAndRender)
 {
+	BEGIN_TIMED_BLOCK;
 	state *State = (state *)Memory->PermanentStorage;
 	memory_arena Arena;
 	v2 Origin;
@@ -244,7 +341,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
 #define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
-#define DEBUGPress(button) (Input.Old->Controllers[0].Button.button.EndedDown && !Input.New->Controllers[0].Button.button.EndedDown)
+#define DEBUGPress(button) (Input.Old->Keyboard.button.EndedDown && !Input.New->Keyboard.button.EndedDown)
 
 	// NOTE: put before next conditional so it doesn't turn itself off automatically.
 	// TODO: Do I actually want to be able to drag points?
@@ -252,10 +349,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	{
 		if(DEBUGClick(LMB))
 		{
-			// Set point to mouse location
+			// Set point to mouse location and recompute intersections
 			State->DragIndex = 0;
+			RemovePointsOfType(State, POINT_Intersection);
+			for(uint i = 1; i <= State->LastLinePoint; i+=2)
+			{
+				// TODO: this is wasteful
+				AddIntersections(State, State->LinePoints[i], State->LinePoints[i+1], i);
+			}
 		}
-		else if(DEBUGClick(RMB) || DEBUGPress(Start))
+		else if(DEBUGClick(RMB) || DEBUGPress(Q))
 		{
 			// Cancel dragging, point returns to saved location
 			State->Points[State->DragIndex] = State->SavedPoint;
@@ -281,30 +384,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		else
 		{
 			// NOTE: completed line, set both points' status if line does not already exist
-			b32 ExistingLine = 0;
-			uint PointAIndex = FindPointAtPos(State, State->SavedPoint, POINT_Line);
-			if(PointAIndex)
-			{
-				for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; ++LinePointI)
-				{
-					if(PointAIndex == State->LinePoints[LinePointI])
-					{
-						uint PointBLineIndex = MatchingPointIndex(LinePointI);
-
-						uint TestPointIndex = FindPointAtPos(State, SnapMouseP, POINT_Line); 
-						if(State->LinePoints[PointBLineIndex] == TestPointIndex)
-						{
-							ExistingLine = 1;
-							break;
-						}
-					}
-				}
-			}
-			if(!ExistingLine)
-			{
-				AddPoint(State, State->SavedPoint, POINT_Line);
-				AddPoint(State, SnapMouseP, POINT_Line);
-			}
+			AddLine(State, State->SavedPoint, SnapMouseP);
 			State->MidEdit = 0;
 		}
 		// NOTE: ensures that the line is not improperly considered valid:
@@ -317,17 +397,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(State->PointStatus[SnapIndex] & POINT_Line)
 			{
-				// TODO: do I want this here or in drawing/adding..?
-				for(uint i = 1; i <= State->LastLinePoint; ++i)
-				{
-					if(State->LinePoints[i] == SnapIndex)
-					{
-						// NOTE: invalidates line
-						// TODO: invalidate both points or just one?
-						State->LinePoints[i] = 0;
-						State->LinePoints[MatchingPointIndex(i)] = 0;
-					}
-				}
+				// NOTE: invalidates line
+				InvalidateLinesAtPoint(State, SnapIndex);
 			}
 			// Invalidate point
 			State->PointStatus[SnapIndex] = POINT_Free;
@@ -341,7 +412,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		} 
 	}
 
-	else if(DEBUGPress(Back))
+	else if(DEBUGPress(Backspace))
 	{
 		ResetPoints(State);
 	}
@@ -363,34 +434,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	{
 		if(!(State->LinePoints[2*LineI-1] && State->LinePoints[2*LineI]))
 		{
+			// NOTE: both points must be valid, otherwise skip to next line.
 			continue;
 		}
 
 		DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
 		DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
-
-		if(LineI && !State->DragIndex)
-		{
-			// IMPORTANT TODO: spatially separate, maybe hierarchically
-			// IMPORTANT TODO: don't recompute every frame, but don't create excess
-			// IMPORTANT TODO: don't allow any duplicate points
-			for(uint IntersectCheckI = 1; IntersectCheckI <= LineI; ++IntersectCheckI)
-			{
-				// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
-				v2 Intersect;
-				if(IntersectSegmentsWinding(LINE(LineI), LINE(IntersectCheckI), &Intersect))
-				{
-					AddPoint(State, Intersect, POINT_Intersection);
-				}
-			}
-		}
 	}
 
 	if(State->MidEdit)
 	{
 		// NOTE: Mid-way through drawing a line
-		DrawCircleFill(ScreenBuffer, State->SavedPoint, 3.f, LIGHT_GREY);
-		CircleLine(ScreenBuffer, State->SavedPoint, 5.f, LIGHT_GREY);
+		DrawCircleFill(ScreenBuffer, State->SavedPoint, 3.f, RED);
+		CircleLine(ScreenBuffer, State->SavedPoint, 5.f, RED);
+		CircleLine(ScreenBuffer, State->SavedPoint, Dist(State->SavedPoint, SnapMouseP), LIGHT_GREY);
 		DEBUGDrawLine(ScreenBuffer, State->SavedPoint, SnapMouseP, LIGHT_GREY);
 		if(DEBUGClick(RMB))
 		{
@@ -408,11 +465,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	char Message[512];
 	f32 TextSize = 15.f;
-	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, ShiftDown: %u"
+	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, QDown: %u"
 				"\nFrame time: %.2f, (%.2f, %.2f)",
 				State->NumLinePoints,
 				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),
-				Keyboard.Shift,
+				Keyboard.Q,
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f, Mouse.P.X, Mouse.P.Y);
 	DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
@@ -434,16 +491,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
 	DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
 			ScreenSize.X - 80.f, ScreenSize.Y - 30.f, 0, BLACK);
+	END_TIMED_BLOCK;
 }
+
+global_variable char DebugTextBuffer[Megabytes(8)];
 
 DECLARE_DEBUG_RECORDS;
 DECLARE_DEBUG_FUNCTION
 {
+	DebugTextBuffer[0] = '\0';
 	/* debug_state *DebugState = Memory->DebugStorage; */
 	int Offset = 0;
 	if(1)//DebugState)
 	{
-		u32 HitI = 0;
+		/* u32 HitI = 0; */
 		for(u32 i = 0;
 			/* i < NumCounters; */
 			/* i < ArrayCount(DEBUG_RECORDS); */
@@ -458,20 +519,20 @@ DECLARE_DEBUG_FUNCTION
 
 			if(HitCount)
 			{
-				char TextBuffer[257];
 				Offset +=
-					stbsp_snprintf(TextBuffer, 256,
-								   /* AltFormat ? AltFormat :*/ "%24s(%4d): %'12ucy %'8uh %'10ucy/h", 
+					stbsp_snprintf(DebugTextBuffer, Megabytes(8)-1,
+								   /* AltFormat ? AltFormat :*/ "%s%24s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
+								   DebugTextBuffer,
 								   Counter->FunctionName,
 								   Counter->LineNumber,
 								   CycleCount,
 								   HitCount,
 								   CycleCount / HitCount);
 				/* TextBuffer[Offset] = '\n'; */
-				f32 TextHeight = 13.f;
-				DrawString(Buffer, Font, TextBuffer, TextHeight, 0, Buffer->Height - ((HitI+2)*TextHeight), 0, GREY);
-				++HitI;
+				/* ++HitI; */
 			}
 		}
+		f32 TextHeight = 13.f;
+		DrawString(Buffer, Font, DebugTextBuffer, TextHeight, 0, 2.f*(f32)Buffer->Height/3.f /*- ((HitI+2)*TextHeight)*/, 0, GREY);
 	}
 }
