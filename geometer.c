@@ -22,23 +22,25 @@ DrawPoint(image_buffer *ScreenBuffer, v2 P, b32 Active, colour Col)
 
 // 0 means nothing could be found
 internal uint
-ClosestPointIndex(v2 *Subset, uint EndIndex, v2 Comp, f32 *ClosestDist)
+ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDist)
 {
-	uint Result = 0;
+	BEGIN_TIMED_BLOCK;
 	// NOTE: all valid points start at 1
+	uint Result = 0;
+	// TODO: better way of doing this?
 	f32 Closest = 0;
-	for(uint i = 1; i <= EndIndex; ++i)
+	for(uint i = 1; i <= State->LastPoint; ++i)
 	{
-		// TODO: maybe put this above loop
-		if(!Result)
+		if(State->PointStatus[i] != POINT_Free)
 		{
-			Result = i;
-			Closest = DistSq(Subset[i], Comp);
-		}
-
-		else
-		{
-			f32 Test = DistSq(Subset[i], Comp);
+			if(!Result)
+			{
+				// TODO: maybe put this above loop
+				Result = i;
+				Closest = DistSq(State->Points[i], Comp);
+				continue;
+			}
+			f32 Test = DistSq(State->Points[i], Comp);
 			if(Test < Closest)
 			{
 				Closest = Test;
@@ -47,24 +49,32 @@ ClosestPointIndex(v2 *Subset, uint EndIndex, v2 Comp, f32 *ClosestDist)
 		}
 	}
 	*ClosestDist = Closest;
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal void
 ResetPoints(state *State)
 {
+	BEGIN_TIMED_BLOCK;
+	for(uint i = 1; i <= State->LastPoint; ++i)
+	{
+		State->PointStatus[i] = POINT_Free;
+	}
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
 	State->LastPoint     = 0;
 	State->LastLinePoint = 0;
 	State->NumPoints     = 0;
 	State->NumLinePoints = 0;
 	State->MidEdit       = 0;
+	END_TIMED_BLOCK;
 }
 
 // NOTE: less than numlinepoints if any points are reused
 internal uint
 NumPointsOfType(u8 *Statuses, uint EndIndex, uint PointTypes)
 {
+	BEGIN_TIMED_BLOCK;
 	// TODO: could be done 16x faster with SIMD (maybe just for practice)
 	uint Result = 0;
 	for(uint i = 1; i <= EndIndex; ++i)
@@ -74,12 +84,14 @@ NumPointsOfType(u8 *Statuses, uint EndIndex, uint PointTypes)
 			++Result;
 		}
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal uint
-FindMatchPoint(state *State, v2 P, uint PointStatus)
+FindPointAtPos(state *State, v2 P, uint PointStatus)
 {
+	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
 	for(uint i = 1; i <= State->LastPoint; ++i)
 	{
@@ -89,6 +101,7 @@ FindMatchPoint(state *State, v2 P, uint PointStatus)
 			break;
 		}
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -98,21 +111,36 @@ FindMatchPoint(state *State, v2 P, uint PointStatus)
 internal uint
 AddPoint(state *State, v2 P, uint PointTypes)
 {
-	uint Result = FindMatchPoint(State, P, ~(uint)POINT_Free);
+	BEGIN_TIMED_BLOCK;
+	uint Result = FindPointAtPos(State, P, ~(uint)POINT_Free);
 	if(Result)
 	{
 		// NOTE: Use existing point, but add any new status
 		State->PointStatus[Result] |= PointTypes;
 	}
 
-	else if(State->LastPoint < ArrayCount(State->Points))
+	else 
 	{
-		// NOTE: Enough space in array
-		// NOTE: Create new point
-		Result = ++State->LastPoint;
+		// TODO: extract into function? ExistingFreePoint
+		for(uint PointIndex = 1; PointIndex <= State->LastPoint; ++PointIndex)
+		{
+			// NOTE: Use existing point if free
+			// NOTE: this should be disappearing with dynamic allocation
+			// if(State->LastPoint < ArrayCount(State->Points))
+			if(State->PointStatus[PointIndex] == POINT_Free)
+			{
+				Result = PointIndex;
+				break;
+			}
+		}
+		// NOTE: Create new point if needed
+		if(!Result)
+		{
+			Result = ++State->LastPoint;
+			++State->NumPoints;
+		}
 		State->Points[Result] = P;
 		State->PointStatus[Result] |= PointTypes;
-		++State->NumPoints;
 
 	}
 
@@ -122,6 +150,24 @@ AddPoint(state *State, v2 P, uint PointTypes)
 		State->LinePoints[++State->LastLinePoint] = Result;
 	}
 
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+internal inline uint
+MatchingPointIndex(uint PointIndex)
+{
+	uint Result;
+	if(PointIndex % 2)
+	{
+		// NOTE: first of 2 line points
+		Result = PointIndex + 1;
+	}
+	else
+	{
+		// NOTE: second of 2 line points
+		Result = PointIndex - 1;
+	}
 	return Result;
 }
 
@@ -149,7 +195,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		Memory->IsInitialized = 1;
 	}
-	Assert(!State->OverflowTest);
+	Assert(State->OverflowTest == 0);
+	Assert(State->NumLinePoints % 2 == 0);
 
 	// Clear BG
 	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
@@ -172,8 +219,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	f32 ClosestDistSq;
 	v2 SnapMouseP = Mouse.P;
 	v2 ClosestPoint = Mouse.P;
-	Closest = ClosestPointIndex(State->Points, State->LastPoint, Mouse.P, &ClosestDistSq);
-	b32 SnapIndex = 0;
+	Closest = ClosestPointIndex(State, Mouse.P, &ClosestDistSq);
+	uint SnapIndex = 0;
 	if(Closest)
 	{
 		ClosestPoint = State->Points[Closest];
@@ -199,52 +246,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
 #define DEBUGPress(button) (Input.Old->Controllers[0].Button.button.EndedDown && !Input.New->Controllers[0].Button.button.EndedDown)
-	if(DEBUGClick(LMB) && !State->DragIndex)
-	{
-		// TODO: confirm this won't make points for duplicate lines
-		if(!State->MidEdit)
-		{
-			// NOTE: Starting a line, save the first point
-			State->SavedPoint = SnapMouseP;
-			State->MidEdit = 1;
-		}
-		else
-		{
-			// NOTE: completed line, set both points' status
-			b32 ExistingLine = 0;
-			for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; LinePointI += 2)
-			{
-				uint PointAIndex = FindMatchPoint(State, State->SavedPoint, POINT_Line);
-				if(PointAIndex)
-				{
-					uint PointBIndex;
-					if(PointAIndex % 2)
-					{
-						// NOTE: first of 2 line points
-						PointBIndex = PointAIndex + 1;
-					}
-					else
-					{
-						// NOTE: second of 2 line points
-						PointBIndex = PointAIndex - 1;
-					}
-
-					if(PointBIndex == FindMatchPoint(State, SnapMouseP, POINT_Line))
-					{
-						ExistingLine = 1;
-					}
-				}
-			}
-			if(!ExistingLine)
-			{
-				AddPoint(State, State->SavedPoint, POINT_Line);
-				AddPoint(State, SnapMouseP, POINT_Line);
-			}
-			State->MidEdit = 0;
-		}
-		// NOTE: ensures that the line is not improperly considered valid:
-		State->LinePoints[State->LastLinePoint + 1] = 0;
-	}
 
 	// NOTE: put before next conditional so it doesn't turn itself off automatically.
 	// TODO: Do I actually want to be able to drag points?
@@ -268,14 +269,80 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// Snapping is off while dragging; TODO: maybe change this when points can be combined
 		SnapIndex = 0;
 	}
-	else if(DEBUGClick(MMB) && SnapIndex && !State->MidEdit)
+	
+	else if(DEBUGClick(LMB))
 	{
+		// TODO: confirm this won't make points for duplicate lines
+		if(!State->MidEdit)
+		{
+			// NOTE: Starting a line, save the first point
+			State->SavedPoint = SnapMouseP;
+			State->MidEdit = 1;
+		}
+		else
+		{
+			// NOTE: completed line, set both points' status if line does not already exist
+			b32 ExistingLine = 0;
+			uint PointAIndex = FindPointAtPos(State, State->SavedPoint, POINT_Line);
+			if(PointAIndex)
+			{
+				for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; ++LinePointI)
+				{
+					if(PointAIndex == State->LinePoints[LinePointI])
+					{
+						uint PointBLineIndex = MatchingPointIndex(LinePointI);
+
+						uint TestPointIndex = FindPointAtPos(State, SnapMouseP, POINT_Line); 
+						if(State->LinePoints[PointBLineIndex] == TestPointIndex)
+						{
+							ExistingLine = 1;
+							break;
+						}
+					}
+				}
+			}
+			if(!ExistingLine)
+			{
+				AddPoint(State, State->SavedPoint, POINT_Line);
+				AddPoint(State, SnapMouseP, POINT_Line);
+			}
+			State->MidEdit = 0;
+		}
+		// NOTE: ensures that the line is not improperly considered valid:
+		State->LinePoints[State->LastLinePoint + 1] = 0;
+	}
+
+	else if(SnapIndex && !State->MidEdit)
+	{
+		if(DEBUGClick(RMB))
+		{
+			if(State->PointStatus[SnapIndex] & POINT_Line)
+			{
+				// TODO: do I want this here or in drawing/adding..?
+				for(uint i = 1; i <= State->LastLinePoint; ++i)
+				{
+					if(State->LinePoints[i] == SnapIndex)
+					{
+						// NOTE: invalidates line
+						// TODO: invalidate both points or just one?
+						State->LinePoints[i] = 0;
+						State->LinePoints[MatchingPointIndex(i)] = 0;
+					}
+				}
+			}
+			// Invalidate point
+			State->PointStatus[SnapIndex] = POINT_Free;
+		}
+
+		else if(DEBUGClick(MMB))
+		{
 		// Move point
 		State->SavedPoint = State->Points[SnapIndex];
 		State->DragIndex = SnapIndex;
+		} 
 	}
 
-	if(DEBUGPress(Back))
+	else if(DEBUGPress(Back))
 	{
 		ResetPoints(State);
 	}
@@ -286,30 +353,35 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	for(uint i = 1; i <= State->LastPoint; ++i)
 	{
-		DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
+		if(State->PointStatus[i] != POINT_Free)
+		{
+			DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
+		}
 	}
 
 #define LINE(lineI) Points[LinePoints[2*lineI-1]], Points[LinePoints[2*lineI]]
-	if(State->LastLinePoint)
+	for(uint LineI = 1; LineI <= NumLines; ++LineI)
 	{
-		for(uint LineI = 1; LineI <= NumLines; ++LineI)
+		if(!(State->LinePoints[2*LineI-1] && State->LinePoints[2*LineI]))
 		{
-			DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
-			DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
+			continue;
+		}
 
-			if(LineI && !State->DragIndex)
+		DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
+		DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
+
+		if(LineI && !State->DragIndex)
+		{
+			// IMPORTANT TODO: spatially separate, maybe hierarchically
+			// IMPORTANT TODO: don't recompute every frame, but don't create excess
+			// IMPORTANT TODO: don't allow any duplicate points
+			for(uint IntersectCheckI = 1; IntersectCheckI <= LineI; ++IntersectCheckI)
 			{
-				// IMPORTANT TODO: spatially separate, maybe hierarchically
-				// IMPORTANT TODO: don't recompute every frame, but don't create excess
-				// IMPORTANT TODO: don't allow any duplicate points
-				for(uint IntersectCheckI = 1; IntersectCheckI <= LineI; ++IntersectCheckI)
+				// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
+				v2 Intersect;
+				if(IntersectSegmentsWinding(LINE(LineI), LINE(IntersectCheckI), &Intersect))
 				{
-					// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
-					v2 Intersect;
-					if(IntersectSegmentsWinding(LINE(LineI), LINE(IntersectCheckI), &Intersect))
-					{
-						AddPoint(State, Intersect, POINT_Intersection);
-					}
+					AddPoint(State, Intersect, POINT_Intersection);
 				}
 			}
 		}
@@ -336,22 +408,32 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
 
 	char Message[512];
-	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, MidEdit: %b"
+	f32 TextSize = 15.f;
+	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, MidEdit: %b\n\n"
 				"\nFrame time: %.2f, (%.2f, %.2f)",
 				State->NumLinePoints,
 				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),
 				State->MidEdit,
 				State->dt*1000.f, Mouse.P.X, Mouse.P.Y);
-	DrawString(ScreenBuffer, &State->DefaultFont, Message, 15.f, 10.f, 15.f, BLACK);
+	DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
+	char LinePointInfo[512];
+	stbsp_sprintf(LinePointInfo, "L#  P#\n\n");
+	for(uint i = 1; i <= State->NumLinePoints && i <= 32; ++i)
+	{
+		stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, State->LinePoints[i]);
+	}
 	char PointInfo[512];
 	stbsp_sprintf(PointInfo, " #  CIL\n\n");
-	for(uint i = 1; i <= State->NumPoints; ++i)
+	for(uint i = 1; i <= State->NumPoints && i <= 32; ++i)
 	{
 		stbsp_sprintf(PointInfo, "%s%02u  %03b\n", PointInfo, i, State->PointStatus[i]);
 	}
-	DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, 15.f,
-			ScreenSize.X - 80.f, ScreenSize.Y - 30.f, BLACK);
+	TextSize = 13.f;
+	DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,
+			ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
+	DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
+			ScreenSize.X - 80.f, ScreenSize.Y - 30.f, 0, BLACK);
 }
 
 DECLARE_DEBUG_RECORDS;
@@ -379,7 +461,7 @@ DECLARE_DEBUG_FUNCTION
 				char TextBuffer[257];
 				Offset +=
 					stbsp_snprintf(TextBuffer, 256,
-								   /* AltFormat ? AltFormat :*/ "%22s(%4d): %'12ucy %'8uh %'10ucy/h", 
+								   /* AltFormat ? AltFormat :*/ "%24s(%4d): %'12ucy %'8uh %'10ucy/h", 
 								   Counter->FunctionName,
 								   Counter->LineNumber,
 								   CycleCount,
@@ -387,7 +469,7 @@ DECLARE_DEBUG_FUNCTION
 								   CycleCount / HitCount);
 				/* TextBuffer[Offset] = '\n'; */
 				f32 TextHeight = 13.f;
-				DrawString(Buffer, Font, TextBuffer, TextHeight, 0, 150 - (HitI*TextHeight), BLACK);
+				DrawString(Buffer, Font, TextBuffer, TextHeight, 0, Buffer->Height - ((HitI+2)*TextHeight), 0, GREY);
 				++HitI;
 			}
 		}
