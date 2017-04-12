@@ -198,25 +198,44 @@ MatchingPointIndex(uint PointIndex)
 
 /// returns number of intersections
 internal uint
-AddIntersections(state *State, uint PointA, uint PointB, uint LineEndIndex, uint SkipIndex)
+AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 {
 	uint Result = 0;
-	for(uint IntersectCheckI = 1; IntersectCheckI <= LineEndIndex; IntersectCheckI+=2)
+	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
 	{
-		if(IntersectCheckI == SkipIndex) continue;
+		if(LineIndex == SkipIndex) continue;
 
-		// TODO: lines intersecting themselves?
 		// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
 		v2 Intersect;
 		// IMPORTANT TODO: spatially separate, maybe hierarchically
 		if(IntersectSegmentsWinding(State->Points[PointA], State->Points[PointB],
-					State->Points[State->LinePoints[IntersectCheckI]], State->Points[State->LinePoints[IntersectCheckI+1]],
+					State->Points[State->LinePoints[LineIndex]], State->Points[State->LinePoints[LineIndex+1]],
 					&Intersect))
 		{
 			AddPoint(State, Intersect, POINT_Intersection, 0);
 			++Result;
 		}
+		// TODO: use segments rather than lines
 	}
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; CircleIndex+=2)
+	{
+		v2 P1, P2;
+		uint NumIntersections = IntersectLineCircle(State->Points[PointA], V2Sub(State->Points[PointB], State->Points[PointA]),
+				State->Points[State->Circles[CircleIndex].Focus], State->Circles[CircleIndex].Radius, &P1, &P2);
+		if(NumIntersections == 1)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+			++Result;
+		}
+		else if(NumIntersections == 2)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+			AddPoint(State, P2, POINT_Intersection, 0);
+			Result += 2;
+		}
+		
+	}
+
 	return Result;
 }
 
@@ -256,14 +275,14 @@ AddLine(state *State, uint IndexA, uint IndexB)
 		{
 			State->LinePoints[EmptyLinePoint]     = IndexA;
 			State->LinePoints[EmptyLinePoint + 1] = IndexB;
-			AddIntersections(State, IndexA, IndexB, State->LastLinePoint, EmptyLinePoint);
+			AddLineIntersections(State, IndexA, IndexB, EmptyLinePoint);
 			Result = EmptyLinePoint;
 		}
 		else
 		{
 			State->LinePoints[++State->LastLinePoint] = IndexA;
 			State->LinePoints[++State->LastLinePoint] = IndexB;
-			AddIntersections(State, IndexA, IndexB, State->LastLinePoint, State->LastLinePoint-1);
+			AddLineIntersections(State, IndexA, IndexB, State->LastLinePoint-1);
 			Result = State->LastLinePoint-1;
 			State->NumLinePoints += 2; // TODO: numlines?
 		}
@@ -424,7 +443,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			for(uint i = 1; i <= State->LastLinePoint; i+=2)
 			{
 				// TODO: this is wasteful
-				AddIntersections(State, State->LinePoints[i], State->LinePoints[i+1], i, 0);
+				AddLineIntersections(State, State->LinePoints[i], i, 0);
 			}
 		}
 
@@ -514,14 +533,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
 
-	for(uint i = 1; i <= State->LastPoint; ++i)
-	{
-		if(State->PointStatus[i] != POINT_Free)
-		{
-			DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
-		}
-	}
-
 #define LINE(lineI) Points[LinePoints[2*lineI-1]], Points[LinePoints[2*lineI]]
 	for(uint LineI = 1; LineI <= NumLines; ++LineI)
 	{
@@ -538,6 +549,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(Circle.Focus)
 		{
 			CircleLine(ScreenBuffer, State->Points[Circle.Focus], Circle.Radius, BLACK);
+		}
+	}
+
+	for(uint i = 1; i <= State->LastPoint; ++i)
+	{
+		if(State->PointStatus[i] != POINT_Free)
+		{
+			DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
 		}
 	}
 

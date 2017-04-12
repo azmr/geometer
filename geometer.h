@@ -25,10 +25,74 @@ typedef struct circle
 	f32 Radius;
 } circle;
 
+
+internal uint
+IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+{
+	uint Result = 0;
+	v2 d = Norm(Dir);
+	// Distance from point on line to circle centre == radius:
+	// 		(P + td - C) DOT (P + td - C) == radius^2
+	// m=P-C
+	v2 m = V2Sub(P, Focus);
+	// Simplifies to t^2 + 2(m DOT d)t + (m DOT m) - r^2 == 0
+	// Solving quadratic equation  -b +/- sqrt(b^2 - c)
+	f32 b = Dot(m, d);
+	f32 Dotmm = Dot(m, m);
+	f32 c = Dotmm - Radius*Radius;
+	f32 Discriminant = b*b - c;
+	f32 t;
+
+	if(Discriminant < 0.f) return Result;
+	else if(Discriminant == 0.f)
+	{
+		Result = 1;
+		t = -b;
+		*Intersection1 = V2Add(P, V2Mult(t, d));
+	}
+
+	else if(Discriminant > 0.f)
+	{
+		// TODO: check if t makes ray/segment start/end inside circle
+		Result = 2;
+		f32 RootDisc = QSqrt(Discriminant);
+		t = -b - RootDisc;
+		*Intersection1 = V2Add(P, V2Mult(t, d));
+		t = -b + RootDisc;
+		*Intersection2 = V2Add(P, V2Mult(t, d));
+	}
+
+	return Result;
+}
+
+internal uint
+IntersectCircles(v2 Focus1, f32 R1, v2 Focus2, f32 R2, v2 *Intersection1, v2 *Intersection2)
+{
+	v2 Dir = V2Sub(Focus2, Focus1);
+	// TODO: optimise out
+	f32 dSq = LenSq(Dir);
+	f32 RadAdd = R1 + R2;
+	uint Result = 0;
+	if(dSq == RadAdd * RadAdd)
+	{
+		// NOTE: early out for tangents
+		Result = 1;
+		*Intersection1 = V2Add(Focus1, V2Mult(R1, Norm(Dir)));
+	}
+
+	else
+	{
+		f32 Fraction = 0.5f * ((R1*R1 / dSq) - (R2*R2 / dSq) + 1);
+		v2 ChordCross = V2Add(Focus1, V2Mult(Fraction, Dir));
+		Result = IntersectLineCircle(ChordCross, Perp(Dir), Focus1, R1, Intersection1, Intersection2);
+	}
+	return Result;
+}
+
 // TODO: make these as orthogonal as possible?
 typedef enum
 {
-	POINT_Free         = 0, // also temporary points unless this becomes an issue
+	POINT_Free         = 0,
 	POINT_Extant       = (1 << 0),
 	POINT_Line         = (1 << 1),
 	POINT_Intersection = (1 << 2),
