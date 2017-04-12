@@ -382,7 +382,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
 #define DEBUGPress(button) (Input.Old->Keyboard.button.EndedDown && !Input.New->Keyboard.button.EndedDown)
 
-	// NOTE: put before next conditional so it doesn't turn itself off automatically.
 	// TODO: Do I actually want to be able to drag points?
 	if(State->DragIndex)
 	{
@@ -416,17 +415,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		SnapIndex = 0;
 	}
 	
-	else if(DEBUGClick(LMB))
+	else if(State->SelectIndex)
 	{
-		// TODO: confirm this won't make points for duplicate lines
-		if(!State->SelectIndex)
-		{
-			// NOTE: Starting a line, save the first point
-			/* State->SavedPoint = SnapMouseP; */
-			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant);
-		}
-
-		else if(State->SelectIndex)
+		if(DEBUGClick(LMB))
 		{
 			// NOTE: completed line, set both points' status if line does not already exist
 			// and points aren't coincident
@@ -437,35 +428,43 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			}
 			State->SelectIndex = 0;
 		}
-		// NOTE: ensures that the line is not improperly considered valid:
-		State->LinePoints[State->LastLinePoint + 1] = 0;
 	}
 
-	else if(SnapIndex && !State->SelectIndex)
+	else // normal state
 	{
-		if(DEBUGClick(RMB))
+		if(DEBUGClick(LMB))
 		{
-			if(State->PointStatus[SnapIndex] & POINT_Line)
-			{
-				// NOTE: invalidates line
-				InvalidateLinesAtPoint(State, SnapIndex);
-			}
-			// Invalidate point
-			State->PointStatus[SnapIndex] = POINT_Free;
+			// NOTE: Starting a line, save the first point
+			/* State->SavedPoint = SnapMouseP; */
+			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant);
 		}
 
-		else if(DEBUGClick(MMB))
+		if(SnapIndex && !State->SelectIndex) // point snapped to
+		{
+			if(DEBUGClick(RMB))
+			{
+				if(State->PointStatus[SnapIndex] & POINT_Line)
+				{
+					// NOTE: invalidates line
+					InvalidateLinesAtPoint(State, SnapIndex);
+				}
+				// Invalidate point
+				State->PointStatus[SnapIndex] = POINT_Free;
+			}
+		}
+
+		if(DEBUGClick(MMB))
 		{
 		// Move point
 		/* State->SavedPoint = State->Points[SnapIndex]; */
 			State->SelectIndex = SnapIndex;
 			State->DragIndex = SnapIndex;
 		} 
-	}
 
-	else if(DEBUGPress(Backspace))
-	{
-		ResetPoints(State);
+		if(DEBUGPress(Backspace))
+		{
+			ResetPoints(State);
+		}
 	}
 	// NOTE: only gets odd numbers if there's an unfinished point
 	uint NumLines = (State->LastLinePoint)/2; // completed lines ... 1?
@@ -533,10 +532,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, State->LinePoints[i]);
 	}
 	char PointInfo[512];
-	stbsp_sprintf(PointInfo, " #    DARTFILE\n\n");
+	stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
 	for(uint i = 1; i <= State->NumPoints && i <= 32; ++i)
 	{
-		stbsp_sprintf(PointInfo, "%s%02u    %08b\n", PointInfo, i, State->PointStatus[i]);
+		stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, State->PointStatus[i]);
 	}
 	TextSize = 13.f;
 	DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,
