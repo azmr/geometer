@@ -23,9 +23,14 @@ line_points ZeroLineP = {0};
 typedef enum
 {
 	POINT_Free         = 0, // also temporary points unless this becomes an issue
-	POINT_Line         = (1 << 0),
-	POINT_Intersection = (1 << 1),
-	POINT_Centre       = (1 << 2),
+	POINT_Extant       = (1 << 0),
+	POINT_Line         = (1 << 1),
+	POINT_Intersection = (1 << 2),
+	POINT_Focus        = (1 << 3),
+	POINT_Text         = (1 << 4),
+	POINT_Radius       = (1 << 5),
+	POINT_Arc          = (1 << 6),
+	POINT_Dist         = (1 << 7),
 } PointFlags;
 
 typedef struct state
@@ -36,8 +41,9 @@ typedef struct state
 	b32 CloseApp;
 
 	uint DragIndex;
+	uint SelectIndex;
 	v2 SavedPoint;
-	b32 MidEdit;
+	/* b32 MidEdit; */
 	b32 PointSnap;
 
 	uint LastPoint;
