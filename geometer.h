@@ -40,7 +40,7 @@ typedef struct state
 	font DefaultFont;
 	b32 CloseApp;
 
-	uint DragIndex;
+	uint DragIndex; // TODO: consolidate into SelectIndex
 	uint SelectIndex;
 	v2 SavedPoint;
 	/* b32 MidEdit; */
@@ -56,6 +56,7 @@ typedef struct state
 	uint LinePoints[NUM_POINTS*2];
 	v2 Points[NUM_POINTS];
 	u8 PointStatus[NUM_POINTS];
+	u8 SavedStatus;
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;

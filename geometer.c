@@ -135,18 +135,20 @@ FindPointAtPos(state *State, v2 P, uint PointStatus)
 /// returns index of point (may be new or existing)
 // TODO: less definite name? ProposePoint, ConsiderNewPoint...?
 internal uint
-AddPoint(state *State, v2 P, uint PointTypes)
+AddPoint(state *State, v2 P, uint PointTypes, u8 *PriorStatus)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = FindPointAtPos(State, P, ~(uint)POINT_Free);
 	if(Result)
 	{
 		// NOTE: Use existing point, but add any new status (and confirm Extant)
+		if(PriorStatus) *PriorStatus = State->PointStatus[Result];
 		State->PointStatus[Result] |= PointTypes | POINT_Extant;
 	}
 
 	else 
 	{
+		if(PriorStatus) *PriorStatus = POINT_Free;
 		// TODO: extract into function? ExistingFreePoint
 		for(uint PointIndex = 1; PointIndex <= State->LastPoint; ++PointIndex)
 		{
@@ -209,7 +211,7 @@ AddIntersections(state *State, uint PointA, uint PointB, uint LineEndIndex, uint
 					State->Points[State->LinePoints[IntersectCheckI]], State->Points[State->LinePoints[IntersectCheckI+1]],
 					&Intersect))
 		{
-			AddPoint(State, Intersect, POINT_Intersection);
+			AddPoint(State, Intersect, POINT_Intersection, 0);
 			++Result;
 		}
 	}
@@ -424,8 +426,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(!V2Equals(State->Points[State->SelectIndex], SnapMouseP))
 			{
 				// TODO: lines not adding properly..?
-				AddLine(State, State->SelectIndex, AddPoint(State, SnapMouseP, POINT_Line));
+				AddLine(State, State->SelectIndex, AddPoint(State, SnapMouseP, POINT_Line, 0));
 			}
+			State->SelectIndex = 0;
+		}
+
+		else if(Keyboard.Esc.EndedDown)
+		{
+			// Cancel selection, point returns to saved location
+			State->PointStatus[State->SelectIndex] = State->SavedStatus;
 			State->SelectIndex = 0;
 		}
 	}
@@ -436,7 +445,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			// NOTE: Starting a line, save the first point
 			/* State->SavedPoint = SnapMouseP; */
-			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant);
+			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus);
 		}
 
 		if(SnapIndex && !State->SelectIndex) // point snapped to
@@ -466,6 +475,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			ResetPoints(State);
 		}
 	}
+
 	// NOTE: only gets odd numbers if there's an unfinished point
 	uint NumLines = (State->LastLinePoint)/2; // completed lines ... 1?
 	v2 *Points = State->Points;
