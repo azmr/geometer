@@ -218,29 +218,20 @@ AddIntersections(state *State, uint PointA, uint PointB, uint LineEndIndex, uint
 
 /// returns first point of the pair that make up the line
 internal uint
-AddLine(state *State, v2 PointA, v2 PointB)
+AddLine(state *State, uint IndexA, uint IndexB)
 {
 	// TODO: could optimise out checking indices if already known (as optional params?)
 	uint Result = 0;
 	// NOTE: avoids duplicate lines
 	b32 ExistingLine = 0;
-	uint PointAIndex = FindPointAtPos(State, PointA, POINT_Line);
-	if(PointAIndex)
+	for(uint LinePointIndex = 1; LinePointIndex <= State->LastLinePoint; LinePointIndex += 2)
 	{
-		for(uint LinePointI = 1; LinePointI <= State->NumLinePoints; ++LinePointI)
+			// NOTE: no ordering
+		if( (State->LinePoints[LinePointIndex] == IndexA && State->LinePoints[LinePointIndex + 1] == IndexB) ||
+			(State->LinePoints[LinePointIndex] == IndexB && State->LinePoints[LinePointIndex + 1] == IndexA))
 		{
-			if(PointAIndex == State->LinePoints[LinePointI])
-			{
-				uint PointBLineIndex = MatchingPointIndex(LinePointI);
-
-				uint TestPointIndex = FindPointAtPos(State, PointB, POINT_Line); 
-				if(State->LinePoints[PointBLineIndex] == TestPointIndex ||
-						PointAIndex == TestPointIndex)
-				{
-					ExistingLine = 1;
-					break;
-				}
-			}
+			ExistingLine = 1;
+			break;
 		}
 	}
 
@@ -257,25 +248,25 @@ AddLine(state *State, v2 PointA, v2 PointB)
 			}
 		}
 
-
-		uint A = AddPoint(State, PointA, POINT_Line);
-		uint B = AddPoint(State, PointB, POINT_Line);
 		if(EmptyLinePoint)
 		{
-			State->LinePoints[EmptyLinePoint]     = A;
-			State->LinePoints[EmptyLinePoint + 1] = B;
-			AddIntersections(State, A, B, State->LastLinePoint, EmptyLinePoint);
+			State->LinePoints[EmptyLinePoint]     = IndexA;
+			State->LinePoints[EmptyLinePoint + 1] = IndexB;
+			AddIntersections(State, IndexA, IndexB, State->LastLinePoint, EmptyLinePoint);
 			Result = EmptyLinePoint;
 		}
 		else
 		{
-			State->LinePoints[++State->LastLinePoint] = A;
-			State->LinePoints[++State->LastLinePoint] = B;
-			AddIntersections(State, A, B, State->LastLinePoint, State->LastLinePoint-1);
+			State->LinePoints[++State->LastLinePoint] = IndexA;
+			State->LinePoints[++State->LastLinePoint] = IndexB;
+			AddIntersections(State, IndexA, IndexB, State->LastLinePoint, State->LastLinePoint-1);
 			Result = State->LastLinePoint-1;
 			State->NumLinePoints += 2; // TODO: numlines?
 		}
 	}
+	// TODO: make thread-safe?
+	State->PointStatus[IndexA] |= POINT_Line;
+	State->PointStatus[IndexB] |= POINT_Line;
 
 	return Result;
 }
@@ -442,7 +433,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(!V2Equals(State->Points[State->SelectIndex], SnapMouseP))
 			{
 				// TODO: lines not adding properly..?
-				AddLine(State, State->Points[State->SelectIndex], SnapMouseP);
+				AddLine(State, State->SelectIndex, AddPoint(State, SnapMouseP, POINT_Line));
 			}
 			State->SelectIndex = 0;
 		}
