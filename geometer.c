@@ -90,8 +90,10 @@ ResetPoints(state *State)
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
 	State->LastPoint     = 0;
 	State->LastLinePoint = 0;
+	State->LastCircle    = 0;
 	State->NumPoints     = 0;
 	State->NumLinePoints = 0;
+	State->NumCircles    = 0;
 	State->SelectIndex   = 0;
 	END_TIMED_BLOCK;
 }
@@ -288,6 +290,35 @@ InvalidateLinesAtPoint(state *State, uint PointIndex)
 	}
 }
 
+internal void
+InvalidateCirclesWithFocusAtPoint(state *State, uint PointIndex)
+{
+	// TODO: invalidate both points or just one?
+	// TODO: do I want this here or in drawing/adding..?
+	for(uint i = 1; i <= State->LastCircle; ++i)
+	{
+		if(State->Circles[i].Focus == PointIndex)
+		{
+			State->Circles[i].Focus = 0;
+		}
+	}
+}
+
+internal void
+InvalidatePoint(state *State, uint PointIndex)
+{
+	u8 Status = State->PointStatus[PointIndex];
+	if(Status & POINT_Line)
+	{
+		InvalidateLinesAtPoint(State, PointIndex);
+	}
+	if(Status & POINT_Focus)
+	{
+		InvalidateCirclesWithFocusAtPoint(State, PointIndex);
+	}
+	State->PointStatus[PointIndex] = POINT_Free;
+}
+
 /// returns number of points removed
 internal uint
 RemovePointsOfType(state *State, uint PointType)
@@ -297,11 +328,7 @@ RemovePointsOfType(state *State, uint PointType)
 	{
 		if(State->PointStatus[i] & PointType)
 		{
-			if(State->PointStatus[i] & POINT_Line)
-			{
-				InvalidateLinesAtPoint(State, i);
-			}
-			State->PointStatus[i] = POINT_Free;
+			InvalidatePoint(State, i);
 			++Result;
 		}
 	}
@@ -431,6 +458,17 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			State->SelectIndex = 0;
 		}
 
+		else if(DEBUGClick(RMB))
+		{
+			circle NewCircle;
+			NewCircle.Focus = State->SelectIndex;
+			NewCircle.Radius = Dist(State->Points[State->SelectIndex], SnapMouseP);
+			State->PointStatus[State->SelectIndex] |= POINT_Focus;
+
+			State->Circles[++State->LastCircle] = NewCircle;
+			++State->NumCircles;
+		}
+
 		else if(Keyboard.Esc.EndedDown)
 		{
 			// Cancel selection, point returns to saved location
@@ -448,17 +486,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus);
 		}
 
-		if(SnapIndex && !State->SelectIndex) // point snapped to
+		// TODO: could skip check and just write to invalid point..?
+		if(SnapIndex) // point snapped to
 		{
 			if(DEBUGClick(RMB))
 			{
-				if(State->PointStatus[SnapIndex] & POINT_Line)
-				{
-					// NOTE: invalidates line
-					InvalidateLinesAtPoint(State, SnapIndex);
-				}
-				// Invalidate point
-				State->PointStatus[SnapIndex] = POINT_Free;
+				InvalidatePoint(State, SnapIndex);
 			}
 		}
 
@@ -492,14 +525,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #define LINE(lineI) Points[LinePoints[2*lineI-1]], Points[LinePoints[2*lineI]]
 	for(uint LineI = 1; LineI <= NumLines; ++LineI)
 	{
-		if(!(State->LinePoints[2*LineI-1] && State->LinePoints[2*LineI]))
+		if((State->LinePoints[2*LineI-1] && State->LinePoints[2*LineI]))
 		{
-			// NOTE: both points must be valid, otherwise skip to next line.
-			continue;
+			DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
+			DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
 		}
 
-		DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
-		DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
+	}
+	for(uint CircleI = 1; CircleI <= State->LastCircle; ++CircleI)
+	{
+		circle Circle = State->Circles[CircleI];
+		if(Circle.Focus)
+		{
+			CircleLine(ScreenBuffer, State->Points[Circle.Focus], Circle.Radius, BLACK);
+		}
 	}
 
 	if(State->SelectIndex)

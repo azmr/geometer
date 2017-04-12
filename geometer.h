@@ -19,6 +19,12 @@ typedef struct line_points
 } line_points;
 line_points ZeroLineP = {0};
 
+typedef struct circle
+{
+	uint Focus;
+	f32 Radius;
+} circle;
+
 // TODO: make these as orthogonal as possible?
 typedef enum
 {
@@ -50,10 +56,13 @@ typedef struct state
 	uint NumPoints;
 	uint LastLinePoint;
 	uint NumLinePoints;
+	uint LastCircle;
+	uint NumCircles;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
 	uint LinePoints[NUM_POINTS*2];
+	circle Circles[NUM_POINTS];
 	v2 Points[NUM_POINTS];
 	u8 PointStatus[NUM_POINTS];
 	u8 SavedStatus;
