@@ -208,7 +208,7 @@ AddCircleIntersections(state *State, uint Point, f32 Radius, uint SkipIndex)
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
 
-	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; CircleIndex+=2)
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
 	{
 		if(CircleIndex == SkipIndex) continue;
 		v2 P1, P2;
@@ -539,6 +539,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			NewCircle.Radius = Dist(State->Points[State->SelectIndex], SnapMouseP);
 			State->PointStatus[State->SelectIndex] |= POINT_Focus;
 
+			// TODO: fill empty circle slots
 			State->Circles[++State->LastCircle] = NewCircle;
 			++State->NumCircles;
 			AddCircleIntersections(State, NewCircle.Focus, NewCircle.Radius, State->LastCircle);
