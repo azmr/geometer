@@ -27,6 +27,8 @@
 // - Circle-circle intersection
 // - More flags: circle, focus, text, lone (maybe change to extant)
 // - Bases and canvas movement
+// - Change storage of intersections, so they don't all need to be recomputed on changes
+// - Spatially partition(?) shapes
 
 internal inline void
 DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 P, v2 A, v2 B)
@@ -139,6 +141,7 @@ FindPointAtPos(state *State, v2 P, uint PointStatus)
 internal uint
 AddPoint(state *State, v2 P, uint PointTypes, u8 *PriorStatus)
 {
+// IMPORTANT TODO: intersections on arc creating new points when lines drawn from them
 	BEGIN_TIMED_BLOCK;
 	uint Result = FindPointAtPos(State, P, ~(uint)POINT_Free);
 	if(Result)
@@ -220,7 +223,7 @@ AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; CircleIndex+=2)
 	{
 		v2 P1, P2;
-		uint NumIntersections = IntersectLineCircle(State->Points[PointA], V2Sub(State->Points[PointB], State->Points[PointA]),
+		uint NumIntersections = IntersectSegmentCircle(State->Points[PointA], V2Sub(State->Points[PointB], State->Points[PointA]),
 				State->Points[State->Circles[CircleIndex].Focus], State->Circles[CircleIndex].Radius, &P1, &P2);
 		if(NumIntersections == 1)
 		{
@@ -584,7 +587,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	char Message[512];
 	f32 TextSize = 15.f;
-	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, SpaceDown: %u"
+	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2f, (%.2f, %.2f)",
 				State->NumLinePoints,
 				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),

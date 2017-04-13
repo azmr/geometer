@@ -26,11 +26,11 @@ typedef struct circle
 } circle;
 
 
+/// expects d to be normalised
 internal uint
-IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+IntersectLineCircleForT(v2 P, v2 d, v2 Focus, f32 Radius, f32 *t1, f32 *t2)
 {
 	uint Result = 0;
-	v2 d = Norm(Dir);
 	// Distance from point on line to circle centre == radius:
 	// 		(P + td - C) DOT (P + td - C) == radius^2
 	// m=P-C
@@ -41,27 +41,92 @@ IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *I
 	f32 Dotmm = Dot(m, m);
 	f32 c = Dotmm - Radius*Radius;
 	f32 Discriminant = b*b - c;
-	f32 t;
 
 	if(Discriminant < 0.f) return Result;
 	else if(Discriminant == 0.f)
 	{
 		Result = 1;
-		t = -b;
-		*Intersection1 = V2Add(P, V2Mult(t, d));
+		*t1 = -b;
 	}
 
-	else if(Discriminant > 0.f)
+	else // if(Discriminant > 0.f)
 	{
 		// TODO: check if t makes ray/segment start/end inside circle
 		Result = 2;
 		f32 RootDisc = QSqrt(Discriminant);
-		t = -b - RootDisc;
-		*Intersection1 = V2Add(P, V2Mult(t, d));
-		t = -b + RootDisc;
-		*Intersection2 = V2Add(P, V2Mult(t, d));
+		*t1 = -b - RootDisc;
+		*t2 = -b + RootDisc;
 	}
 
+	return Result;
+}
+
+internal uint
+IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 t1, t2;
+	v2 d = Norm(Dir);
+	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+
+	if(Result)
+	{
+		*Intersection1 = V2Add(P, V2Mult(t1, d));
+		//if(Result == 2)
+			*Intersection2 = V2Add(P, V2Mult(t2, d));
+	}
+	return Result;
+}
+
+internal uint
+IntersectRayCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 t1, t2;
+	v2 d = Norm(Dir);
+	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+
+	if(Result)
+	{
+		b32 FirstPoint = 1;
+		if(t1 < 0.f) FirstPoint = 0;
+		if(FirstPoint)
+		{
+			*Intersection1 = V2Add(P, V2Mult(t1, d));
+			*Intersection2 = V2Add(P, V2Mult(t2, d));
+		}
+
+		else
+		{
+			*Intersection1 = V2Add(P, V2Mult(t2, d));
+		}
+	}
+	return Result;
+}
+
+internal uint
+IntersectSegmentCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 t1, t2;
+	v2 d = Norm(Dir);
+	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+
+	if(Result)
+	{ 
+		b32 FirstPoint = 1;
+		b32 SecondPoint = 1;
+		if(t1 < 0.f)                            FirstPoint = 0;
+		if(LenSq(V2Mult(t2, d)) > LenSq(Dir))  SecondPoint = 0;
+		Result = FirstPoint + SecondPoint;
+
+		if(FirstPoint)
+		{
+			*Intersection1 = V2Add(P, V2Mult(t1, d));
+			*Intersection2 = V2Add(P, V2Mult(t2, d));
+		}
+		else if(SecondPoint)
+		{
+			*Intersection1 = V2Add(P, V2Mult(t2, d));
+		}
+	}
 	return Result;
 }
 
