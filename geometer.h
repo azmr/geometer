@@ -163,9 +163,9 @@ typedef enum
 	POINT_Intersection = (1 << 2),
 	POINT_Focus        = (1 << 3),
 	POINT_Text         = (1 << 4),
-	POINT_Radius       = (1 << 5),
+	POINT_Radius       = (1 << 5), // maybe POINT_Dist | POINT_Arc ?
 	POINT_Arc          = (1 << 6),
-	POINT_Dist         = (1 << 7),
+	POINT_Dist         = (1 << 7), 
 } PointFlags;
 
 typedef struct state

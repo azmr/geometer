@@ -199,11 +199,65 @@ MatchingPointIndex(uint PointIndex)
 	return Result;
 }
 
+// TODO: add all intersections without recomputing line-circle
+/// returns number of intersections
+internal uint
+AddCircleIntersections(state *State, uint Point, f32 Radius, uint SkipIndex)
+{
+	uint Result = 0;
+	circle *Circles = State->Circles;
+	v2 *Points = State->Points;
+	uint *LinePoints = State->LinePoints;
+
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; CircleIndex+=2)
+	{
+		if(CircleIndex == SkipIndex) continue;
+		v2 P1, P2;
+		uint NumIntersections = IntersectCircles(Points[Point], Radius,
+				Points[Circles[CircleIndex].Focus], Circles[CircleIndex].Radius, &P1, &P2);
+		Result += NumIntersections;
+		if(NumIntersections == 1)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+		}
+		else if(NumIntersections == 2)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+			AddPoint(State, P2, POINT_Intersection, 0);
+		}
+		
+	}
+
+	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
+	{
+		v2 P1 = Points[LinePoints[LineIndex]];
+		v2 P2 = Points[LinePoints[LineIndex+1]];
+		uint NumIntersections = IntersectSegmentCircle(P1, V2Sub(P2, P1), Points[Point], Radius, &P1, &P2);
+		Result += NumIntersections;
+		if(NumIntersections == 1)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+		}
+		else if(NumIntersections == 2)
+		{
+			AddPoint(State, P1, POINT_Intersection, 0);
+			AddPoint(State, P2, POINT_Intersection, 0);
+		}
+		
+	}
+
+	return Result;
+}
+
 /// returns number of intersections
 internal uint
 AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 {
 	uint Result = 0;
+	circle *Circles = State->Circles;
+	v2 *Points = State->Points;
+	uint *LinePoints = State->LinePoints;
+
 	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
 	{
 		if(LineIndex == SkipIndex) continue;
@@ -211,8 +265,8 @@ AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 		// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
 		v2 Intersect;
 		// IMPORTANT TODO: spatially separate, maybe hierarchically
-		if(IntersectSegmentsWinding(State->Points[PointA], State->Points[PointB],
-					State->Points[State->LinePoints[LineIndex]], State->Points[State->LinePoints[LineIndex+1]],
+		if(IntersectSegmentsWinding(Points[PointA], Points[PointB],
+					Points[LinePoints[LineIndex]], Points[LinePoints[LineIndex+1]],
 					&Intersect))
 		{
 			AddPoint(State, Intersect, POINT_Intersection, 0);
@@ -220,21 +274,20 @@ AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 		}
 		// TODO: use segments rather than lines
 	}
-	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; CircleIndex+=2)
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
 	{
 		v2 P1, P2;
-		uint NumIntersections = IntersectSegmentCircle(State->Points[PointA], V2Sub(State->Points[PointB], State->Points[PointA]),
-				State->Points[State->Circles[CircleIndex].Focus], State->Circles[CircleIndex].Radius, &P1, &P2);
+		uint NumIntersections = IntersectSegmentCircle(Points[PointA], V2Sub(Points[PointB], Points[PointA]),
+				Points[Circles[CircleIndex].Focus], Circles[CircleIndex].Radius, &P1, &P2);
+		Result += NumIntersections;
 		if(NumIntersections == 1)
 		{
 			AddPoint(State, P1, POINT_Intersection, 0);
-			++Result;
 		}
 		else if(NumIntersections == 2)
 		{
 			AddPoint(State, P1, POINT_Intersection, 0);
 			AddPoint(State, P2, POINT_Intersection, 0);
-			Result += 2;
 		}
 		
 	}
@@ -489,6 +542,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			State->Circles[++State->LastCircle] = NewCircle;
 			++State->NumCircles;
+			AddCircleIntersections(State, NewCircle.Focus, NewCircle.Radius, State->LastCircle);
 		}
 
 		else if(Keyboard.Esc.EndedDown)
