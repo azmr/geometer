@@ -126,7 +126,7 @@ FindPointAtPos(state *State, v2 P, uint PointStatus)
 	uint Result = 0;
 	for(uint i = 1; i <= State->LastPoint; ++i)
 	{
-		if(V2Equals(P, State->Points[i]) && (State->PointStatus[i] & PointStatus))
+		if(V2WithinEpsilon(P, State->Points[i], POINT_EPSILON) && (State->PointStatus[i] & PointStatus))
 		{
 			Result = i;
 			break;
@@ -141,7 +141,6 @@ FindPointAtPos(state *State, v2 P, uint PointStatus)
 internal uint
 AddPoint(state *State, v2 P, uint PointTypes, u8 *PriorStatus)
 {
-// IMPORTANT TODO: intersections on arc creating new points when lines drawn from them
 	BEGIN_TIMED_BLOCK;
 	uint Result = FindPointAtPos(State, P, ~(uint)POINT_Free);
 	if(Result)
@@ -525,7 +524,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			// NOTE: completed line, set both points' status if line does not already exist
 			// and points aren't coincident
-			if(!V2Equals(State->Points[State->SelectIndex], SnapMouseP))
+			if(!V2WithinEpsilon(State->Points[State->SelectIndex], SnapMouseP, POINT_EPSILON))
 			{
 				// TODO: lines not adding properly..?
 				AddLine(State, State->SelectIndex, AddPoint(State, SnapMouseP, POINT_Line, 0));

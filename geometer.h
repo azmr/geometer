@@ -11,6 +11,8 @@
 #include <input.h>
 #include <stb_sprintf.h>
 
+#define POINT_EPSILON 0.02f
+
 typedef struct line_points
 {
 	// NOTE: corresponds with point in index
@@ -24,7 +26,6 @@ typedef struct circle
 	uint Focus;
 	f32 Radius;
 } circle;
-
 
 /// expects d to be normalised
 internal uint
