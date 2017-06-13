@@ -23,10 +23,8 @@
 // =====
 //
 // - Find (and colour) lines intersecting at a given point
-// - Circle-line intersection
-// - Circle-circle intersection
-// - More flags: circle, focus, text, lone (maybe change to extant)
 // - Bases and canvas movement
+// - Arcs
 // - Change storage of intersections, so they don't all need to be recomputed on changes
 // - Spatially partition(?) shapes
 
@@ -349,6 +347,36 @@ AddLine(state *State, uint IndexA, uint IndexB)
 	return Result;
 }
 
+internal uint
+AddCircle(state *State, uint FocusIndex, f32 Radius)
+{
+	uint Result = 0;
+	circle NewCircle;
+	NewCircle.Focus = FocusIndex;
+	NewCircle.Radius = Radius;
+	State->PointStatus[FocusIndex] |= POINT_Focus;
+
+	b32 ExistingCircle = 0;
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
+	{
+		circle TestCircle = State->Circles[CircleIndex];
+		if(TestCircle.Focus == FocusIndex && TestCircle.Radius == Radius)
+		{
+			ExistingCircle = 1;
+			break;
+		}
+	}
+
+	if(!ExistingCircle)
+	{
+		State->Circles[++State->LastCircle] = NewCircle;
+		++State->NumCircles;
+		AddCircleIntersections(State, NewCircle.Focus, NewCircle.Radius, State->LastCircle);
+	}
+
+	return Result;
+}
+
 internal void
 InvalidateLinesAtPoint(state *State, uint PointIndex)
 {
@@ -534,15 +562,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		else if(DEBUGClick(RMB))
 		{
-			circle NewCircle;
-			NewCircle.Focus = State->SelectIndex;
-			NewCircle.Radius = Dist(State->Points[State->SelectIndex], SnapMouseP);
-			State->PointStatus[State->SelectIndex] |= POINT_Focus;
-
-			// TODO: fill empty circle slots
-			State->Circles[++State->LastCircle] = NewCircle;
-			++State->NumCircles;
-			AddCircleIntersections(State, NewCircle.Focus, NewCircle.Radius, State->LastCircle);
+			AddCircle(State, State->SelectIndex, Dist(State->Points[State->SelectIndex], SnapMouseP));
 		}
 
 		else if(Keyboard.Esc.EndedDown)
