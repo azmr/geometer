@@ -139,7 +139,7 @@ IntersectCircles(v2 Focus1, f32 R1, v2 Focus2, f32 R2, v2 *Intersection1, v2 *In
 	f32 dSq = LenSq(Dir);
 	f32 RadAdd = R1 + R2;
 	uint Result = 0;
-	if(R1 == R2)
+	if(dSq == RadAdd * RadAdd)
 	{
 		// NOTE: early out for tangents
 		Result = 1;
