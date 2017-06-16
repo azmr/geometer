@@ -1,4 +1,7 @@
 # Geometer
+
+![geometer drawing demo](geometer-480.gif)
+
 *A simple drawing program to replicate construction with a compass and straightedge.*
 
 This project is under development, nothing is final. These are notes I've made for myself.
