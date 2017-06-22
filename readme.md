@@ -30,9 +30,10 @@ Scroll -> move up/down or zoom?
 
 - Find (and colour) lines intersecting at a given point
 - Bases and canvas movement
-- Arcs (not just full circles
+- Arcs (not just full circles)
 - Undo states
 - Change storage of intersections, so they don't all need to be recomputed on changes
 - Spatially partition(?) shapes
 - Set lengths on other lines (modulus?)
+	- autoset to size just made for easy repeats
 - Togglable layers

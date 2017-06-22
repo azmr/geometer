@@ -24,9 +24,13 @@
 //
 // - Find (and colour) lines intersecting at a given point
 // - Bases and canvas movement
-// - Arcs
+// - Arcs (not just full circles)
+// - Undo states
 // - Change storage of intersections, so they don't all need to be recomputed on changes
 // - Spatially partition(?) shapes
+// - Set lengths on other lines (modulus?)
+//  	- autoset to size just made for easy repeats
+// - Togglable layers
 
 internal inline void
 DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 P, v2 A, v2 B)
@@ -48,7 +52,7 @@ DrawPoint(image_buffer *ScreenBuffer, v2 P, b32 Active, colour Col)
 
 // 0 means nothing could be found
 internal uint
-ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDist)
+ClosestPointIndex(draw_state *State, v2 Comp, f32 *ClosestDist)
 {
 	BEGIN_TIMED_BLOCK;
 	// NOTE: all valid points start at 1
@@ -59,7 +63,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDist)
 	{
 		if(State->PointStatus[i] != POINT_Free)
 		{
-			if(!Result)
+			if(!Result) // i.e. first iteration
 			{
 				// TODO: maybe put this above loop
 				Result = i;
@@ -83,18 +87,21 @@ internal void
 ResetPoints(state *State)
 {
 	BEGIN_TIMED_BLOCK;
-	for(uint i = 1; i <= State->LastPoint; ++i)
+
+	draw_state *Draw = &State->Draw[State->CurrentDrawState];
+	for(uint i = 1; i <= Draw->LastPoint; ++i)
 	{
-		State->PointStatus[i] = POINT_Free;
+		Draw->PointStatus[i] = POINT_Free;
 	}
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-	State->LastPoint     = 0;
-	State->LastLinePoint = 0;
-	State->LastCircle    = 0;
-	State->NumPoints     = 0;
-	State->NumLinePoints = 0;
-	State->NumCircles    = 0;
-	State->SelectIndex   = 0;
+	Draw->LastPoint     = 0;
+	Draw->LastLinePoint = 0;
+	Draw->LastCircle    = 0;
+	Draw->NumPoints     = 0;
+	Draw->NumLinePoints = 0;
+	Draw->NumCircles    = 0;
+
+	State->SelectIndex  = 0;
 	END_TIMED_BLOCK;
 }
 
@@ -118,7 +125,7 @@ NumPointsOfType(u8 *Statuses, uint EndIndex, uint PointTypes)
 }
 
 internal uint
-FindPointAtPos(state *State, v2 P, uint PointStatus)
+FindPointAtPos(draw_state *State, v2 P, uint PointStatus)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
@@ -137,7 +144,7 @@ FindPointAtPos(state *State, v2 P, uint PointStatus)
 /// returns index of point (may be new or existing)
 // TODO: less definite name? ProposePoint, ConsiderNewPoint...?
 internal uint
-AddPoint(state *State, v2 P, uint PointTypes, u8 *PriorStatus)
+AddPoint(draw_state *State, v2 P, uint PointTypes, u8 *PriorStatus)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = FindPointAtPos(State, P, ~(uint)POINT_Free);
@@ -199,7 +206,7 @@ MatchingPointIndex(uint PointIndex)
 // TODO: add all intersections without recomputing line-circle
 /// returns number of intersections
 internal uint
-AddCircleIntersections(state *State, uint Point, f32 Radius, uint SkipIndex)
+AddCircleIntersections(draw_state *State, uint Point, f32 Radius, uint SkipIndex)
 {
 	uint Result = 0;
 	circle *Circles = State->Circles;
@@ -248,7 +255,7 @@ AddCircleIntersections(state *State, uint Point, f32 Radius, uint SkipIndex)
 
 /// returns number of intersections
 internal uint
-AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
+AddLineIntersections(draw_state *State, uint PointA, uint PointB, uint SkipIndex)
 {
 	uint Result = 0;
 	circle *Circles = State->Circles;
@@ -294,7 +301,7 @@ AddLineIntersections(state *State, uint PointA, uint PointB, uint SkipIndex)
 
 /// returns first point of the pair that make up the line
 internal uint
-AddLine(state *State, uint IndexA, uint IndexB)
+AddLine(draw_state *State, uint IndexA, uint IndexB)
 {
 	// TODO: could optimise out checking indices if already known (as optional params?)
 	uint Result = 0;
@@ -348,7 +355,7 @@ AddLine(state *State, uint IndexA, uint IndexB)
 }
 
 internal uint
-AddCircle(state *State, uint FocusIndex, f32 Radius)
+AddCircle(draw_state *State, uint FocusIndex, f32 Radius)
 {
 	uint Result = 0;
 	circle NewCircle;
@@ -378,7 +385,7 @@ AddCircle(state *State, uint FocusIndex, f32 Radius)
 }
 
 internal void
-InvalidateLinesAtPoint(state *State, uint PointIndex)
+InvalidateLinesAtPoint(draw_state *State, uint PointIndex)
 {
 	// TODO: invalidate both points or just one?
 	// TODO: do I want this here or in drawing/adding..?
@@ -393,7 +400,7 @@ InvalidateLinesAtPoint(state *State, uint PointIndex)
 }
 
 internal void
-InvalidateCirclesWithFocusAtPoint(state *State, uint PointIndex)
+InvalidateCirclesWithFocusAtPoint(draw_state *State, uint PointIndex)
 {
 	// TODO: invalidate both points or just one?
 	// TODO: do I want this here or in drawing/adding..?
@@ -407,7 +414,7 @@ InvalidateCirclesWithFocusAtPoint(state *State, uint PointIndex)
 }
 
 internal void
-InvalidatePoint(state *State, uint PointIndex)
+InvalidatePoint(draw_state *State, uint PointIndex)
 {
 	u8 Status = State->PointStatus[PointIndex];
 	if(Status & POINT_Line)
@@ -423,7 +430,7 @@ InvalidatePoint(state *State, uint PointIndex)
 
 /// returns number of points removed
 internal uint
-RemovePointsOfType(state *State, uint PointType)
+RemovePointsOfType(draw_state *State, uint PointType)
 {
 	uint Result = 0;
 	for(uint i = 1; i <= State->LastPoint; ++i)
@@ -442,6 +449,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
 	state *State = (state *)Memory->PermanentStorage;
+	draw_state *DrawState = &State->Draw[State->CurrentDrawState];
 	memory_arena Arena;
 	v2 Origin;
 	Origin.X = 0;
@@ -463,7 +471,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Memory->IsInitialized = 1;
 	}
 	Assert(State->OverflowTest == 0);
-	Assert(State->NumLinePoints % 2 == 0);
+	Assert(DrawState->NumLinePoints % 2 == 0);
 
 	// Clear BG
 	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
@@ -485,11 +493,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	f32 ClosestDistSq;
 	v2 SnapMouseP = Mouse.P;
 	v2 ClosestPoint = Mouse.P;
-	Closest = ClosestPointIndex(State, Mouse.P, &ClosestDistSq);
+	Closest = ClosestPointIndex(DrawState, Mouse.P, &ClosestDistSq);
 	uint SnapIndex = 0;
 	if(Closest)
 	{
-		ClosestPoint = State->Points[Closest];
+		ClosestPoint = DrawState->Points[Closest];
 		CircleLine(ScreenBuffer, ClosestPoint, 5.f, GREY);
 		if(ClosestDistSq < 5000.f)
 		{
@@ -522,25 +530,25 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			State->DragIndex = 0;
 			State->SelectIndex = 0;
 			// TODO: this breaks lines attached to intersections...
-			RemovePointsOfType(State, POINT_Intersection);
-			for(uint i = 1; i <= State->LastLinePoint; i+=2)
+			RemovePointsOfType(DrawState, POINT_Intersection);
+			for(uint i = 1; i <= DrawState->LastLinePoint; i+=2)
 			{
 				// TODO: this is wasteful
-				AddLineIntersections(State, State->LinePoints[i], i, 0);
+				AddLineIntersections(DrawState, DrawState->LinePoints[i], i, 0);
 			}
 		}
 
 		else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown)
 		{
 			// Cancel dragging, point returns to saved location
-			State->Points[State->DragIndex] = State->SavedPoint;
+			DrawState->Points[State->DragIndex] = State->SavedPoint;
 			State->DragIndex = 0;
 			State->SelectIndex = 0;
 		}
 
 		else
 		{
-			State->Points[State->DragIndex] = Mouse.P; // Update dragged point to mouse location
+			DrawState->Points[State->DragIndex] = Mouse.P; // Update dragged point to mouse location
 		}
 		// Snapping is off while dragging; TODO: maybe change this when points can be combined
 		SnapIndex = 0;
@@ -552,34 +560,52 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			// NOTE: completed line, set both points' status if line does not already exist
 			// and points aren't coincident
-			if(!V2WithinEpsilon(State->Points[State->SelectIndex], SnapMouseP, POINT_EPSILON))
+			if(!V2WithinEpsilon(DrawState->Points[State->SelectIndex], SnapMouseP, POINT_EPSILON))
 			{
 				// TODO: lines not adding properly..?
-				AddLine(State, State->SelectIndex, AddPoint(State, SnapMouseP, POINT_Line, 0));
+				AddLine(DrawState, State->SelectIndex, AddPoint(DrawState, SnapMouseP, POINT_Line, 0));
 			}
 			State->SelectIndex = 0;
 		}
 
 		else if(DEBUGClick(RMB))
 		{
-			AddCircle(State, State->SelectIndex, Dist(State->Points[State->SelectIndex], SnapMouseP));
+			AddCircle(DrawState, State->SelectIndex, Dist(DrawState->Points[State->SelectIndex], SnapMouseP));
 		}
 
 		else if(Keyboard.Esc.EndedDown)
 		{
 			// Cancel selection, point returns to saved location
-			State->PointStatus[State->SelectIndex] = State->SavedStatus;
+			DrawState->PointStatus[State->SelectIndex] = State->SavedStatus;
 			State->SelectIndex = 0;
 		}
 	}
 
 	else // normal state
 	{
+		if(Keyboard.Ctrl.EndedDown && DEBUGPress(Z))
+		{
+			if(State->CurrentDrawState < NUM_UNDO_STATES-1)
+			{
+				++State->CurrentDrawState;
+				DrawState = &State->Draw[State->CurrentDrawState];
+			}
+		}
+		if(Keyboard.Ctrl.EndedDown && DEBUGPress(Y) ||
+		  (Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Z)) )
+		{
+			if(State->CurrentDrawState > 0)
+			{
+				--State->CurrentDrawState;
+				DrawState = &State->Draw[State->CurrentDrawState];
+			}
+		}
+
 		if(DEBUGClick(LMB))
 		{
 			// NOTE: Starting a line, save the first point
 			/* State->SavedPoint = SnapMouseP; */
-			State->SelectIndex = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus);
+			State->SelectIndex = AddPoint(DrawState, SnapMouseP, POINT_Extant, &State->SavedStatus);
 		}
 
 		// TODO: could skip check and just write to invalid point..?
@@ -587,14 +613,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(DEBUGClick(RMB))
 			{
-				InvalidatePoint(State, SnapIndex);
+				InvalidatePoint(DrawState, SnapIndex);
 			}
 		}
 
 		if(DEBUGClick(MMB))
 		{
 		// Move point
-		/* State->SavedPoint = State->Points[SnapIndex]; */
+		/* State->SavedPoint = DrawState->Points[SnapIndex]; */
 			State->SelectIndex = SnapIndex;
 			State->DragIndex = SnapIndex;
 		} 
@@ -606,32 +632,32 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	// NOTE: only gets odd numbers if there's an unfinished point
-	uint NumLines = (State->LastLinePoint)/2; // completed lines ... 1?
-	v2 *Points = State->Points;
-	uint *LinePoints = State->LinePoints;
+	uint NumLines = (DrawState->LastLinePoint)/2; // completed lines ... 1?
+	v2 *Points = DrawState->Points;
+	uint *LinePoints = DrawState->LinePoints;
 
 #define LINE(lineI) Points[LinePoints[2*lineI-1]], Points[LinePoints[2*lineI]]
 	for(uint LineI = 1; LineI <= NumLines; ++LineI)
 	{
-		if((State->LinePoints[2*LineI-1] && State->LinePoints[2*LineI]))
+		if((DrawState->LinePoints[2*LineI-1] && DrawState->LinePoints[2*LineI]))
 		{
 			DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
 			DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
 		}
 
 	}
-	for(uint CircleI = 1; CircleI <= State->LastCircle; ++CircleI)
+	for(uint CircleI = 1; CircleI <= DrawState->LastCircle; ++CircleI)
 	{
-		circle Circle = State->Circles[CircleI];
+		circle Circle = DrawState->Circles[CircleI];
 		if(Circle.Focus)
 		{
-			CircleLine(ScreenBuffer, State->Points[Circle.Focus], Circle.Radius, BLACK);
+			CircleLine(ScreenBuffer, DrawState->Points[Circle.Focus], Circle.Radius, BLACK);
 		}
 	}
 
-	for(uint i = 1; i <= State->LastPoint; ++i)
+	for(uint i = 1; i <= DrawState->LastPoint; ++i)
 	{
-		if(State->PointStatus[i] != POINT_Free)
+		if(DrawState->PointStatus[i] != POINT_Free)
 		{
 			DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
 		}
@@ -640,11 +666,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	if(State->SelectIndex)
 	{
 		// NOTE: Mid-way through drawing a line
-		DrawCircleFill(ScreenBuffer, State->Points[State->SelectIndex], 3.f, RED);
-		CircleLine(ScreenBuffer, State->Points[State->SelectIndex], 5.f, RED);
-		CircleLine(ScreenBuffer, State->Points[State->SelectIndex],
-				Dist(State->Points[State->SelectIndex], SnapMouseP), LIGHT_GREY);
-		DEBUGDrawLine(ScreenBuffer, State->Points[State->SelectIndex], SnapMouseP, LIGHT_GREY);
+		DrawCircleFill(ScreenBuffer, DrawState->Points[State->SelectIndex], 3.f, RED);
+		CircleLine(ScreenBuffer, DrawState->Points[State->SelectIndex], 5.f, RED);
+		CircleLine(ScreenBuffer, DrawState->Points[State->SelectIndex],
+				Dist(DrawState->Points[State->SelectIndex], SnapMouseP), LIGHT_GREY);
+		DEBUGDrawLine(ScreenBuffer, DrawState->Points[State->SelectIndex], SnapMouseP, LIGHT_GREY);
 		if(DEBUGClick(RMB))
 		{
 			State->SelectIndex = 0;
@@ -657,30 +683,32 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		DrawPoint(ScreenBuffer, ClosestPoint, 1, BLUE);
 	}
 
-	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
+//	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
+
+	// TODO: Highlight status for currently selected/hovered points
 
 	char Message[512];
 	f32 TextSize = 15.f;
-	stbsp_sprintf(Message, "LinePoints: %u, TypeLine: %u, Esc Down: %u"
-				"\nFrame time: %.2f, (%.2f, %.2f)",
-				State->NumLinePoints,
-				NumPointsOfType(State->PointStatus, State->LastPoint, POINT_Line),
-				Keyboard.Esc.EndedDown,
+	stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
+				"\nFrame time: %.2fms, Mouse: (%.2f, %.2f), Undo Number: %u, Num undo states: %u",
+				/* State->NumLinePoints, */
+				/* NumPointsOfType(DrawState->PointStatus, DrawState->LastPoint, POINT_Line), */
+				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
-				State->dt*1000.f, Mouse.P.X, Mouse.P.Y);
+				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, State->CurrentDrawState, State->NumDrawStates);
 	DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
 	char LinePointInfo[512];
 	stbsp_sprintf(LinePointInfo, "L#  P#\n\n");
-	for(uint i = 1; i <= State->NumLinePoints && i <= 32; ++i)
+	for(uint i = 1; i <= DrawState->NumLinePoints && i <= 32; ++i)
 	{
-		stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, State->LinePoints[i]);
+		stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, DrawState->LinePoints[i]);
 	}
 	char PointInfo[512];
 	stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
-	for(uint i = 1; i <= State->NumPoints && i <= 32; ++i)
+	for(uint i = 1; i <= DrawState->NumPoints && i <= 32; ++i)
 	{
-		stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, State->PointStatus[i]);
+		stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, DrawState->PointStatus[i]);
 	}
 	TextSize = 13.f;
 	DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,

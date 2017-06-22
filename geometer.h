@@ -169,19 +169,8 @@ typedef enum
 	POINT_Dist         = (1 << 7), 
 } PointFlags;
 
-typedef struct state
+typedef struct draw_state
 {
-	u64 FrameCount;
-	f32 dt;
-	font DefaultFont;
-	b32 CloseApp;
-
-	uint DragIndex; // TODO: consolidate into SelectIndex
-	uint SelectIndex;
-	v2 SavedPoint;
-	/* b32 MidEdit; */
-	b32 PointSnap;
-
 	uint LastPoint;
 	uint NumPoints;
 	uint LastLinePoint;
@@ -195,6 +184,26 @@ typedef struct state
 	circle Circles[NUM_POINTS];
 	v2 Points[NUM_POINTS];
 	u8 PointStatus[NUM_POINTS];
+} draw_state;
+
+typedef struct state
+{
+#define NUM_UNDO_STATES 16
+	uint CurrentDrawState;
+	uint NumDrawStates;
+	draw_state Draw[NUM_UNDO_STATES];
+		
+	u64 FrameCount;
+	f32 dt;
+	font DefaultFont;
+	b32 CloseApp;
+
+	uint DragIndex; // TODO: consolidate into SelectIndex
+	uint SelectIndex;
+	v2 SavedPoint;
+	/* b32 MidEdit; */
+	b32 PointSnap;
+
 	u8 SavedStatus;
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
