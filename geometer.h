@@ -191,6 +191,7 @@ typedef struct state
 #define NUM_UNDO_STATES 16
 	uint CurrentDrawState;
 	uint NumDrawStates;
+	// TODO: uint StateWhenSaved;
 	draw_state Draw[NUM_UNDO_STATES];
 		
 	u64 FrameCount;
@@ -212,6 +213,10 @@ typedef struct state
 #define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 
 DECLARE_DEBUG_FUNCTION;
+
+#define TEST_INPUT() DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, RED)
+#define TEST_INPUT2() DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, GREEN)
+#define TEST_INPUT3() DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, BLUE)
 
 #define GEOMETER_H
 #endif
