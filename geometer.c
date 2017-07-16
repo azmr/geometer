@@ -112,6 +112,7 @@ ResetPoints(state *State)
 	Draw->NumArcs	    = 0;
 
 	State->SelectIndex  = 0;
+	State->ArcStartIndex  = 0;
 	END_TIMED_BLOCK;
 }
 
@@ -215,49 +216,92 @@ MatchingPointIndex(uint PointIndex)
 	return Result;
 }
 
+internal inline void
+AddIntersections(draw_state *State, v2 P1, v2 P2, uint NumIntersections)
+{
+	if(NumIntersections == 1)
+	{
+		AddPoint(State, P1, POINT_Intersection, 0);
+	}
+	else if(NumIntersections == 2)
+	{
+		AddPoint(State, P1, POINT_Intersection, 0);
+		AddPoint(State, P2, POINT_Intersection, 0);
+	}
+}
+
+internal inline f32
+ArcRadius(v2 *Points, arc Arc)
+{
+	f32 Result = Dist(Points[Arc.Focus], Points[Arc.Start]);
+	return Result;
+}
+
+internal inline uint
+IntersectPointsSegmentArc(v2 *Points, v2 P, v2 Dir, arc Arc, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 Radius = ArcRadius(Points, Arc);
+	v2 Start = V2Sub(Points[Arc.Start], Points[Arc.Focus]);
+	v2 End = V2Sub(Points[Arc.End], Points[Arc.Focus]);
+	return IntersectSegmentArc(P, Dir, Points[Arc.Focus], Radius, Start, End, Intersection1, Intersection2);
+}
+
+internal inline uint
+IntersectPointsCircleArc(v2 *Points, v2 Focus, f32 Radius, arc Arc, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 ArcRad = ArcRadius(Points, Arc);
+	v2 Start = V2Sub(Points[Arc.Start], Points[Arc.Focus]);
+	v2 End = V2Sub(Points[Arc.End], Points[Arc.Focus]);
+	return IntersectCircleArc(Focus, Radius, Points[Arc.Focus], ArcRad, Start, End, Intersection1, Intersection2);
+}
+
+internal inline uint
+IntersectPointsArcs(v2 *Points, arc Arc1, arc Arc2, v2 *Intersection1, v2 *Intersection2)
+{
+	f32 R1 = ArcRadius(Points, Arc1);
+	f32 R2 = ArcRadius(Points, Arc2);
+	v2 Start1 = V2Sub(Points[Arc1.Start], Points[Arc1.Focus]);
+	v2 End1 = V2Sub(Points[Arc1.End], Points[Arc1.Focus]);
+	v2 Start2 = V2Sub(Points[Arc2.Start], Points[Arc2.Focus]);
+	v2 End2 = V2Sub(Points[Arc2.End], Points[Arc2.Focus]);
+	return IntersectArcs(Points[Arc1.Focus], R1, Start1, End1, Points[Arc2.Focus], R2, Start2, End2, Intersection1, Intersection2);
+}
+
 // TODO: add all intersections without recomputing line-circle
 /// returns number of intersections
 internal uint
 AddCircleIntersections(draw_state *State, uint Point, f32 Radius, uint SkipIndex)
 {
-	uint Result = 0;
+	uint Result = 0, NumIntersections = 0;
 	circle *Circles = State->Circles;
+	arc *Arcs = State->Arcs;
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
+	v2 P1, P2;
 
 	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
 	{
 		if(CircleIndex == SkipIndex) continue;
-		v2 P1, P2;
-		uint NumIntersections = IntersectCircles(Points[Point], Radius,
+		NumIntersections = IntersectCircles(Points[Point], Radius,
 				Points[Circles[CircleIndex].Focus], Circles[CircleIndex].Radius, &P1, &P2);
 		Result += NumIntersections;
-		if(NumIntersections == 1)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-		}
-		else if(NumIntersections == 2)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-			AddPoint(State, P2, POINT_Intersection, 0);
-		}
+		AddIntersections(State, P1, P2, NumIntersections);
+	}
+
+	for(uint ArcIndex = 1; ArcIndex <= State->LastArc; ++ArcIndex)
+	{
+		NumIntersections = IntersectPointsCircleArc(Points, Points[Point], Radius, Arcs[ArcIndex],	&P1, &P2);
+		Result += NumIntersections;
+		AddIntersections(State, P1, P2, NumIntersections);
 	}
 
 	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
 	{
-		v2 P1 = Points[LinePoints[LineIndex]];
-		v2 P2 = Points[LinePoints[LineIndex+1]];
-		uint NumIntersections = IntersectSegmentCircle(P1, V2Sub(P2, P1), Points[Point], Radius, &P1, &P2);
+		P1 = Points[LinePoints[LineIndex]];
+		P2 = Points[LinePoints[LineIndex+1]];
+		NumIntersections = IntersectSegmentCircle(P1, V2Sub(P2, P1), Points[Point], Radius, &P1, &P2);
 		Result += NumIntersections;
-		if(NumIntersections == 1)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-		}
-		else if(NumIntersections == 2)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-			AddPoint(State, P2, POINT_Intersection, 0);
-		}
+		AddIntersections(State, P1, P2, NumIntersections);
 	}
 
 	return Result;
@@ -266,17 +310,51 @@ AddCircleIntersections(draw_state *State, uint Point, f32 Radius, uint SkipIndex
 internal uint
 AddArcIntersections(draw_state *State, arc Arc, uint SkipIndex)
 {
-	return AddCircleIntersections(State, Arc.Focus, Len(State->Points[Arc.Start]), SkipIndex);
+	uint Result = 0, NumIntersections = 0;
+	circle *Circles = State->Circles;
+	arc *Arcs = State->Arcs;
+	v2 *Points = State->Points;
+	uint *LinePoints = State->LinePoints;
+	v2 P1, P2;
+
+	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
+	{
+		NumIntersections = IntersectPointsCircleArc(Points, Points[Circles[CircleIndex].Focus], Circles[CircleIndex].Radius,
+				Arc, &P1, &P2);
+		Result += NumIntersections;
+		AddIntersections(State, P1, P2, NumIntersections);
+	}
+
+	for(uint ArcIndex = 1; ArcIndex <= State->LastArc; ++ArcIndex)
+	{
+		if(ArcIndex == SkipIndex) continue;
+		NumIntersections = IntersectPointsArcs(Points, Arc, Arcs[ArcIndex], &P1, &P2);
+		Result += NumIntersections;
+		AddIntersections(State, P1, P2, NumIntersections);
+	}
+
+	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
+	{
+		P1 = Points[LinePoints[LineIndex]];
+		P2 = Points[LinePoints[LineIndex+1]];
+		NumIntersections = IntersectPointsSegmentArc(Points, P1, V2Sub(P2, P1), Arc, &P1, &P2);
+		Result += NumIntersections;
+		AddIntersections(State, P1, P2, NumIntersections);
+	}
+
+	return Result;
 }
 
 /// returns number of intersections
 internal uint
 AddLineIntersections(draw_state *State, uint PointA, uint PointB, uint SkipIndex)
 {
-	uint Result = 0;
+	uint Result = 0, NumIntersections = 0;
 	circle *Circles = State->Circles;
+	arc *Arcs = State->Arcs;
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
+	v2 P1, P2;
 
 	for(uint LineIndex = 1; LineIndex <= State->LastLinePoint; LineIndex+=2)
 	{
@@ -294,22 +372,21 @@ AddLineIntersections(draw_state *State, uint PointA, uint PointB, uint SkipIndex
 		}
 		// TODO: use segments rather than lines
 	}
+
+	for(uint ArcIndex = 1; ArcIndex <= State->LastArc; ++ArcIndex)
+	{
+		NumIntersections = IntersectPointsSegmentArc(Points, Points[PointA], V2Sub(Points[PointB], Points[PointA]), 
+				Arcs[ArcIndex], &P1, &P2);
+		Result += NumIntersections;
+		AddIntersections(State, P1, P2, NumIntersections);
+	}
+
 	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
 	{
-		v2 P1, P2;
-		uint NumIntersections = IntersectSegmentCircle(Points[PointA], V2Sub(Points[PointB], Points[PointA]),
+		NumIntersections = IntersectSegmentCircle(Points[PointA], V2Sub(Points[PointB], Points[PointA]),
 				Points[Circles[CircleIndex].Focus], Circles[CircleIndex].Radius, &P1, &P2);
 		Result += NumIntersections;
-		if(NumIntersections == 1)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-		}
-		else if(NumIntersections == 2)
-		{
-			AddPoint(State, P1, POINT_Intersection, 0);
-			AddPoint(State, P2, POINT_Intersection, 0);
-		}
-		
+		AddIntersections(State, P1, P2, NumIntersections);
 	}
 
 	return Result;
@@ -708,7 +785,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			else if(DEBUGPress(Mouse.Buttons[RMB]))
 			{
-				// RETURN HERE
+				// TODO: stop snapping onto focus
 				State->ArcStartIndex = AddPoint(&DRAW_STATE, SnapMouseP, POINT_Arc, 0);
 			}
 		}
