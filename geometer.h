@@ -1,7 +1,22 @@
 #ifndef GEOMETER_H
 #include <types.h>
+
+typedef struct debug_text
+{
+#define DEBUG_TEXT_SIZE 8192
+	uint Length;
+	char Text[DEBUG_TEXT_SIZE];
+} debug_text;
+static debug_text DebugText;
+#define DebugAdd(txt, ...) DebugText.Length += stbsp_snprintf(DebugText.Text, DEBUG_TEXT_SIZE, "%s"txt, DebugText.Text, __VA_ARGS__)
+#define DebugClear() if(DebugText.Length > DEBUG_TEXT_SIZE) DebugText.Length = DEBUG_TEXT_SIZE;\
+					 for(unsigned int i = 0; i < DebugText.Length; ++i)  DebugText.Text[i] = 0
+#define DebugReplace(txt, ...) DebugClear(); DebugAdd(txt, __VA_ARGS__)
+
+#include <stb_sprintf.h>
 #include <maths.h>
 #include <intrinsics.h>
+#define LOGGING 1
 #include <debug.h>
 #include <geometry.h>
 #include <platform.h>
@@ -9,7 +24,6 @@
 #include <gfx.h>
 #include <fonts.h>
 #include <input.h>
-#include <stb_sprintf.h>
 
 #define POINT_EPSILON 0.02f
 
@@ -26,6 +40,25 @@ typedef struct circle
 	uint Focus;
 	f32 Radius;
 } circle;
+
+typedef struct arc
+{
+	uint Focus;
+	uint Start;
+	uint End;
+} arc;
+
+typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
+typedef struct debug
+{
+	image_buffer *Buffer;
+	drawstring *Print;
+	font Font;
+	v2 P;
+	f32 FontSize;
+} debug;
+global_variable debug Debug;
+#define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
 /// expects d to be normalised
 internal uint
@@ -165,9 +198,10 @@ typedef enum
 	POINT_Focus        = (1 << 3),
 	POINT_Text         = (1 << 4),
 	POINT_Radius       = (1 << 5), // maybe POINT_Dist | POINT_Arc ?
+	// POINT_Dir
 	POINT_Arc          = (1 << 6),
 	POINT_Dist         = (1 << 7), 
-} PointFlags;
+} point_flags;
 
 typedef struct draw_state
 {
@@ -177,11 +211,15 @@ typedef struct draw_state
 	uint NumLinePoints;
 	uint LastCircle;
 	uint NumCircles;
+	// TODO: should circles and arcs be consolidated?
+	uint LastArc;
+	uint NumArcs;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
 	uint LinePoints[NUM_POINTS*2];
 	circle Circles[NUM_POINTS];
+	arc Arcs[NUM_POINTS];
 	v2 Points[NUM_POINTS];
 	u8 PointStatus[NUM_POINTS];
 } draw_state;
@@ -199,13 +237,14 @@ typedef struct state
 	font DefaultFont;
 	b32 CloseApp;
 
+	// v2 Basis;
 	uint DragIndex; // TODO: consolidate into SelectIndex
 	uint SelectIndex;
+	uint ArcStartIndex;
 	v2 SavedPoint;
-	/* b32 MidEdit; */
 	b32 PointSnap;
 
-	u8 SavedStatus;
+	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;

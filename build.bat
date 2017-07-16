@@ -1,6 +1,6 @@
  @echo off
  
- set CommonCompilerFlags=-nologo -MTd -fp:fast -Gm- -GR- -EHa -WX -Oi -W4 -FC -wd4201 -wd4204 -IE:\Documents\Coding\C\h -DINTERNAL=1 -DDEBUG_PREFIX=Main
+ set CommonCompilerFlags=-nologo -MTd -fp:fast -Gm- -GR- -EHa -WX -Oi -W4 -FC -wd4010 -wd4201 -wd4204 -IE:\Documents\Coding\C\h -DINTERNAL=1 -DDEBUG_PREFIX=Main
  set DebugCompilerFlags=-Od -Z7
  set CommonLinkerFlags=-incremental:no -opt:ref user32.lib gdi32.lib winmm.lib
  REM user32.lib gdi32.lib

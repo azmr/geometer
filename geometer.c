@@ -25,13 +25,17 @@
 // - Find (and colour) lines intersecting at a given point
 // - Bases and canvas movement
 // - Arcs (not just full circles)
-// - Undo states
-//  	- save to disk for lots of them? (temporary?)
+// - Unlimited undo states
+//  	- save to disk for lots of them? (temporary/pich up undos on load?)
+//  	- undo history (show overall/with layers)
+//  	- undo by absolute and layer order
 // - Change storage of intersections, so they don't all need to be recomputed on changes
 // - Spatially partition(?) shapes
 // - Set lengths on other lines (modulus?)
 //  	- autoset to size just made for easy repeats
-// - Togglable layers
+// - Togglable layers (should points be separate from layers, but have status set per layer?)
+// - For fast movements, make sweep effect, rather than ugly multiple line effect 
+// - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
 
 #define DRAW_STATE State->Draw[State->CurrentDrawState]
 
@@ -100,9 +104,12 @@ ResetPoints(state *State)
 	Draw->LastPoint     = 0;
 	Draw->LastLinePoint = 0;
 	Draw->LastCircle    = 0;
+	Draw->LastArc	    = 0;
+
 	Draw->NumPoints     = 0;
 	Draw->NumLinePoints = 0;
 	Draw->NumCircles    = 0;
+	Draw->NumArcs	    = 0;
 
 	State->SelectIndex  = 0;
 	END_TIMED_BLOCK;
@@ -185,6 +192,8 @@ AddPoint(draw_state *State, v2 P, uint PointTypes, u8 *PriorStatus)
 		State->PointStatus[Result] |= PointTypes | POINT_Extant;
 	}
 
+	DebugReplace("AddPoint => %u\n", Result);
+
 	END_TIMED_BLOCK;
 	return Result;
 }
@@ -252,6 +261,12 @@ AddCircleIntersections(draw_state *State, uint Point, f32 Radius, uint SkipIndex
 	}
 
 	return Result;
+}
+
+internal uint
+AddArcIntersections(draw_state *State, arc Arc, uint SkipIndex)
+{
+	return AddCircleIntersections(State, Arc.Focus, Len(State->Points[Arc.Start]), SkipIndex);
 }
 
 /// returns number of intersections
@@ -352,6 +367,42 @@ AddLine(draw_state *State, uint IndexA, uint IndexB)
 	State->PointStatus[IndexA] |= POINT_Line;
 	State->PointStatus[IndexB] |= POINT_Line;
 
+	DebugReplace("AddLine => %d", Result);
+	return Result;
+}
+
+internal uint
+AddArc(draw_state *State, uint FocusIndex, uint ArcStartIndex, uint ArcEndIndex)
+{
+	uint Result = 0;
+	arc NewArc;
+	NewArc.Focus = FocusIndex;
+	NewArc.Start = ArcStartIndex;
+	NewArc.End   = ArcEndIndex;
+	State->PointStatus[FocusIndex]    |= POINT_Focus;
+	State->PointStatus[ArcStartIndex] |= POINT_Arc;
+	State->PointStatus[ArcEndIndex]   |= POINT_Arc;
+
+	// Ensure it's not a duplicate
+	b32 ExistingArc = 0;
+	for(uint ArcIndex = 1; ArcIndex <= State->LastArc; ++ArcIndex)
+	{
+		arc TestArc = State->Arcs[ArcIndex];
+		if(TestArc.Focus == FocusIndex && TestArc.Start == ArcStartIndex && TestArc.End == ArcEndIndex)
+		{
+			ExistingArc = 1;
+			break;
+		}
+	}
+
+	if(!ExistingArc)
+	{
+		Result = ++State->LastArc;
+		State->Arcs[Result] = NewArc;
+		++State->NumArcs;
+		AddArcIntersections(State, NewArc, State->LastArc);
+	}
+
 	return Result;
 }
 
@@ -364,6 +415,7 @@ AddCircle(draw_state *State, uint FocusIndex, f32 Radius)
 	NewCircle.Radius = Radius;
 	State->PointStatus[FocusIndex] |= POINT_Focus;
 
+	// Ensure it's not a duplicate
 	b32 ExistingCircle = 0;
 	for(uint CircleIndex = 1; CircleIndex <= State->LastCircle; ++CircleIndex)
 	{
@@ -377,7 +429,8 @@ AddCircle(draw_state *State, uint FocusIndex, f32 Radius)
 
 	if(!ExistingCircle)
 	{
-		State->Circles[++State->LastCircle] = NewCircle;
+		Result = ++State->LastCircle;
+		State->Circles[Result] = NewCircle;
 		++State->NumCircles;
 		AddCircleIntersections(State, NewCircle.Focus, NewCircle.Radius, State->LastCircle);
 	}
@@ -471,10 +524,24 @@ SaveUndoState(state *State)
 	State->NumDrawStates = State->CurrentDrawState;
 }
 
+internal inline void
+ArcFromPoints(image_buffer *Buffer, v2 Centre, v2 A, v2 B, colour Colour)
+{
+	ArcLine(Buffer, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
+}
+
+internal inline b32
+SameAngle(v2 A, v2 B)
+{
+	b32 Result = WithinEpsilon(Dot(A, B), 1.f, POINT_EPSILON);
+	return Result;
+}
+
 // TODO: implement undo/redo
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
+	OPEN_LOG("geometer_log.txt");
 	state *State = (state *)Memory->PermanentStorage;
 	memory_arena Arena;
 	v2 Origin;
@@ -496,252 +563,326 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		Memory->IsInitialized = 1;
 	}
+	{ // DEBUG
+		Debug.Buffer = ScreenBuffer;
+		Debug.Print = DrawString;
+		Debug.Font = State->DefaultFont;
+		Debug.FontSize = 11.f;
+		Debug.P = V2(2.f, ScreenSize.Y-(2.f*Debug.FontSize));
+	}
 	Assert(State->OverflowTest == 0);
 	Assert(DRAW_STATE.NumLinePoints % 2 == 0);
 
 	// Clear BG
 	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
 
-	keyboard_state Keyboard = Input.New->Keyboard;
-	// TODO: move out of screen space
-	mouse_state Mouse = Input.New->Mouse;
+	keyboard_state Keyboard;
+	mouse_state Mouse;
+	v2 SnapMouseP, ClosestPoint;
+	uint SnapIndex;
+	{ LOG("INPUT");
+		Keyboard = Input.New->Keyboard;
+		// TODO: move out of screen space
+		Mouse = Input.New->Mouse;
 
-	if(Held(Keyboard.Shift)) // 'S' on this computer
-	{
-		State->PointSnap = 0;
-	}
-	else
-	{
-		State->PointSnap = 1;
-	}
-
-	uint Closest = 0;
-	f32 ClosestDistSq;
-	v2 SnapMouseP = Mouse.P;
-	v2 ClosestPoint = Mouse.P;
-	Closest = ClosestPointIndex(&DRAW_STATE, Mouse.P, &ClosestDistSq);
-	uint SnapIndex = 0;
-	if(Closest)
-	{
-		ClosestPoint = DRAW_STATE.Points[Closest];
-		CircleLine(ScreenBuffer, ClosestPoint, 5.f, GREY);
-		if(ClosestDistSq < 5000.f)
+		if(Held(Keyboard.Shift))
 		{
-			DrawCircleFill(ScreenBuffer, ClosestPoint, 3.f, BLUE);
-			// TODO: change to shift
-			if(State->PointSnap)
-			{
-				SnapMouseP = ClosestPoint;
-				SnapIndex = Closest;
-			}
-
+			State->PointSnap = 0;
 		}
-	}
-	else
-	{
-		// TODO: ???
-	}
-
-	// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
-#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
-		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
-#define DEBUGPress(button) (Input.Old->Keyboard.button.EndedDown && !Input.New->Keyboard.button.EndedDown)
-
-	// TODO: Do I actually want to be able to drag points?
-	if(State->DragIndex)
-	{
-		if(DEBUGClick(LMB))
-		{
-			SaveUndoState(State);
-			// Set point to mouse location and recompute intersections
-			State->DragIndex = 0;
-			State->SelectIndex = 0;
-			// TODO: this breaks lines attached to intersections...
-			RemovePointsOfType(&DRAW_STATE, POINT_Intersection);
-			for(uint i = 1; i <= DRAW_STATE.LastLinePoint; i+=2)
-			{
-				// TODO: this is wasteful
-				AddLineIntersections(&DRAW_STATE, DRAW_STATE.LinePoints[i], i, 0);
-			}
-		}
-
-		else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown)
-		{
-			// Cancel dragging, point returns to saved location
-			DRAW_STATE.Points[State->DragIndex] = State->SavedPoint;
-			State->DragIndex = 0;
-			State->SelectIndex = 0;
-		}
-
 		else
 		{
-			DRAW_STATE.Points[State->DragIndex] = Mouse.P; // Update dragged point to mouse location
+			State->PointSnap = 1;
 		}
-		// Snapping is off while dragging; TODO: maybe change this when points can be combined
+
+		uint Closest = 0;
+		f32 ClosestDistSq;
+		SnapMouseP = Mouse.P;
+		ClosestPoint = Mouse.P;
+		Closest = ClosestPointIndex(&DRAW_STATE, Mouse.P, &ClosestDistSq);
 		SnapIndex = 0;
-	}
-	
-	else if(State->SelectIndex)
-	{
-		if(DEBUGClick(LMB))
+		if(Closest)
 		{
-			// NOTE: completed line, set both points' status if line does not already exist
-			// and points aren't coincident
-			if(!V2WithinEpsilon(DRAW_STATE.Points[State->SelectIndex], SnapMouseP, POINT_EPSILON))
+			ClosestPoint = DRAW_STATE.Points[Closest];
+			CircleLine(ScreenBuffer, ClosestPoint, 5.f, GREY);
+			if(ClosestDistSq < 5000.f)
 			{
-				// TODO: lines not adding properly..?
-				AddLine(&DRAW_STATE, State->SelectIndex, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Line, 0));
+				DrawCircleFill(ScreenBuffer, ClosestPoint, 3.f, BLUE);
+				// TODO: change to shift
+				if(State->PointSnap)
+				{
+					SnapMouseP = ClosestPoint;
+					SnapIndex = Closest;
+				}
+
 			}
-			State->SelectIndex = 0;
+		}
+		else
+		{
+			// TODO: ???
 		}
 
-		else if(DEBUGClick(RMB))
-		{
-			AddCircle(&DRAW_STATE, State->SelectIndex, Dist(DRAW_STATE.Points[State->SelectIndex], SnapMouseP));
-		}
+		// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
+#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
+		Input.Old->Mouse.Buttons[button].EndedDown && !Input.New->Mouse.Buttons[button].EndedDown)
+#define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)
+#define DEBUGPress(button)   (!Input.Old->button.EndedDown && Input.New->button.EndedDown)
 
-		else if(Keyboard.Esc.EndedDown)
+		// TODO: Do I actually want to be able to drag points?
+		if(State->DragIndex)
 		{
-			// Cancel selection, point returns to saved location
-			DRAW_STATE.PointStatus[State->SelectIndex] = State->SavedStatus;
-			State->SelectIndex = 0;
-			--State->CurrentDrawState;
-		}
-	}
-
-	else // normal state
-	{
-		// UNDO
-		if(Keyboard.Ctrl.EndedDown && DEBUGPress(Z) && !Keyboard.Shift.EndedDown)
-		{
-			if(State->CurrentDrawState > 0)  --State->CurrentDrawState;
-		}
-		// REDO
-		if((Keyboard.Ctrl.EndedDown && DEBUGPress(Y)) ||
-		   (Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Z)) )
-		{
-			if(State->CurrentDrawState < State->NumDrawStates)  ++State->CurrentDrawState;
-		}
-
-		if(DEBUGClick(LMB))
-		{
-			// NOTE: Starting a line, save the first point
-			/* State->SavedPoint = SnapMouseP; */
-			SaveUndoState(State);
-			State->SelectIndex = AddPoint(&DRAW_STATE, SnapMouseP, POINT_Extant, &State->SavedStatus);
-		}
-
-		// TODO: could skip check and just write to invalid point..?
-		if(SnapIndex) // point snapped to
-		{
-			if(DEBUGClick(RMB))
+			if(DEBUGClick(LMB))
 			{
 				SaveUndoState(State);
-				InvalidatePoint(&DRAW_STATE, SnapIndex);
+				// Set point to mouse location and recompute intersections
+				State->DragIndex = 0;
+				State->SelectIndex = 0;
+				// TODO: this breaks lines attached to intersections...
+				RemovePointsOfType(&DRAW_STATE, POINT_Intersection);
+				for(uint i = 1; i <= DRAW_STATE.LastLinePoint; i+=2)
+				{
+					// TODO: this is wasteful
+					AddLineIntersections(&DRAW_STATE, DRAW_STATE.LinePoints[i], i, 0);
+				}
+			}
+
+			else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown)
+			{
+				// Cancel dragging, point returns to saved location
+				DRAW_STATE.Points[State->DragIndex] = State->SavedPoint;
+				State->DragIndex = 0;
+				State->SelectIndex = 0;
+			}
+
+			else
+			{
+				DRAW_STATE.Points[State->DragIndex] = Mouse.P; // Update dragged point to mouse location
+			}
+			// Snapping is off while dragging; TODO: maybe change this when points can be combined
+			SnapIndex = 0;
+		}
+
+		else if(State->SelectIndex)
+		{
+			if(Keyboard.Esc.EndedDown)
+			{
+				// Cancel selection, point returns to saved location
+				DRAW_STATE.PointStatus[State->SelectIndex] = State->SavedStatus[0];
+				DRAW_STATE.PointStatus[State->ArcStartIndex] = State->SavedStatus[1];
+				State->SelectIndex = 0;
+				State->ArcStartIndex = 0;
+				--State->CurrentDrawState;
+			}
+
+			else if(State->ArcStartIndex)
+			{
+				if(!Mouse.Buttons[RMB].EndedDown)
+				{
+					if(V2Equals(SnapMouseP, DRAW_STATE.Points[State->ArcStartIndex])) // Same angle -> full circle // TODO: is this the right epsilon?
+					{
+						AddCircle(&DRAW_STATE, State->SelectIndex, Dist(DRAW_STATE.Points[State->SelectIndex], SnapMouseP));
+					}
+					else
+					{
+						v2 FocusPoint = DRAW_STATE.Points[State->SelectIndex];
+						v2 StartPoint = DRAW_STATE.Points[State->ArcStartIndex];
+						v2 EndPoint = V2Add(FocusPoint, V2WithLength(V2Sub(SnapMouseP, FocusPoint), Dist(FocusPoint, StartPoint))); // Attached to arc
+						uint ArcEndIndex = AddPoint(&DRAW_STATE, EndPoint, POINT_Arc, 0);
+						AddArc(&DRAW_STATE, State->SelectIndex, State->ArcStartIndex, ArcEndIndex);
+					}
+					State->SelectIndex = 0;
+					State->ArcStartIndex = 0;
+				}
+			}
+
+			else if(DEBUGClick(LMB))
+			{
+				// NOTE: completed line, set both points' status if line does not already exist
+				// and points aren't coincident
+				if(!V2WithinEpsilon(DRAW_STATE.Points[State->SelectIndex], SnapMouseP, POINT_EPSILON))
+				{
+					// TODO: lines not adding properly..?
+					AddLine(&DRAW_STATE, State->SelectIndex, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Line, 0));
+				}
+				State->SelectIndex = 0;
+			}
+
+			else if(DEBUGPress(Mouse.Buttons[RMB]))
+			{
+				// RETURN HERE
+				State->ArcStartIndex = AddPoint(&DRAW_STATE, SnapMouseP, POINT_Arc, 0);
 			}
 		}
 
-		if(DEBUGClick(MMB))
+		else // normal state
 		{
-		// MOVE POINT
-			SaveUndoState(State);
-		/* State->SavedPoint = DRAW_STATE.Points[SnapIndex]; */
-			State->SelectIndex = SnapIndex;
-			State->DragIndex = SnapIndex;
-		} 
+			// UNDO
+			if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown)
+			{
+				if(State->CurrentDrawState > 0)  --State->CurrentDrawState;
+			}
+			// REDO
+			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Y)) ||
+					(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGRelease(Keyboard.Z)) )
+			{
+				if(State->CurrentDrawState < State->NumDrawStates)  ++State->CurrentDrawState;
+			}
 
-		if(DEBUGPress(Backspace))
-		{
-			SaveUndoState(State);
-			ResetPoints(State);
+			if(DEBUGClick(LMB))
+			{
+				// NOTE: Starting a line, save the first point
+				/* State->SavedPoint = SnapMouseP; */
+				SaveUndoState(State);
+				State->SelectIndex = AddPoint(&DRAW_STATE, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
+			}
+
+			// TODO: could skip check and just write to invalid point..?
+			if(SnapIndex) // point snapped to
+			{
+				if(DEBUGClick(RMB))
+				{
+					SaveUndoState(State);
+					InvalidatePoint(&DRAW_STATE, SnapIndex);
+				}
+			}
+
+			if(DEBUGClick(MMB))
+			{
+				// MOVE POINT
+				SaveUndoState(State);
+				/* State->SavedPoint = DRAW_STATE.Points[SnapIndex]; */
+				State->SelectIndex = SnapIndex;
+				State->DragIndex = SnapIndex;
+			} 
+
+			if(DEBUGRelease(Keyboard.Backspace))
+			{
+				SaveUndoState(State);
+				ResetPoints(State);
+				DebugClear();
+			}
 		}
 	}
 
-	// NOTE: only gets odd numbers if there's an unfinished point
-	uint NumLines = (DRAW_STATE.LastLinePoint)/2; // completed lines ... 1?
-	v2 *Points = DRAW_STATE.Points;
-	uint *LinePoints = DRAW_STATE.LinePoints;
+	{ LOG("RENDER");
+		// NOTE: only gets odd numbers if there's an unfinished point
+		uint NumLines = (DRAW_STATE.LastLinePoint)/2; // completed lines ... 1?
+		v2 *Points = DRAW_STATE.Points;
+		uint *LinePoints = DRAW_STATE.LinePoints;
 
 #define LINE(lineI) Points[LinePoints[2*lineI-1]], Points[LinePoints[2*lineI]]
-	// NOTE: should be unchanged after this point in the frame
-	for(uint LineI = 1; LineI <= NumLines; ++LineI)
-	{
-		if((DRAW_STATE.LinePoints[2*LineI-1] && DRAW_STATE.LinePoints[2*LineI]))
+		// NOTE: should be unchanged after this point in the frame
+		LOG("\tDRAW LINES");
+		for(uint LineI = 1; LineI <= NumLines; ++LineI)
 		{
-			DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
-			DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
+			if((DRAW_STATE.LinePoints[2*LineI-1] && DRAW_STATE.LinePoints[2*LineI]))
+			{
+				DEBUGDrawLine(ScreenBuffer, LINE(LineI), BLACK);
+				DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, LINE(LineI));
+			}
 		}
 
-	}
-	for(uint CircleI = 1; CircleI <= DRAW_STATE.LastCircle; ++CircleI)
-	{
-		circle Circle = DRAW_STATE.Circles[CircleI];
-		if(Circle.Focus)
+		LOG("\tDRAW CIRCLES");
+		for(uint CircleI = 1; CircleI <= DRAW_STATE.LastCircle; ++CircleI)
 		{
-			CircleLine(ScreenBuffer, DRAW_STATE.Points[Circle.Focus], Circle.Radius, BLACK);
+			circle Circle = DRAW_STATE.Circles[CircleI];
+			if(Circle.Focus)
+			{
+				CircleLine(ScreenBuffer, DRAW_STATE.Points[Circle.Focus], Circle.Radius, BLACK);
+			}
+		}
+
+ 		LOG("\tDRAW ARCS");
+		for(uint ArcI = 1; ArcI <= DRAW_STATE.LastArc; ++ArcI)
+		{
+			arc Arc = DRAW_STATE.Arcs[ArcI];
+			if(Arc.Focus)
+			{
+				v2 Focus = Points[Arc.Focus];
+				v2 Start = Points[Arc.Start];
+				v2 End   = Points[Arc.End];
+				ArcFromPoints(ScreenBuffer, Focus, Start, End, BLACK); 
+			}
+		}
+
+		LOG("\tDRAW POINTS");
+		for(uint i = 1; i <= DRAW_STATE.LastPoint; ++i)
+		{
+			if(DRAW_STATE.PointStatus[i] != POINT_Free)
+			{
+				DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
+			}
+		}
+
+		if(State->SelectIndex) // A point is selected (currently drawing)
+		{
+			v2 SelectedPoint = Points[State->SelectIndex];
+			if(State->ArcStartIndex && !V2Equals(Points[State->ArcStartIndex], SnapMouseP)) // drawing an arc
+			{
+				LOG("\tDRAW HALF-FINISHED ARC");
+				v2 FocusPoint = Points[State->SelectIndex];
+				v2 StartPoint = Points[State->ArcStartIndex];
+				ArcFromPoints(ScreenBuffer, FocusPoint, StartPoint, SnapMouseP, BLACK);
+				DEBUGDrawLine(ScreenBuffer, SelectedPoint, StartPoint, LIGHT_GREY);
+				DEBUGDrawLine(ScreenBuffer, SelectedPoint, SnapMouseP, LIGHT_GREY);
+			}
+			else
+			{
+				LOG("\tDRAW SOMETHING");
+				// NOTE: Mid-way through drawing a line
+				DrawCircleFill(ScreenBuffer, SelectedPoint, 3.f, RED);
+				CircleLine(ScreenBuffer, SelectedPoint, 5.f, RED);
+				CircleLine(ScreenBuffer, SelectedPoint, Dist(SelectedPoint, SnapMouseP), LIGHT_GREY);
+				DEBUGDrawLine(ScreenBuffer, SelectedPoint, SnapMouseP, LIGHT_GREY);
+				/* DebugAdd("\n\nMouse Angle: %f", MouseAngle/TAU); */
+			}
+		}
+
+		if(SnapIndex)
+		{
+			// NOTE: Overdraws...
+			DrawPoint(ScreenBuffer, ClosestPoint, 1, BLUE);
 		}
 	}
 
-	for(uint i = 1; i <= DRAW_STATE.LastPoint; ++i)
-	{
-		if(DRAW_STATE.PointStatus[i] != POINT_Free)
-		{
-			DrawPoint(ScreenBuffer, Points[i], 0, LIGHT_GREY);
-		}
-	}
+	{ LOG("PRINT");
+		DebugPrint();
+		/* DrawSuperSlowCircleLine(ScreenBuffer, ScreenCentre, 50.f, RED); */
 
-	if(State->SelectIndex)
-	{
-		// NOTE: Mid-way through drawing a line
-		DrawCircleFill(ScreenBuffer, DRAW_STATE.Points[State->SelectIndex], 3.f, RED);
-		CircleLine(ScreenBuffer, DRAW_STATE.Points[State->SelectIndex], 5.f, RED);
-		CircleLine(ScreenBuffer, DRAW_STATE.Points[State->SelectIndex],
-				Dist(DRAW_STATE.Points[State->SelectIndex], SnapMouseP), LIGHT_GREY);
-		DEBUGDrawLine(ScreenBuffer, DRAW_STATE.Points[State->SelectIndex], SnapMouseP, LIGHT_GREY);
-		if(DEBUGClick(RMB))
-		{
-			State->SelectIndex = 0;
-		}
-	}
+		//	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
 
-	if(SnapIndex)
-	{
-		// NOTE: Overdraws...
-		DrawPoint(ScreenBuffer, ClosestPoint, 1, BLUE);
-	}
+		// TODO: Highlight status for currently selected/hovered points
 
-//	CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
-
-	// TODO: Highlight status for currently selected/hovered points
-
-	char Message[512];
-	f32 TextSize = 15.f;
-	stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
+		char Message[512];
+		f32 TextSize = 15.f;
+		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, Mouse: (%.2f, %.2f), Undo Number: %u, Num undo states: %u",
 				/* State->NumLinePoints, */
 				/* NumPointsOfType(DRAW_STATE.PointStatus, DRAW_STATE.LastPoint, POINT_Line), */
 				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, State->CurrentDrawState, State->NumDrawStates);
-	DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
+		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
-	char LinePointInfo[512];
-	stbsp_sprintf(LinePointInfo, "L#  P#\n\n");
-	for(uint i = 1; i <= DRAW_STATE.NumLinePoints && i <= 32; ++i)
-	{
-		stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, DRAW_STATE.LinePoints[i]);
+		char LinePointInfo[512];
+		stbsp_sprintf(LinePointInfo, "L#  P#\n\n");
+		for(uint i = 1; i <= DRAW_STATE.NumLinePoints && i <= 32; ++i)
+		{
+			stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, DRAW_STATE.LinePoints[i]);
+		}
+		char PointInfo[512];
+		stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
+		for(uint i = 1; i <= DRAW_STATE.NumPoints && i <= 32; ++i)
+		{
+			stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, DRAW_STATE.PointStatus[i]);
+		}
+		TextSize = 13.f;
+		DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,
+				ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
+		DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
+				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
 	}
-	char PointInfo[512];
-	stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
-	for(uint i = 1; i <= DRAW_STATE.NumPoints && i <= 32; ++i)
-	{
-		stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, DRAW_STATE.PointStatus[i]);
-	}
-	TextSize = 13.f;
-	DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,
-			ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
-	DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
-			ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
+
+	CLOSE_LOG();
 	END_TIMED_BLOCK;
 }
 
