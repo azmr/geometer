@@ -37,15 +37,15 @@ line_points ZeroLineP = {0};
 
 typedef struct circle
 {
-	uint Focus;
+	uint ipoFocus;
 	f32 Radius;
 } circle;
 
 typedef struct arc
 {
-	uint Focus;
-	uint Start;
-	uint End;
+	uint ipoFocus;
+	uint ipoStart;
+	uint ipoEnd;
 } arc;
 
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
@@ -77,15 +77,15 @@ typedef enum
 
 typedef struct draw_state
 {
-	uint LastPoint;
-	uint NumPoints;
-	uint LastLinePoint;
-	uint NumLinePoints;
-	uint LastCircle;
-	uint NumCircles;
+	uint iLastPoint;
+	uint cPoints;
+	uint iLastLinePoint;
+	uint cLinePoints;
+	uint iLastCircle;
+	uint cCircles;
 	// TODO: should circles and arcs be consolidated?
-	uint LastArc;
-	uint NumArcs;
+	uint iLastArc;
+	uint cArcs;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
@@ -100,7 +100,7 @@ typedef struct state
 {
 #define NUM_UNDO_STATES 16
 	uint CurrentDrawState;
-	uint NumDrawStates;
+	uint cDrawStates;
 	// TODO: uint StateWhenSaved;
 	draw_state Draw[NUM_UNDO_STATES];
 		
@@ -110,10 +110,10 @@ typedef struct state
 	b32 CloseApp;
 
 	// v2 Basis;
-	uint DragIndex; // TODO: consolidate into SelectIndex
-	uint SelectIndex;
-	uint ArcStartIndex;
-	v2 SavedPoint;
+	uint ipoDrag; // TODO: consolidate into ipoSelect
+	uint ipoSelect;
+	uint ipoArcStart;
+	v2 poSaved;
 	b32 PointSnap;
 
 	u8 SavedStatus[2];
