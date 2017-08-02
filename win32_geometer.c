@@ -65,7 +65,7 @@ WinMain(HINSTANCE Instance,
 	state *State = (state *)Memory.PermanentStorage;
 #if 1
 	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
-	INIT_FONT(Bitstream, "E:/Downloads/fonts/bitstream-vera-sans-mono/Bitstream Vera Sans Mono Roman.ttf", FontBuffer, 1<<25);
+	INIT_FONT(Bitstream, "Bitstream.ttf", FontBuffer, 1<<25);
 	State->DefaultFont = Bitstream;
 #endif
 
