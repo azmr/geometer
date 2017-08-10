@@ -625,37 +625,23 @@ internal inline v2
 V2ScreenToCanvas(basis Basis, v2 V, v2 ScreenCentre)
 {
 	v2 Result = V2Sub(V, ScreenCentre);
-	// TODO: figure
-	/* Result.X =     Dot(Transform.Basis, V); */
-	/* Result.Y = PerpDot(Transform.Basis, V); */
-	/* Result = V2Add(Result, Basis.Offset); */
+	// NOTE: based on working out for 2x2 matrix where j = perp(i)
+	// x and y are for the i axis; a and b for operand
 	f32 x = Basis.XAxis.X;
 	f32 y = Basis.XAxis.Y;
 	f32 a = Result.X;
 	f32 b = Result.Y;
 	Result.X = a * x - b * y;
 	Result.Y = a * y + b * x;
-	/* Result.X = Result.X * Basis.XAxis.X - Result.Y * Basis.XAxis.Y; */
-	/* Result.Y = Result.X * Basis.XAxis.Y + Result.Y * Basis.XAxis.X; */
 	Result = V2Add(Result, Basis.Offset);
-	/* Result = V2Add(Result, Basis.Offset); */
 	return Result;
-	// TODO: looks like it's adding some 
 }
 
 internal inline v2
 V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 {
-	/* V = V2Add(V, Transform.Offset); */
-	v2 Result = V;
-	/* m2_2 Rotation; */
-	/* Rotation.C1 = Basis.XAxis; */
-	/* Rotation.C2 = Perp(Basis.XAxis); */
-	/* Result = M2_2xV2Mult(Rotation, V); */
-	/* Result.X =     Dot(Basis.XAxis, V); */
-	/* Result.Y = PerpDot(Basis.XAxis, V); */
-	Result = V2Sub(Result, Basis.Offset);
-	// NOTE: based on working out inverse of 2x2 matrix where j = perp(i)
+	v2 Result = V2Sub(V, Basis.Offset);
+	// NOTE: based on working out for inverse of 2x2 matrix where j = perp(i)
 	// x and y are for the i axis; a and b for operand
 	f32 x = Basis.XAxis.X;
 	f32 y = Basis.XAxis.Y;
@@ -720,8 +706,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		pMouse = Input.Old->Mouse;
 
 		State->PointSnap = Held(Keyboard.Shift) ? 0 : 1;
-
-		DRAW_STATE.Basis.XAxis = Held(Keyboard.Alt) ? Norm(V2(2.f, 1.f)) : V2(1.f, 0.f);
 
 		b32 Down = Keyboard.Down.EndedDown;
 		b32 Up = Keyboard.Up.EndedDown;
@@ -845,6 +829,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				--State->CurrentDrawState;
 			}
 
+			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
+			{
+				DRAW_STATE.Basis.XAxis = Norm(V2Sub(SnapMouseP, DRAW_STATE.Points[State->ipoSelect]));
+				DRAW_STATE.PointStatus[State->ipoSelect] = State->SavedStatus[0];
+				DRAW_STATE.PointStatus[State->ipoArcStart] = State->SavedStatus[1];
+				State->ipoSelect = 0;
+				State->ipoArcStart = 0;
+			}
+
 			else if(State->ipoArcStart)
 			{
 				if(!Mouse.RMB.EndedDown)
@@ -942,11 +935,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		uint *LinePoints = DRAW_STATE.LinePoints;
 		basis Basis = DRAW_STATE.Basis;
 		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
-#define BASIS 1
 
+#if 0
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
 		DEBUGDrawLine(ScreenBuffer, ScreenCentre,
 			V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
+#endif
 
 		// NOTE: should be unchanged after this point in the frame
 		LOG("\tDRAW LINES");
@@ -954,10 +948,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			v2 poA = Points[LinePoints[2*iLine-1]];
 			v2 poB = Points[LinePoints[2*iLine]];
-#if BASIS
 			poA = V2CanvasToScreen(Basis, poA, ScreenCentre);
 			poB = V2CanvasToScreen(Basis, poB, ScreenCentre);
-#endif
+
 			if((DRAW_STATE.LinePoints[2*iLine-1] && DRAW_STATE.LinePoints[2*iLine]))
 			{
 				DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
@@ -972,9 +965,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(Circle.ipoFocus)
 			{
 				v2 poFocus = DRAW_STATE.Points[Circle.ipoFocus];
-#if BASIS 
 				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
-#endif
 				CircleLine(ScreenBuffer, poFocus, Circle.Radius, BLACK);
 			}
 		}
@@ -988,11 +979,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				v2 poFocus = Points[Arc.ipoFocus];
 				v2 poStart = Points[Arc.ipoStart];
 				v2 poEnd   = Points[Arc.ipoEnd];
-#if BASIS
 				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
 				poStart = V2CanvasToScreen(Basis, poStart, ScreenCentre);
 				poEnd   = V2CanvasToScreen(Basis, poEnd, ScreenCentre);
-#endif
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 			}
 		}
@@ -1003,16 +992,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(DRAW_STATE.PointStatus[i] != POINT_Free)
 			{
 				v2 po = Points[i];
-#if BASIS
 				po = V2CanvasToScreen(Basis, po, ScreenCentre);
-#endif
 				DrawPoint(ScreenBuffer, po, 0, LIGHT_GREY);
 			}
 		}
 
-#if BASIS
 		poClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
-#endif
 		CircleLine(ScreenBuffer, poClosest, 5.f, GREY);
 		if(ipoClosest) DrawCircleFill(ScreenBuffer, poClosest, 3.f, BLUE);
 
@@ -1020,19 +1005,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(State->ipoSelect) // A point is selected (currently drawing)
 		{
 			v2 poSelect = Points[State->ipoSelect];
-#if BASIS
 			poSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
-#endif
 		// TODO: start here, messing with mousep, snap, ss
 			if(State->ipoArcStart && !V2Equals(Points[State->ipoArcStart], SnapMouseP)) // drawing an arc
 			{
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poFocus = Points[State->ipoSelect];
 				v2 poStart = Points[State->ipoArcStart];
-#if BASIS
 				poFocus = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
 				poStart = V2CanvasToScreen(Basis, Points[State->ipoArcStart], ScreenCentre);
-#endif
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, SnapMouseP, BLACK);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSelect, SnapMouseP, LIGHT_GREY);
