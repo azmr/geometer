@@ -75,15 +75,15 @@ typedef enum
 	POINT_Dist         = (1 << 7), 
 } point_flags;
 
-typedef struct transformation
+typedef struct basis
 {
-	v2 Basis; // NOTE: describes X-axis. Y-axis is the perp.
+	v2 XAxis; // NOTE: describes X-axis. Y-axis is the perp.
 	v2 Offset;
-} transformation;
+} basis;
 
 typedef struct draw_state
 {
-	transformation Transformation;
+	basis Basis;
 
 	uint iLastPoint;
 	uint cPoints;

@@ -115,8 +115,8 @@ Reset(state *State)
 	Draw->cCircles    = 0;
 	Draw->cArcs		  = 0;
 
-	Draw->Transformation.Basis = V2(1.f, 0.f);
-	Draw->Transformation.Offset = ZeroV2;
+	Draw->Basis.XAxis = V2(1.f, 0.f);
+	Draw->Basis.Offset = ZeroV2;
 
 	State->ipoSelect 	= 0;
 	State->ipoArcStart  = 0;
@@ -622,23 +622,49 @@ SameAngle(v2 A, v2 B)
 }
 
 internal inline v2
-V2ReverseTransform(transformation Transform, v2 V)
+V2ScreenToCanvas(basis Basis, v2 V, v2 ScreenCentre)
 {
-	v2 Result;
+	v2 Result = V2Sub(V, ScreenCentre);
 	// TODO: figure
 	/* Result.X =     Dot(Transform.Basis, V); */
 	/* Result.Y = PerpDot(Transform.Basis, V); */
-	Result   = V2Add(V, Transform.Offset);
+	/* Result = V2Add(Result, Basis.Offset); */
+	f32 x = Basis.XAxis.X;
+	f32 y = Basis.XAxis.Y;
+	f32 a = Result.X;
+	f32 b = Result.Y;
+	Result.X = a * x - b * y;
+	Result.Y = a * y + b * x;
+	/* Result.X = Result.X * Basis.XAxis.X - Result.Y * Basis.XAxis.Y; */
+	/* Result.Y = Result.X * Basis.XAxis.Y + Result.Y * Basis.XAxis.X; */
+	Result = V2Add(Result, Basis.Offset);
+	/* Result = V2Add(Result, Basis.Offset); */
 	return Result;
+	// TODO: looks like it's adding some 
 }
 
 internal inline v2
-V2ApplyTransform(transformation Transform, v2 V)
+V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 {
-	v2 Result;
-	Result.X =     Dot(Transform.Basis, V);
-	Result.Y = PerpDot(Transform.Basis, V);
-	Result   = V2Sub(V, Transform.Offset);
+	/* V = V2Add(V, Transform.Offset); */
+	v2 Result = V;
+	/* m2_2 Rotation; */
+	/* Rotation.C1 = Basis.XAxis; */
+	/* Rotation.C2 = Perp(Basis.XAxis); */
+	/* Result = M2_2xV2Mult(Rotation, V); */
+	/* Result.X =     Dot(Basis.XAxis, V); */
+	/* Result.Y = PerpDot(Basis.XAxis, V); */
+	Result = V2Sub(Result, Basis.Offset);
+	// NOTE: based on working out inverse of 2x2 matrix where j = perp(i)
+	// x and y are for the i axis; a and b for operand
+	f32 x = Basis.XAxis.X;
+	f32 y = Basis.XAxis.Y;
+	f32 invXSqPlusYSq = 1.f/(x*x + y*y);
+	f32 a = Result.X;
+	f32 b = Result.Y;
+	Result.X = (a*x + b*y) * invXSqPlusYSq;
+	Result.Y = (b*x - a*y) * invXSqPlusYSq;
+	Result = V2Add(Result, ScreenCentre);
 	return Result;
 }
 
@@ -695,7 +721,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		State->PointSnap = Held(Keyboard.Shift) ? 0 : 1;
 
-		DRAW_STATE.Transformation.Basis = Held(Keyboard.Alt) ? Norm(V2(2.f, 1.f)) : V2(1.f, 0.f);
+		DRAW_STATE.Basis.XAxis = Held(Keyboard.Alt) ? Norm(V2(2.f, 1.f)) : V2(1.f, 0.f);
 
 		b32 Down = Keyboard.Down.EndedDown;
 		b32 Up = Keyboard.Up.EndedDown;
@@ -706,11 +732,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(Down)
 			{
-				DRAW_STATE.Transformation.Offset.Y -= PanSpeed;
+				DRAW_STATE.Basis.Offset.Y -= PanSpeed;
 			}
 			else if(Up)
 			{
-				DRAW_STATE.Transformation.Offset.Y += PanSpeed;
+				DRAW_STATE.Basis.Offset.Y += PanSpeed;
 			}
 		}
 
@@ -718,16 +744,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(Left)
 			{
-				DRAW_STATE.Transformation.Offset.X -= PanSpeed;
+				DRAW_STATE.Basis.Offset.X -= PanSpeed;
 			}
 			else if(Right)
 			{
-				DRAW_STATE.Transformation.Offset.X += PanSpeed;
+				DRAW_STATE.Basis.Offset.X += PanSpeed;
 			}
 		}
 
 		f32 ClosestDistSq;
-		v2 CanvasMouseP = V2ReverseTransform(DRAW_STATE.Transformation, Mouse.P);
+		v2 CanvasMouseP = V2ScreenToCanvas(DRAW_STATE.Basis, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
 		poClosest = CanvasMouseP;
 		ipoClosest = ClosestPointIndex(&DRAW_STATE, CanvasMouseP, &ClosestDistSq);
@@ -764,7 +790,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// TODO: fix needed for if started and space released part way?
 		if(Keyboard.Space.EndedDown && Mouse.LMB.EndedDown)
 		{
-			DRAW_STATE.Transformation.Offset = V2Add(DRAW_STATE.Transformation.Offset, V2Sub(pMouse.P, Mouse.P));
+			// DRAG SCREEN AROUND
+			// V2ScreenToCanvas(DRAW_STATE.Basis, 
+			DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset,
+				V2Sub(V2ScreenToCanvas(DRAW_STATE.Basis, pMouse.P, ScreenCentre),
+					  V2ScreenToCanvas(DRAW_STATE.Basis,  Mouse.P, ScreenCentre)));
 			// NOTE: prevents later triggers of clicks, may not be required if input scheme changes.
 			Input.New->Mouse.LMB.EndedDown = 0;
 		}
@@ -910,13 +940,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		uint cLines = (DRAW_STATE.iLastLinePoint)/2; // completed lines ... 1?
 		v2 *Points = DRAW_STATE.Points;
 		uint *LinePoints = DRAW_STATE.LinePoints;
-		transformation Transformation = DRAW_STATE.Transformation;
-		v2 SSSnapMouseP = V2ApplyTransform(Transformation, SnapMouseP);
+		basis Basis = DRAW_STATE.Basis;
+		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
 #define BASIS 1
 
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
 		DEBUGDrawLine(ScreenBuffer, ScreenCentre,
-			V2Add(ScreenCentre, V2Mult(50.f, V2ApplyTransform(Transformation, V2(1.f, 0.f)))), CYAN);
+			V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
 
 		// NOTE: should be unchanged after this point in the frame
 		LOG("\tDRAW LINES");
@@ -925,8 +955,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			v2 poA = Points[LinePoints[2*iLine-1]];
 			v2 poB = Points[LinePoints[2*iLine]];
 #if BASIS
-			poA = V2ApplyTransform(Transformation, poA);
-			poB = V2ApplyTransform(Transformation, poB);
+			poA = V2CanvasToScreen(Basis, poA, ScreenCentre);
+			poB = V2CanvasToScreen(Basis, poB, ScreenCentre);
 #endif
 			if((DRAW_STATE.LinePoints[2*iLine-1] && DRAW_STATE.LinePoints[2*iLine]))
 			{
@@ -943,7 +973,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				v2 poFocus = DRAW_STATE.Points[Circle.ipoFocus];
 #if BASIS 
-				poFocus = V2ApplyTransform(Transformation, poFocus);
+				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
 #endif
 				CircleLine(ScreenBuffer, poFocus, Circle.Radius, BLACK);
 			}
@@ -959,9 +989,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				v2 poStart = Points[Arc.ipoStart];
 				v2 poEnd   = Points[Arc.ipoEnd];
 #if BASIS
-				poFocus = V2ApplyTransform(Transformation, poFocus);
-				poStart = V2ApplyTransform(Transformation, poStart);
-				poEnd   = V2ApplyTransform(Transformation, poEnd);
+				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
+				poStart = V2CanvasToScreen(Basis, poStart, ScreenCentre);
+				poEnd   = V2CanvasToScreen(Basis, poEnd, ScreenCentre);
 #endif
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 			}
@@ -974,14 +1004,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				v2 po = Points[i];
 #if BASIS
-				po = V2ApplyTransform(Transformation, po);
+				po = V2CanvasToScreen(Basis, po, ScreenCentre);
 #endif
 				DrawPoint(ScreenBuffer, po, 0, LIGHT_GREY);
 			}
 		}
 
 #if BASIS
-		poClosest = V2ApplyTransform(Transformation, poClosest);
+		poClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
 #endif
 		CircleLine(ScreenBuffer, poClosest, 5.f, GREY);
 		if(ipoClosest) DrawCircleFill(ScreenBuffer, poClosest, 3.f, BLUE);
@@ -991,7 +1021,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			v2 poSelect = Points[State->ipoSelect];
 #if BASIS
-			poSelect = V2ApplyTransform(Transformation, Points[State->ipoSelect]);
+			poSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
 #endif
 		// TODO: start here, messing with mousep, snap, ss
 			if(State->ipoArcStart && !V2Equals(Points[State->ipoArcStart], SnapMouseP)) // drawing an arc
@@ -1000,8 +1030,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				v2 poFocus = Points[State->ipoSelect];
 				v2 poStart = Points[State->ipoArcStart];
 #if BASIS
-				poFocus = V2ApplyTransform(Transformation, Points[State->ipoSelect]);
-				poStart = V2ApplyTransform(Transformation, Points[State->ipoArcStart]);
+				poFocus = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
+				poStart = V2CanvasToScreen(Basis, Points[State->ipoArcStart], ScreenCentre);
 #endif
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, SnapMouseP, BLACK);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
@@ -1042,8 +1072,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* NumPointsOfType(DRAW_STATE.PointStatus, DRAW_STATE.iLastPoint, POINT_Line), */
 				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
-				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, DRAW_STATE.Transformation.Basis.X, DRAW_STATE.Transformation.Basis.Y,
-														DRAW_STATE.Transformation.Offset.X, DRAW_STATE.Transformation.Offset.Y);
+				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, DRAW_STATE.Basis.XAxis.X, DRAW_STATE.Basis.XAxis.Y,
+														DRAW_STATE.Basis.Offset.X, DRAW_STATE.Basis.Offset.Y);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
 		char LinePointInfo[512];
