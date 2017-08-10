@@ -115,6 +115,8 @@ typedef struct state
 	u64 FrameCount;
 	f32 dt;
 	font DefaultFont;
+	// TODO: turn bools into flags?
+	b32 ShowDebugInfo;
 	b32 CloseApp;
 
 	// v2 Basis;
