@@ -38,7 +38,7 @@ line_points ZeroLineP = {0};
 typedef struct circle
 {
 	uint ipoFocus;
-	f32 Radius;
+	uint ipoRadius;
 } circle;
 
 typedef struct arc
@@ -79,6 +79,8 @@ typedef struct basis
 {
 	v2 XAxis; // NOTE: describes X-axis. Y-axis is the perp.
 	v2 Offset;
+	// TODO: include in XAxis
+	f32 Zoom;
 } basis;
 
 typedef struct draw_state

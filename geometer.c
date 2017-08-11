@@ -46,19 +46,23 @@
 internal inline void
 DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
 {
+	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnSegment(po, lipoA, V2Sub(lipoB, lipoA));
 	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
 	/* DEBUGDrawLine(ScreenBuffer, po1, po, LIGHT_GREY); */
+	END_TIMED_BLOCK;
 }
 
 internal inline void
 DrawPoint(image_buffer *ScreenBuffer, v2 po, b32 Active, colour Col)
 {
+	BEGIN_TIMED_BLOCK;
 	DrawCircleFill(ScreenBuffer, po, 3.f, Col);
 	if(Active)
 	{
 		CircleLine(ScreenBuffer, po, 5.f, Col);
 	}
+	END_TIMED_BLOCK;
 }
 
 // 0 means nothing could be found
@@ -117,6 +121,7 @@ Reset(state *State)
 
 	Draw->Basis.XAxis = V2(1.f, 0.f);
 	Draw->Basis.Offset = ZeroV2;
+	Draw->Basis.Zoom = 1.f;
 
 	State->ipoSelect 	= 0;
 	State->ipoArcStart  = 0;
@@ -289,7 +294,7 @@ IntersectPointsArcs(v2 *Points, arc Arc1, arc Arc2, v2 *Intersection1, v2 *Inter
 // TODO: add all intersections without recomputing line-circle
 /// returns number of intersections
 internal uint
-AddCircleIntersections(draw_state *State, uint ipo, f32 Radius, uint iSkip)
+AddCircleIntersections(draw_state *State, uint ipoFocus, uint ipoRadius, uint iSkip)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0, cIntersections = 0;
@@ -298,19 +303,22 @@ AddCircleIntersections(draw_state *State, uint ipo, f32 Radius, uint iSkip)
 	v2 *Points = State->Points;
 	uint *LinePoints = State->LinePoints;
 	v2 po1, po2;
+	v2 poFocus = Points[ipoFocus];
+	f32 Radius = Dist(poFocus, Points[ipoRadius]);
 
 	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
 	{
 		if(iCircle == iSkip) continue;
-		cIntersections = IntersectCircles(Points[ipo], Radius,
-				Points[Circles[iCircle].ipoFocus], Circles[iCircle].Radius, &po1, &po2);
+		v2 poFocus2 = Points[Circles[iCircle].ipoFocus];
+		f32 Radius2 = Dist(poFocus2, Points[Circles[iCircle].ipoRadius]);
+		cIntersections = IntersectCircles(poFocus, Radius, poFocus2, Radius2, &po1, &po2);
 		Result += cIntersections;
 		AddIntersections(State, po1, po2, cIntersections);
 	}
 
 	for(uint iArc = 1; iArc <= State->iLastArc; ++iArc)
 	{
-		cIntersections = IntersectPointsCircleArc(Points, Points[ipo], Radius, Arcs[iArc],	&po1, &po2);
+		cIntersections = IntersectPointsCircleArc(Points, poFocus, Radius, Arcs[iArc], &po1, &po2);
 		Result += cIntersections;
 		AddIntersections(State, po1, po2, cIntersections);
 	}
@@ -319,7 +327,7 @@ AddCircleIntersections(draw_state *State, uint ipo, f32 Radius, uint iSkip)
 	{
 		po1 = Points[LinePoints[iLine]];
 		po2 = Points[LinePoints[iLine+1]];
-		cIntersections = IntersectSegmentCircle(po1, V2Sub(po2, po1), Points[ipo], Radius, &po1, &po2);
+		cIntersections = IntersectSegmentCircle(po1, V2Sub(po2, po1), poFocus, Radius, &po1, &po2);
 		Result += cIntersections;
 		AddIntersections(State, po1, po2, cIntersections);
 	}
@@ -341,7 +349,9 @@ AddArcIntersections(draw_state *State, arc Arc, uint iSkip)
 
 	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
 	{
-		cIntersections = IntersectPointsCircleArc(Points, Points[Circles[iCircle].ipoFocus], Circles[iCircle].Radius,
+		v2 Focus2 = Points[Circles[iCircle].ipoFocus];
+		f32 Radius2 = Dist(Focus2, Points[Circles[iCircle].ipoRadius]);
+		cIntersections = IntersectPointsCircleArc(Points, Focus2, Radius2,
 				Arc, &po1, &po2);
 		Result += cIntersections;
 		AddIntersections(State, po1, po2, cIntersections);
@@ -407,8 +417,10 @@ AddLineIntersections(draw_state *State, uint ipoA, uint ipoB, uint iSkip)
 
 	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
 	{
+		v2 Focus2 = Points[Circles[iCircle].ipoFocus];
+		f32 Radius2 = Dist(Focus2, Points[Circles[iCircle].ipoRadius]);
 		cIntersections = IntersectSegmentCircle(Points[ipoA], V2Sub(Points[ipoB], Points[ipoA]),
-				Points[Circles[iCircle].ipoFocus], Circles[iCircle].Radius, &po1, &po2);
+				Focus2, Radius2, &po1, &po2);
 		Result += cIntersections;
 		AddIntersections(State, po1, po2, cIntersections);
 	}
@@ -513,13 +525,13 @@ AddArc(draw_state *State, uint ipoFocus, uint ipoArcStart, uint ipoArcEnd)
 }
 
 internal uint
-AddCircle(draw_state *State, uint ipoFocus, f32 Radius)
+AddCircle(draw_state *State, uint ipoFocus, uint ipoRadius)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
 	circle NewCircle;
 	NewCircle.ipoFocus = ipoFocus;
-	NewCircle.Radius = Radius;
+	NewCircle.ipoRadius = ipoRadius;
 	State->PointStatus[ipoFocus] |= POINT_Focus;
 
 	// Ensure it's not a duplicate
@@ -527,7 +539,7 @@ AddCircle(draw_state *State, uint ipoFocus, f32 Radius)
 	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
 	{
 		circle TestCircle = State->Circles[iCircle];
-		if(TestCircle.ipoFocus == ipoFocus && TestCircle.Radius == Radius)
+		if(TestCircle.ipoFocus == ipoFocus && TestCircle.ipoRadius == ipoRadius)
 		{
 			ExistingCircle = 1;
 			break;
@@ -539,7 +551,7 @@ AddCircle(draw_state *State, uint ipoFocus, f32 Radius)
 		Result = ++State->iLastCircle;
 		State->Circles[Result] = NewCircle;
 		++State->cCircles;
-		AddCircleIntersections(State, NewCircle.ipoFocus, NewCircle.Radius, State->iLastCircle);
+		AddCircleIntersections(State, NewCircle.ipoFocus, NewCircle.ipoRadius, State->iLastCircle);
 	}
 
 	END_TIMED_BLOCK;
@@ -662,8 +674,8 @@ V2ScreenToCanvas(basis Basis, v2 V, v2 ScreenCentre)
 	v2 Result = V2Sub(V, ScreenCentre);
 	// NOTE: based on working out for 2x2 matrix where j = perp(i)
 	// x and y are for the i axis; a and b for operand
-	f32 x = Basis.XAxis.X;
-	f32 y = Basis.XAxis.Y;
+	f32 x = Basis.XAxis.X * Basis.Zoom;
+	f32 y = Basis.XAxis.Y * Basis.Zoom;
 	f32 a = Result.X;
 	f32 b = Result.Y;
 	Result.X = a * x - b * y;
@@ -680,8 +692,8 @@ V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 	v2 Result = V2Sub(V, Basis.Offset);
 	// NOTE: based on working out for inverse of 2x2 matrix where j = perp(i)
 	// x and y are for the i axis; a and b for operand
-	f32 x = Basis.XAxis.X;
-	f32 y = Basis.XAxis.Y;
+	f32 x = Basis.XAxis.X * Basis.Zoom;
+	f32 y = Basis.XAxis.Y * Basis.Zoom;
 	f32 invXSqPlusYSq = 1.f/(x*x + y*y);
 	f32 a = Result.X;
 	f32 b = Result.Y;
@@ -739,8 +751,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoClosest = 0;
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
-		// TODO: move out of screen space
-		Mouse = Input.New->Mouse;
+		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
 
 		State->PointSnap = Held(Keyboard.Shift) ? 0 : 1;
@@ -762,6 +773,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			else if(Right) DRAW_STATE.Basis.Offset.X += PanSpeed;
 		}
 
+		b32 ZoomIn  = Keyboard.PgUp.EndedDown;
+		b32 ZoomOut = Keyboard.PgDn.EndedDown;
+		if(ZoomIn != ZoomOut)
+		{
+			f32 ZoomFactor = 0.9f;
+			f32 invZoomFactor = 1.f/ZoomFactor;
+			if(ZoomIn)        DRAW_STATE.Basis.Zoom *=    ZoomFactor;
+			else if(ZoomOut)  DRAW_STATE.Basis.Zoom *= invZoomFactor;
+		}
+
 		f32 ClosestDistSq;
 		v2 CanvasMouseP = V2ScreenToCanvas(DRAW_STATE.Basis, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
@@ -771,7 +792,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoClosest)
 		{
 			poClosest = DRAW_STATE.Points[ipoClosest];
-			if(ClosestDistSq < 5000.f)
+			if(ClosestDistSq/DRAW_STATE.Basis.Zoom < 5000.f)
 			{
 				if(State->PointSnap)
 				{
@@ -877,7 +898,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				{
 					if(V2Equals(SnapMouseP, DRAW_STATE.Points[State->ipoArcStart])) // Same angle -> full circle // TODO: is this the right epsilon?
 					{
-						AddCircle(&DRAW_STATE, State->ipoSelect, Dist(DRAW_STATE.Points[State->ipoSelect], SnapMouseP));
+						AddCircle(&DRAW_STATE, State->ipoSelect, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Radius, 0));
 					}
 					else
 					{
@@ -997,9 +1018,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			circle Circle = DRAW_STATE.Circles[iCircle];
 			if(Circle.ipoFocus)
 			{
-				v2 poFocus = DRAW_STATE.Points[Circle.ipoFocus];
-				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
-				CircleLine(ScreenBuffer, poFocus, Circle.Radius, BLACK);
+				v2 poFocus = V2CanvasToScreen(Basis, DRAW_STATE.Points[Circle.ipoFocus], ScreenCentre);
+				v2 poRadius = V2CanvasToScreen(Basis, DRAW_STATE.Points[Circle.ipoRadius], ScreenCentre);
+				CircleLine(ScreenBuffer, poFocus, Dist(poFocus, poRadius), BLACK);
 			}
 		}
 
@@ -1031,7 +1052,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		poClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
-		CircleLine(ScreenBuffer, poClosest, 5.f, GREY);
+		if(DRAW_STATE.iLastPoint) CircleLine(ScreenBuffer, poClosest, 5.f, GREY);
 		if(ipoClosest) DrawCircleFill(ScreenBuffer, poClosest, 3.f, BLUE);
 
 
@@ -1047,9 +1068,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				v2 poStart = Points[State->ipoArcStart];
 				poFocus = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
 				poStart = V2CanvasToScreen(Basis, Points[State->ipoArcStart], ScreenCentre);
-				ArcFromPoints(ScreenBuffer, poFocus, poStart, SnapMouseP, BLACK);
+				ArcFromPoints(ScreenBuffer, poFocus, poStart, SSSnapMouseP, BLACK);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
-				DEBUGDrawLine(ScreenBuffer, poSelect, SnapMouseP, LIGHT_GREY);
+				DEBUGDrawLine(ScreenBuffer, poSelect, SSSnapMouseP, LIGHT_GREY);
 			}
 			else
 			{
