@@ -38,7 +38,7 @@ WinMain(HINSTANCE Instance,
 
 #define MemSize (Megabytes(64))
 	memory Memory = {0};
-	// TODO: WORK HERE
+	// TODO: Track memory use and realloc when necessary
 	Memory.PermanentStorageSize = MemSize;
 	Memory.TransientStorageSize = MemSize/2;
 	Memory.PermanentStorage = VirtualAlloc(0, Memory.PermanentStorageSize + Memory.TransientStorageSize,
@@ -58,8 +58,10 @@ WinMain(HINSTANCE Instance,
 	win32_library Lib = Win32Library(LibFnNames, 0, ArrayCount(LibFnNames),
 									 0, "geometer.dll", "geometer_temp.dll", "lock.tmp");
 
+	int ScreenWidth, ScreenHeight;
+	Win32ScreenResolution(Window.Handle, &ScreenWidth, &ScreenHeight);
 	win32_image_buffer Win32Buffer = {0};
-	Win32ResizeDIBSection(&Win32Buffer, 960, 540);
+	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 
 	// ASSETS
 	state *State = (state *)Memory.PermanentStorage;
@@ -87,6 +89,22 @@ WinMain(HINSTANCE Instance,
 		FrameTimer.Start = Win32GetWallClock();
 		/* FrameTimer = Win32StartFrameTimer(FrameTimer); */
 		/* old_new_controller Keyboard = UpdateController(Input, 0); */
+
+#if 1
+		// TODO: only fill buffer inside client
+		RECT ClientRect;
+		GetClientRect(Window.Handle, &ClientRect);
+		int ClientWidth = ClientRect.right - ClientRect.left;
+		int ClientHeight = ClientRect.bottom - ClientRect.top;
+		Win32Buffer.Width = ClientWidth;
+		Win32Buffer.Height = ClientHeight;
+		Win32Buffer.Info.bmiHeader.biWidth = ClientWidth;
+		Win32Buffer.Info.bmiHeader.biHeight = ClientHeight;
+		Win32Buffer.Pitch = ClientWidth * BytesPerPixel;
+
+	// TODO: Probably clear to black
+#endif
+
 		UpdateKeyboard(Input);
 
 		/* Win32ProcessPendingMessages(Keyboard.New); */
