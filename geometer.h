@@ -21,7 +21,7 @@ static debug_text DebugText;
 #include <geometry.h>
 #include <platform.h>
 #include <memory.h>
-#include <gfx.h>
+#include "gfx.h"
 #include <fonts.h>
 #include <input.h>
 
