@@ -766,14 +766,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		f32 PanSpeed = 5.f;
 		if(Down != Up)
 		{
-			if(Down)       DRAW_STATE.Basis.Offset.Y -= PanSpeed;
-			else if(Up)    DRAW_STATE.Basis.Offset.Y += PanSpeed;
+			if(Down)       DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult(-PanSpeed, Perp(DRAW_STATE.Basis.XAxis)));
+			else /*Up*/    DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult( PanSpeed, Perp(DRAW_STATE.Basis.XAxis)));
 		}
 
 		if(Left != Right)
 		{
-			if(Left)       DRAW_STATE.Basis.Offset.X -= PanSpeed;
-			else if(Right) DRAW_STATE.Basis.Offset.X += PanSpeed;
+			if(Left)       DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult(-PanSpeed,      DRAW_STATE.Basis.XAxis ));
+			else /*Right*/ DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult( PanSpeed,      DRAW_STATE.Basis.XAxis ));
 		}
 
 		b32 ZoomIn  = Keyboard.PgUp.EndedDown;
@@ -802,8 +802,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					SnapMouseP = poClosest;
 					ipoSnap = ipoClosest;
 				}
-
 			}
+
 			else
 			{
 				ipoClosest = 0;

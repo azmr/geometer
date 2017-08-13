@@ -9,7 +9,7 @@ REM user32.lib gdi32.lib
 IF NOT EXIST E:\Documents\Coding\C\build mkdir E:\Documents\Coding\C\build
 pushd E:\Documents\Coding\C\build
 
-del *geometer*.pdb
+@del *geometer*.pdb
 
 call E:\Documents\Coding\C\shell64.bat
 
