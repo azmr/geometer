@@ -673,7 +673,7 @@ internal inline basis
 BasisLerp(basis Start, f32 t, basis End)
 {
 	basis Result;
-	Result.XAxis  = V2Lerp(Start.XAxis, t, End.XAxis);
+	Result.XAxis  = Norm(V2Lerp(Start.XAxis, t, End.XAxis));
 	Result.Offset = V2Lerp(Start.Offset, t, End.Offset);
 	Result.Zoom   = Lerp(Start.Zoom, t, End.Zoom);
 	return Result;
@@ -768,7 +768,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	END_NAMED_TIMED_BLOCK(ClearBG);
 	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
 
-	if(State->tBasis < 1.f)  State->tBasis += State->dt*5.f;
+	if(State->tBasis < 1.f)  State->tBasis += State->dt*4.f;
 	else                     State->tBasis = 1.f;
 
 	keyboard_state Keyboard;
@@ -1041,7 +1041,50 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		uint cLines = (DRAW_STATE.iLastLinePoint)/2; // completed lines ... 1?
 		v2 *Points = DRAW_STATE.Points;
 		uint *LinePoints = DRAW_STATE.LinePoints;
+
+		basis EndBasis = DRAW_STATE.Basis;
+		basis StartBasis = pDRAW_STATE.Basis;
+		f32 tBasis = State->tBasis;
+		// TODO: animate on undos
+		if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+		{ // Not within 90° either side
+			if(tBasis < 0.5f)
+			{
+				if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+				{
+					EndBasis.XAxis = Perp(StartBasis.XAxis);
+				}
+				else
+				{
+					EndBasis.XAxis = Perp(EndBasis.XAxis);
+				}
+				tBasis *= 2.f;
+			}
+			else
+			{
+				if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+				{
+					StartBasis.XAxis = Perp(StartBasis.XAxis);
+				}
+				else
+				{
+					StartBasis.XAxis = Perp(EndBasis.XAxis);
+				}
+				tBasis = (tBasis-0.5f) * 2.f;
+
+			}
+		}
+		else
+		{
+			// NOTE: fine for one transition, not 2
+			tBasis = SmoothStep(tBasis);
+		}
+
+#if 1
+		basis Basis = BasisLerp(StartBasis, tBasis, EndBasis);
+#else
 		basis Basis = BasisLerp(pDRAW_STATE.Basis, State->tBasis, DRAW_STATE.Basis);
+#endif
 		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
 
 #if 0
