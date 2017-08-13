@@ -847,10 +847,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		// TODO: fix needed for if started and space released part way?
-		else if(Keyboard.Space.EndedDown && Mouse.LMB.EndedDown)
+		else if((Keyboard.Space.EndedDown && Mouse.LMB.EndedDown) || Mouse.MMB.EndedDown)
 		{
 			// DRAG SCREEN AROUND
-			// V2ScreenToCanvas(DRAW_STATE.Basis, 
 			DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset,
 				V2Sub(V2ScreenToCanvas(DRAW_STATE.Basis, pMouse.P, ScreenCentre),
 					  V2ScreenToCanvas(DRAW_STATE.Basis,  Mouse.P, ScreenCentre)));
@@ -985,14 +984,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 			}
 
-			if(DEBUGClick(MMB))
-			{
+			/* if(DEBUGClick(MMB)) */
+			/* { */
 				// MOVE POINT
-				SaveUndoState(State);
+				/* SaveUndoState(State); */
 				/* State->SavedPoint = DRAW_STATE.Points[ipoSnap]; */
-				State->ipoSelect = ipoSnap;
-				State->ipoDrag = ipoSnap;
-			} 
+				/* State->ipoSelect = ipoSnap; */
+				/* State->ipoDrag = ipoSnap; */
+			/* } */ 
 
 			if(DEBUGRelease(Keyboard.Backspace))
 			{
