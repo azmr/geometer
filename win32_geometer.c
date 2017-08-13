@@ -21,6 +21,7 @@ global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosit
 #include <win32_gfx.h>
 #include <win32_input.h>
 
+#include "GIcons.h"
 
 typedef UPDATE_AND_RENDER(update_and_render);
 
@@ -39,6 +40,8 @@ WinMain(HINSTANCE Instance,
 	{
 		GlobalRunning = 0;
 	}
+
+	Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16);
 
 #define MemSize (Megabytes(64))
 	memory Memory = {0};

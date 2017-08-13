@@ -31,6 +31,15 @@ Win32ScreenResolution(HWND Handle, int *Width, int *Height)
 }
 
 internal void
+Win32SetIcon(HWND Window, u8 *BigImage, u32 BigSize, u8 *SmallImage, u32 SmallSize)
+{
+	HICON BigIcon = CreateIconFromResourceEx(BigImage, BigSize, TRUE, 0x00030000, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+	HICON SmallIcon = CreateIconFromResourceEx(SmallImage, SmallSize, TRUE, 0x00030000, 0, 0, LR_DEFAULTSIZE | LR_SHARED);
+	SendMessage(Window, WM_SETICON, ICON_BIG, (LPARAM)BigIcon);
+	SendMessage(Window, WM_SETICON, ICON_SMALL, (LPARAM)SmallIcon);
+}
+
+internal void
 Win32ResizeDIBSection(win32_image_buffer *Buffer, int Width, int Height)
 {
 	BEGIN_TIMED_BLOCK;
