@@ -3,7 +3,11 @@
 #include <stdlib.h>
 #include <windows.h>
 #include <mmsystem.h>
+#if SINGLE_EXECUTABLE
+#include "geometer.c"
+#else // SINGLE_EXECUTABLE
 #include "geometer.h"
+#endif // SINGLE_EXECUTABLE
 #define USING_INPUT
 #include <fonts.c>
 #include <win32.h>
@@ -54,9 +58,11 @@ WinMain(HINSTANCE Instance,
 
 	Win32LoadXInput();
 	// TODO: Pool with bitmap VirtualAlloc and font?
+#if !SINGLE_EXECUTABLE
 	char *LibFnNames[] = {"UpdateAndRender"};
 	win32_library Lib = Win32Library(LibFnNames, 0, ArrayCount(LibFnNames),
 									 0, "geometer.dll", "geometer_temp.dll", "lock.tmp");
+#endif // !SINGLE_EXECUTABLE
 
 	int ScreenWidth, ScreenHeight;
 	Win32ScreenResolution(Window.Handle, &ScreenWidth, &ScreenHeight);
@@ -123,12 +129,14 @@ WinMain(HINSTANCE Instance,
 			Input.New->Mouse.P.Y += 134;
 		}
 
-		Win32ReloadLibOnRecompile(&Lib); 
-
 		image_buffer GameImageBuffer = *(image_buffer *) &Win32Buffer;
+		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+
+#if !SINGLE_EXECUTABLE
+		Win32ReloadLibOnRecompile(&Lib); 
 		update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
 		if(!UpdateAndRender) { break; }
-		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+#endif // !SINGLE_EXECUTABLE
 
 		UpdateAndRender(&GameImageBuffer, &Memory, Input);
 		if(State->CloseApp) {GlobalRunning = 0; }
@@ -141,4 +149,8 @@ WinMain(HINSTANCE Instance,
 	// TODO:? free timer resolution
 }
 
+#if SINGLE_EXECUTABLE
+#undef DEBUG_PREFIX
+#define DEBUG_PREFIX Win32
+#endif // SINGLE_EXECUTABLE
 DECLARE_DEBUG_RECORDS;
