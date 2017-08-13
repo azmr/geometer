@@ -114,7 +114,9 @@ WinMain(HINSTANCE Instance,
 		UpdateKeyboard(Input);
 
 		/* Win32ProcessPendingMessages(Keyboard.New); */
-		Win32ProcessKeyboardMessages(&Input.New->Keyboard);
+		Input.New->Mouse.ScrollV = 0;
+		Input.New->Mouse.ScrollH = 0;
+		Win32ProcessKeyboardAndScrollMessages(&Input.New->Keyboard, &Input.New->Mouse);
 		// TODO: zero controllers
 		Win32ProcessXInputControllers(&Input);
 		Win32GetWindowDimensionAndOffset(&Window, Win32Buffer.Width, Win32Buffer.Height);

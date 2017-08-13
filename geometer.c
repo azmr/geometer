@@ -778,12 +778,30 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		b32 ZoomIn  = Keyboard.PgUp.EndedDown;
 		b32 ZoomOut = Keyboard.PgDn.EndedDown;
+		// TODO: Make these constants?
 		if(ZoomIn != ZoomOut)
 		{
 			f32 ZoomFactor = 0.9f;
 			f32 invZoomFactor = 1.f/ZoomFactor;
 			if(ZoomIn)        DRAW_STATE.Basis.Zoom *=    ZoomFactor;
 			else if(ZoomOut)  DRAW_STATE.Basis.Zoom *= invZoomFactor;
+		}
+
+		if(Mouse.ScrollV)
+		{
+			f32 ScrollFactor = 0.8f;
+			f32 invScrollFactor = 1.f/ScrollFactor;
+			if(Mouse.ScrollV < 0)
+			{
+				ScrollFactor = invScrollFactor;
+				Mouse.ScrollV = -Mouse.ScrollV;
+			}
+			DebugReplace("Scroll: %f", ScrollFactor);
+			// NOTE: wheel delta is in multiples of 120
+			for(int i = 0; i < Mouse.ScrollV/120; ++i)
+			{
+				DRAW_STATE.Basis.Zoom *= ScrollFactor;
+			}
 		}
 
 		f32 ClosestDistSq;
