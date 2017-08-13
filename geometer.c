@@ -741,7 +741,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	Assert(DRAW_STATE.cLinePoints % 2 == 0);
 
 	// Clear BG
-	DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE);
+	BEGIN_NAMED_TIMED_BLOCK(ClearBG);
+	memset(ScreenBuffer->Memory, 0xFF, ScreenBuffer->Width * ScreenBuffer->Height * BytesPerPixel);
+	END_NAMED_TIMED_BLOCK(ClearBG);
+	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
 
 	keyboard_state Keyboard;
 	mouse_state Mouse;
@@ -1162,9 +1165,10 @@ DECLARE_DEBUG_FUNCTION
 			{
 				Offset +=
 					stbsp_snprintf(DebugTextBuffer, Megabytes(8)-1,
-								   /* AltFormat ? AltFormat :*/ "%s%24s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
+								   /* AltFormat ? AltFormat :*/ "%s%22s%8s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
 								   DebugTextBuffer,
 								   Counter->FunctionName,
+								   Counter->Name,
 								   Counter->LineNumber,
 								   CycleCount,
 								   HitCount,
