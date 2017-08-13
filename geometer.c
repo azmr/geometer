@@ -42,6 +42,7 @@
 // - Resizable windo (maintain centre vs maintain absolute position)
 
 #define DRAW_STATE State->Draw[State->CurrentDrawState]
+#define pDRAW_STATE State->Draw[State->CurrentDrawState-1]
 
 internal inline void
 DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
@@ -119,12 +120,13 @@ Reset(state *State)
 	Draw->cCircles    = 0;
 	Draw->cArcs		  = 0;
 
-	Draw->Basis.XAxis = V2(1.f, 0.f);
+	Draw->Basis.XAxis  = V2(1.f, 0.f);
 	Draw->Basis.Offset = ZeroV2;
-	Draw->Basis.Zoom = 1.f;
+	Draw->Basis.Zoom   = 1.f;
 
-	State->ipoSelect 	= 0;
-	State->ipoArcStart  = 0;
+	State->tBasis      = 1.f;
+	State->ipoSelect   = 0;
+	State->ipoArcStart = 0;
 	END_TIMED_BLOCK;
 }
 
@@ -667,6 +669,16 @@ SameAngle(v2 A, v2 B)
 	return Result;
 }
 
+internal inline basis
+BasisLerp(basis Start, f32 t, basis End)
+{
+	basis Result;
+	Result.XAxis  = V2Lerp(Start.XAxis, t, End.XAxis);
+	Result.Offset = V2Lerp(Start.Offset, t, End.Offset);
+	Result.Zoom   = Lerp(Start.Zoom, t, End.Zoom);
+	return Result;
+}
+
 internal inline v2
 V2ScreenToCanvas(basis Basis, v2 V, v2 ScreenCentre)
 {
@@ -727,6 +739,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	{
 		Reset(State);
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
+		// NOTE: this allows use of 'previous Basis' without out-of-bounds access. It is also consistent that 0 is not
+		// used as an index
+		SaveUndoState(State);
 
 		Memory->IsInitialized = 1;
 	}
@@ -745,6 +760,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	memset(ScreenBuffer->Memory, 0xFF, ScreenBuffer->Width * ScreenBuffer->Height * BytesPerPixel);
 	END_NAMED_TIMED_BLOCK(ClearBG);
 	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
+
+	if(State->tBasis < 1.f)  State->tBasis += State->dt*5.f;
+	else                     State->tBasis = 1.f;
 
 	keyboard_state Keyboard;
 	mouse_state Mouse;
@@ -844,11 +862,18 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			SaveUndoState(State);
 			DRAW_STATE.Basis.Offset = ZeroV2;
+			// TODO: do I want zoom to reset?
+			// DRAW_STATE.Basis.Zoom   = 1.f;
+			State->tBasis           = 0.f;
 		}
 
 		// TODO: fix needed for if started and space released part way?
 		else if((Keyboard.Space.EndedDown && Mouse.LMB.EndedDown) || Mouse.MMB.EndedDown)
 		{
+			if(DEBUGPress(Mouse.LMB) || DEBUGPress(Mouse.MMB))
+			{
+
+			}
 			// DRAG SCREEN AROUND
 			DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset,
 				V2Sub(V2ScreenToCanvas(DRAW_STATE.Basis, pMouse.P, ScreenCentre),
@@ -857,39 +882,39 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			Input.New->Mouse.LMB.EndedDown = 0;
 		}
 
-		// TODO: Do I actually want to be able to drag points?
-		else if(State->ipoDrag)
-		{
-			if(DEBUGClick(LMB))
-			{
-				SaveUndoState(State);
-				// Set point to mouse location and recompute intersections
-				State->ipoDrag = 0;
-				State->ipoSelect = 0;
-				// TODO: this breaks lines attached to intersections...
-				RemovePointsOfType(&DRAW_STATE, POINT_Intersection);
-				for(uint i = 1; i <= DRAW_STATE.iLastLinePoint; i+=2)
-				{
-					// TODO: this is wasteful
-					AddLineIntersections(&DRAW_STATE, DRAW_STATE.LinePoints[i], i, 0);
-				}
-			}
+		/* // TODO: Do I actually want to be able to drag points? */
+		/* else if(State->ipoDrag) */
+		/* { */
+		/* 	if(DEBUGClick(LMB)) */
+		/* 	{ */
+		/* 		SaveUndoState(State); */
+		/* 		// Set point to mouse location and recompute intersections */
+		/* 		State->ipoDrag = 0; */
+		/* 		State->ipoSelect = 0; */
+		/* 		// TODO: this breaks lines attached to intersections... */
+		/* 		RemovePointsOfType(&DRAW_STATE, POINT_Intersection); */
+		/* 		for(uint i = 1; i <= DRAW_STATE.iLastLinePoint; i+=2) */
+		/* 		{ */
+		/* 			// TODO: this is wasteful */
+		/* 			AddLineIntersections(&DRAW_STATE, DRAW_STATE.LinePoints[i], i, 0); */
+		/* 		} */
+		/* 	} */
 
-			else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown)
-			{
-				// Cancel dragging, point returns to saved location
-				DRAW_STATE.Points[State->ipoDrag] = State->poSaved;
-				State->ipoDrag = 0;
-				State->ipoSelect = 0;
-			}
+		/* 	else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown) */
+		/* 	{ */
+		/* 		// Cancel dragging, point returns to saved location */
+		/* 		DRAW_STATE.Points[State->ipoDrag] = State->poSaved; */
+		/* 		State->ipoDrag = 0; */
+		/* 		State->ipoSelect = 0; */
+		/* 	} */
 
-			else
-			{
-				DRAW_STATE.Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location
-			}
-			// Snapping is off while dragging; TODO: maybe change this when points can be combined
-			ipoSnap = 0;
-		}
+		/* 	else */
+		/* 	{ */
+		/* 		DRAW_STATE.Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
+		/* 	} */
+		/* 	// Snapping is off while dragging; TODO: maybe change this when points can be combined */
+		/* 	ipoSnap = 0; */
+		/* } */
 
 		else if(State->ipoSelect)
 		{
@@ -905,6 +930,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
 			{
+				State->tBasis = 0.f;
 				DRAW_STATE.Basis.XAxis = Norm(V2Sub(SnapMouseP, DRAW_STATE.Points[State->ipoSelect]));
 				DRAW_STATE.PointStatus[State->ipoSelect] = State->SavedStatus[0];
 				DRAW_STATE.PointStatus[State->ipoArcStart] = State->SavedStatus[1];
@@ -916,7 +942,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				if(!Mouse.RMB.EndedDown)
 				{
-					if(V2Equals(SnapMouseP, DRAW_STATE.Points[State->ipoArcStart])) // Same angle -> full circle // TODO: is this the right epsilon?
+					if(V2Equals(SnapMouseP, DRAW_STATE.Points[State->ipoArcStart])) // Same angle -> full circle
 					{
 						AddCircle(&DRAW_STATE, State->ipoSelect, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Radius, 0));
 					}
@@ -957,7 +983,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			// UNDO
 			if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown)
 			{
-				if(State->CurrentDrawState > 0)  --State->CurrentDrawState;
+				// NOTE: this allows for 0 as a buffer for accessing the 'previous state'
+				if(State->CurrentDrawState > 1)  --State->CurrentDrawState;
 			}
 			// REDO
 			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Y)) ||
@@ -1007,7 +1034,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		uint cLines = (DRAW_STATE.iLastLinePoint)/2; // completed lines ... 1?
 		v2 *Points = DRAW_STATE.Points;
 		uint *LinePoints = DRAW_STATE.LinePoints;
-		basis Basis = DRAW_STATE.Basis;
+		basis Basis = BasisLerp(pDRAW_STATE.Basis, State->tBasis, DRAW_STATE.Basis);
 		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
 
 #if 0
