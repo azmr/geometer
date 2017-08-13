@@ -755,6 +755,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	Assert(State->OverflowTest == 0);
 	Assert(DRAW_STATE.cLinePoints % 2 == 0);
 
+	if(State->FrameCount < 4)
+	{
+		// NOTE: prevents a point being added if double-click opening is in same region that app opens to
+		// TODO: more elegant solution? clear window messages in platform layer?
+		Input.New->Mouse.LMB.EndedDown = 0;
+	}
+
 	// Clear BG
 	BEGIN_NAMED_TIMED_BLOCK(ClearBG);
 	memset(ScreenBuffer->Memory, 0xFF, ScreenBuffer->Width * ScreenBuffer->Height * BytesPerPixel);
