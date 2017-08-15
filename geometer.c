@@ -43,6 +43,10 @@
 
 #define DRAW_STATE State->Draw[State->CurrentDrawState]
 #define pDRAW_STATE State->Draw[State->CurrentDrawState-1]
+#define BASIS State->Draw[State->CurrentDrawState].Basis
+#define pBASIS State->Draw[State->CurrentDrawState-1].Basis
+
+v2 gDebugV2;
 
 internal inline void
 DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
@@ -791,14 +795,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		f32 PanSpeed = 5.f;
 		if(Down != Up)
 		{
-			if(Down)       DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult(-PanSpeed, Perp(DRAW_STATE.Basis.XAxis)));
-			else /*Up*/    DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult( PanSpeed, Perp(DRAW_STATE.Basis.XAxis)));
+			if(Down)       BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed, Perp(BASIS.XAxis)));
+			else /*Up*/    BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed, Perp(BASIS.XAxis)));
 		}
 
 		if(Left != Right)
 		{
-			if(Left)       DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult(-PanSpeed,      DRAW_STATE.Basis.XAxis ));
-			else /*Right*/ DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset, V2Mult( PanSpeed,      DRAW_STATE.Basis.XAxis ));
+			if(Left)       BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed,      BASIS.XAxis ));
+			else /*Right*/ BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed,      BASIS.XAxis ));
 		}
 
 		b32 ZoomIn  = Keyboard.PgUp.EndedDown;
@@ -808,29 +812,36 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			f32 ZoomFactor = 0.9f;
 			f32 invZoomFactor = 1.f/ZoomFactor;
-			if(ZoomIn)        DRAW_STATE.Basis.Zoom *=    ZoomFactor;
-			else if(ZoomOut)  DRAW_STATE.Basis.Zoom *= invZoomFactor;
+			if(ZoomIn)        BASIS.Zoom *=    ZoomFactor;
+			else if(ZoomOut)  BASIS.Zoom *= invZoomFactor;
 		}
 
 		if(Mouse.ScrollV)
 		{
-			f32 ScrollFactor = 0.8f;
+			f32 ScrollFactor = 0.5f;
 			f32 invScrollFactor = 1.f/ScrollFactor;
+			v2 dMouseP = V2Sub(Mouse.P, ScreenCentre);
 			if(Mouse.ScrollV < 0)
-			{
+			{ // Zooming out
 				ScrollFactor = invScrollFactor;
 				Mouse.ScrollV = -Mouse.ScrollV;
+				// NOTE: keep canvas under pointer in same screen location
+				BASIS.Offset = V2Sub(BASIS.Offset, V2Mult(BASIS.Zoom, dMouseP));
 			}
-			DebugReplace("Scroll: %f", ScrollFactor);
+			else
+			{ // Zooming in
+				// NOTE: keep canvas under pointer in same screen location
+				BASIS.Offset = V2Add(BASIS.Offset, V2Mult(ScrollFactor * BASIS.Zoom, dMouseP));
+			}
 			// NOTE: wheel delta is in multiples of 120
 			for(int i = 0; i < Mouse.ScrollV/120; ++i)
 			{
-				DRAW_STATE.Basis.Zoom *= ScrollFactor;
+				BASIS.Zoom *= ScrollFactor;
 			}
 		}
 
 		f32 ClosestDistSq;
-		v2 CanvasMouseP = V2ScreenToCanvas(DRAW_STATE.Basis, Mouse.P, ScreenCentre);
+		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
 		poClosest = CanvasMouseP;
 		ipoClosest = ClosestPointIndex(&DRAW_STATE, CanvasMouseP, &ClosestDistSq);
@@ -838,7 +849,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoClosest)
 		{
 			poClosest = DRAW_STATE.Points[ipoClosest];
-			if(ClosestDistSq/DRAW_STATE.Basis.Zoom < 5000.f)
+			if(ClosestDistSq/BASIS.Zoom < 5000.f)
 			{
 				if(State->PointSnap)
 				{
@@ -868,9 +879,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(DEBUGPress(Keyboard.Home))
 		{
 			SaveUndoState(State);
-			DRAW_STATE.Basis.Offset = ZeroV2;
+			BASIS.Offset = ZeroV2;
 			// TODO: do I want zoom to reset?
-			// DRAW_STATE.Basis.Zoom   = 1.f;
+			// BASIS.Zoom   = 1.f;
 			State->tBasis           = 0.f;
 		}
 
@@ -882,9 +893,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			}
 			// DRAG SCREEN AROUND
-			DRAW_STATE.Basis.Offset = V2Add(DRAW_STATE.Basis.Offset,
-				V2Sub(V2ScreenToCanvas(DRAW_STATE.Basis, pMouse.P, ScreenCentre),
-					  V2ScreenToCanvas(DRAW_STATE.Basis,  Mouse.P, ScreenCentre)));
+			BASIS.Offset = V2Add(BASIS.Offset,
+				V2Sub(V2ScreenToCanvas(BASIS, pMouse.P, ScreenCentre),
+					  V2ScreenToCanvas(BASIS,  Mouse.P, ScreenCentre)));
 			// NOTE: prevents later triggers of clicks, may not be required if input scheme changes.
 			Input.New->Mouse.LMB.EndedDown = 0;
 		}
@@ -938,7 +949,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
 			{
 				State->tBasis = 0.f;
-				DRAW_STATE.Basis.XAxis = Norm(V2Sub(SnapMouseP, DRAW_STATE.Points[State->ipoSelect]));
+				BASIS.XAxis = Norm(V2Sub(SnapMouseP, DRAW_STATE.Points[State->ipoSelect]));
 				DRAW_STATE.PointStatus[State->ipoSelect] = State->SavedStatus[0];
 				DRAW_STATE.PointStatus[State->ipoArcStart] = State->SavedStatus[1];
 				State->ipoSelect = 0;
@@ -1037,13 +1048,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	{ LOG("RENDER");
+		if(!V2Equals(gDebugV2, ZeroV2))
+		{
+			DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, RED);
+			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
+		}
+
 		// NOTE: only gets odd numbers if there's an unfinished point
 		uint cLines = (DRAW_STATE.iLastLinePoint)/2; // completed lines ... 1?
 		v2 *Points = DRAW_STATE.Points;
 		uint *LinePoints = DRAW_STATE.LinePoints;
 
-		basis EndBasis = DRAW_STATE.Basis;
-		basis StartBasis = pDRAW_STATE.Basis;
+		basis EndBasis = BASIS;
+		basis StartBasis = pBASIS;
 		f32 tBasis = State->tBasis;
 		// TODO: animate on undos
 		if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
@@ -1083,7 +1100,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #if 1
 		basis Basis = BasisLerp(StartBasis, tBasis, EndBasis);
 #else
-		basis Basis = BasisLerp(pDRAW_STATE.Basis, State->tBasis, DRAW_STATE.Basis);
+		basis Basis = BasisLerp(pBASIS, State->tBasis, BASIS);
 #endif
 		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
 
@@ -1200,13 +1217,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		char Message[512];
 		f32 TextSize = 15.f;
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
-				"\nFrame time: %.2fms, Mouse: (%.2f, %.2f), Basis: (%.2f, %.2f), Offset: (%.2f, %.2f)",
+				"\nFrame time: %.2fms, Mouse: (%.2f, %.2f), Basis: (%.2f, %.2f), Offset: (%.2f, %.2f), Zoom: %.2f",
 				/* State->cLinePoints, */
 				/* NumPointsOfType(DRAW_STATE.PointStatus, DRAW_STATE.iLastPoint, POINT_Line), */
 				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
-				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, DRAW_STATE.Basis.XAxis.X, DRAW_STATE.Basis.XAxis.Y,
-														DRAW_STATE.Basis.Offset.X, DRAW_STATE.Basis.Offset.Y);
+				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, BASIS.XAxis.X, BASIS.XAxis.Y,
+														BASIS.Offset.X, BASIS.Offset.Y,
+														BASIS.Zoom);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
 		char LinePointInfo[512];

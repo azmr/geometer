@@ -116,6 +116,8 @@ WinMain(HINSTANCE Instance,
 
 		UpdateKeyboard(Input);
 
+		// TODO: keep position of canvas static during resizing
+		// TODO: continue updating client while resizing
 		/* Win32ProcessPendingMessages(Keyboard.New); */
 		Input.New->Mouse.ScrollV = 0;
 		Input.New->Mouse.ScrollH = 0;
