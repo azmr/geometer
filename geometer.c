@@ -684,6 +684,22 @@ BasisLerp(basis Start, f32 t, basis End)
 }
 
 internal inline v2
+V2RotateToAxis(v2 XAxis, v2 V)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 Result = V;
+	// NOTE: based on working out for 2x2 matrix where j = perp(i)
+	// x and y are for the i axis; a and b for operand
+	f32 x = XAxis.X;
+	f32 y = XAxis.Y;
+	f32 a = Result.X;
+	f32 b = Result.Y;
+	Result.X = a * x - b * y;
+	Result.Y = a * y + b * x;
+	END_TIMED_BLOCK;
+	return Result;
+}
+internal inline v2
 V2ScreenToCanvas(basis Basis, v2 V, v2 ScreenCentre)
 {
 	BEGIN_TIMED_BLOCK;
@@ -818,20 +834,22 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		if(Mouse.ScrollV)
 		{
-			f32 ScrollFactor = 0.5f;
+			f32 ScrollFactor = 0.8f;
 			f32 invScrollFactor = 1.f/ScrollFactor;
 			v2 dMouseP = V2Sub(Mouse.P, ScreenCentre);
 			if(Mouse.ScrollV < 0)
 			{ // Zooming out
-				ScrollFactor = invScrollFactor;
 				Mouse.ScrollV = -Mouse.ScrollV;
+				ScrollFactor = invScrollFactor;
+#define ROTATED_OFFSET() V2RotateToAxis(BASIS.XAxis, V2Mult((1.f-ScrollFactor) * BASIS.Zoom, dMouseP))
 				// NOTE: keep canvas under pointer in same screen location
-				BASIS.Offset = V2Sub(BASIS.Offset, V2Mult(BASIS.Zoom, dMouseP));
+				BASIS.Offset = V2Add(BASIS.Offset, ROTATED_OFFSET());
 			}
 			else
 			{ // Zooming in
 				// NOTE: keep canvas under pointer in same screen location
-				BASIS.Offset = V2Add(BASIS.Offset, V2Mult(ScrollFactor * BASIS.Zoom, dMouseP));
+				BASIS.Offset = V2Add(BASIS.Offset, ROTATED_OFFSET());
+#undef ROTATED_OFFSET
 			}
 			// NOTE: wheel delta is in multiples of 120
 			for(int i = 0; i < Mouse.ScrollV/120; ++i)
@@ -1048,9 +1066,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	{ LOG("RENDER");
+		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, RED);
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{
-			DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, RED);
 			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 
@@ -1277,7 +1295,7 @@ DECLARE_DEBUG_FUNCTION
 			{
 				Offset +=
 					stbsp_snprintf(DebugTextBuffer, Megabytes(8)-1,
-								   /* AltFormat ? AltFormat :*/ "%s%22s%8s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
+								   /* AltFormat ? AltFormat :*/ "%s%28s%8s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
 								   DebugTextBuffer,
 								   Counter->FunctionName,
 								   Counter->Name,
