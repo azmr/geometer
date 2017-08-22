@@ -115,14 +115,13 @@ Reset(state *State)
 	}
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
 	Draw->iLastPoint     = 0;
-	Draw->iLastLinePoint = 0;
-	Draw->iLastCircle    = 0;
-	Draw->iLastArc		 = 0;
+	Draw->iLastShape	 = 0;
 
 	Draw->cPoints     = 0;
-	Draw->cLinePoints = 0;
+	Draw->cLines      = 0;
 	Draw->cCircles    = 0;
 	Draw->cArcs		  = 0;
+	Draw->cShapes	  = 0;
 
 	Draw->Basis.XAxis  = V2(1.f, 0.f);
 	Draw->Basis.Offset = ZeroV2;
@@ -217,25 +216,6 @@ AddPoint(draw_state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 	return Result;
 }
 
-internal inline uint
-MatchingPointIndex(uint ipo)
-{
-	BEGIN_TIMED_BLOCK;
-	uint Result;
-	if(ipo % 2)
-	{
-		// NOTE: first of 2 line points
-		Result = ipo + 1;
-	}
-	else
-	{
-		// NOTE: second of 2 line points
-		Result = ipo - 1;
-	}
-	END_TIMED_BLOCK;
-	return Result;
-}
-
 internal inline void
 AddIntersections(draw_state *State, v2 po1, v2 po2, uint cIntersections)
 {
@@ -252,364 +232,205 @@ AddIntersections(draw_state *State, v2 po1, v2 po2, uint cIntersections)
 	END_TIMED_BLOCK;
 }
 
-internal inline f32
-ArcRadius(v2 *Points, arc Arc)
-{
-	BEGIN_TIMED_BLOCK;
-	f32 Result = Dist(Points[Arc.ipoFocus], Points[Arc.ipoStart]);
-	END_TIMED_BLOCK;
-	return Result;
-}
-
+/// For 2 lines, Intersection2 can be 0
 internal inline uint
-IntersectPointsSegmentArc(v2 *Points, v2 po, v2 vDir, arc Arc, v2 *Intersection1, v2 *Intersection2)
+IntersectShapes(draw_state *State, shape S1, shape S2, v2 *Intersection1, v2 *Intersection2)
 {
 	BEGIN_TIMED_BLOCK;
-	f32 Radius = ArcRadius(Points, Arc);
-	v2 vStart = V2Sub(Points[Arc.ipoStart], Points[Arc.ipoFocus]);
-	v2 vEnd = V2Sub(Points[Arc.ipoEnd], Points[Arc.ipoFocus]);
-	END_TIMED_BLOCK;
-	return IntersectSegmentArc(po, vDir, Points[Arc.ipoFocus], Radius, vStart, vEnd, Intersection1, Intersection2);
-}
-
-internal inline uint
-IntersectPointsCircleArc(v2 *Points, v2 Focus, f32 Radius, arc Arc, v2 *Intersection1, v2 *Intersection2)
-{
-	BEGIN_TIMED_BLOCK;
-	f32 ArcRad = ArcRadius(Points, Arc);
-	v2 vStart = V2Sub(Points[Arc.ipoStart], Points[Arc.ipoFocus]);
-	v2 vEnd = V2Sub(Points[Arc.ipoEnd], Points[Arc.ipoFocus]);
-	END_TIMED_BLOCK;
-	return IntersectCircleArc(Focus, Radius, Points[Arc.ipoFocus], ArcRad, vStart, vEnd, Intersection1, Intersection2);
-}
-
-internal inline uint
-IntersectPointsArcs(v2 *Points, arc Arc1, arc Arc2, v2 *Intersection1, v2 *Intersection2)
-{
-	BEGIN_TIMED_BLOCK;
-	f32 R1 = ArcRadius(Points, Arc1);
-	f32 R2 = ArcRadius(Points, Arc2);
-	v2 vStart1 = V2Sub(Points[Arc1.ipoStart], Points[Arc1.ipoFocus]);
-	v2 vEnd1   = V2Sub(Points[Arc1.ipoEnd],   Points[Arc1.ipoFocus]);
-	v2 vStart2 = V2Sub(Points[Arc2.ipoStart], Points[Arc2.ipoFocus]);
-	v2 vEnd2   = V2Sub(Points[Arc2.ipoEnd],   Points[Arc2.ipoFocus]);
-	END_TIMED_BLOCK;
-	return IntersectArcs(Points[Arc1.ipoFocus], R1, vStart1, vEnd1, Points[Arc2.ipoFocus], R2, vStart2, vEnd2, Intersection1, Intersection2);
-}
-
-// TODO: add all intersections without recomputing line-circle
-/// returns number of intersections
-internal uint
-AddCircleIntersections(draw_state *State, uint ipoFocus, uint ipoRadius, uint iSkip)
-{
-	BEGIN_TIMED_BLOCK;
-	uint Result = 0, cIntersections = 0;
-	circle *Circles = State->Circles;
-	arc *Arcs = State->Arcs;
 	v2 *Points = State->Points;
-	uint *LinePoints = State->LinePoints;
-	v2 po1, po2;
-	v2 poFocus = Points[ipoFocus];
-	f32 Radius = Dist(poFocus, Points[ipoRadius]);
-
-	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
-	{
-		if(iCircle == iSkip) continue;
-		v2 poFocus2 = Points[Circles[iCircle].ipoFocus];
-		f32 Radius2 = Dist(poFocus2, Points[Circles[iCircle].ipoRadius]);
-		cIntersections = IntersectCircles(poFocus, Radius, poFocus2, Radius2, &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	for(uint iArc = 1; iArc <= State->iLastArc; ++iArc)
-	{
-		cIntersections = IntersectPointsCircleArc(Points, poFocus, Radius, Arcs[iArc], &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	for(uint iLine = 1; iLine <= State->iLastLinePoint; iLine+=2)
-	{
-		po1 = Points[LinePoints[iLine]];
-		po2 = Points[LinePoints[iLine+1]];
-		cIntersections = IntersectSegmentCircle(po1, V2Sub(po2, po1), poFocus, Radius, &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	END_TIMED_BLOCK;
-	return Result;
-}
-
-internal uint
-AddArcIntersections(draw_state *State, arc Arc, uint iSkip)
-{
-	BEGIN_TIMED_BLOCK;
-	uint Result = 0, cIntersections = 0;
-	circle *Circles = State->Circles;
-	arc *Arcs = State->Arcs;
-	v2 *Points = State->Points;
-	uint *LinePoints = State->LinePoints;
-	v2 po1, po2;
-
-	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
-	{
-		v2 Focus2 = Points[Circles[iCircle].ipoFocus];
-		f32 Radius2 = Dist(Focus2, Points[Circles[iCircle].ipoRadius]);
-		cIntersections = IntersectPointsCircleArc(Points, Focus2, Radius2,
-				Arc, &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	for(uint iArc = 1; iArc <= State->iLastArc; ++iArc)
-	{
-		if(iArc == iSkip) continue;
-		cIntersections = IntersectPointsArcs(Points, Arc, Arcs[iArc], &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	for(uint iLine = 1; iLine <= State->iLastLinePoint; iLine+=2)
-	{
-		po1 = Points[LinePoints[iLine]];
-		po2 = Points[LinePoints[iLine+1]];
-		cIntersections = IntersectPointsSegmentArc(Points, po1, V2Sub(po2, po1), Arc, &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	END_TIMED_BLOCK;
-	return Result;
-}
-
-/// returns number of intersections
-internal uint
-AddLineIntersections(draw_state *State, uint ipoA, uint ipoB, uint iSkip)
-{
-	BEGIN_TIMED_BLOCK;
-	uint Result = 0, cIntersections = 0;
-	circle *Circles = State->Circles;
-	arc *Arcs = State->Arcs;
-	v2 *Points = State->Points;
-	uint *LinePoints = State->LinePoints;
-	v2 po1, po2;
-
-	for(uint iLine = 1; iLine <= State->iLastLinePoint; iLine+=2)
-	{
-		if(iLine == iSkip) continue;
-
-		// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
-		v2 Intersect;
-		// IMPORTANT TODO: spatially separate, maybe hierarchically
-		if(IntersectSegmentsWinding(Points[ipoA], Points[ipoB],
-					Points[LinePoints[iLine]], Points[LinePoints[iLine+1]],
-					&Intersect))
-		{
-			AddPoint(State, Intersect, POINT_Intersection, 0);
-			++Result;
-		}
-		// TODO: use segments rather than lines
-	}
-
-	for(uint iArc = 1; iArc <= State->iLastArc; ++iArc)
-	{
-		cIntersections = IntersectPointsSegmentArc(Points, Points[ipoA], V2Sub(Points[ipoB], Points[ipoA]), 
-				Arcs[iArc], &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
-	{
-		v2 Focus2 = Points[Circles[iCircle].ipoFocus];
-		f32 Radius2 = Dist(Focus2, Points[Circles[iCircle].ipoRadius]);
-		cIntersections = IntersectSegmentCircle(Points[ipoA], V2Sub(Points[ipoB], Points[ipoA]),
-				Focus2, Radius2, &po1, &po2);
-		Result += cIntersections;
-		AddIntersections(State, po1, po2, cIntersections);
-	}
-
-	END_TIMED_BLOCK;
-	return Result;
-}
-
-/// returns first point of the pair that make up the line
-internal uint
-AddLine(draw_state *State, uint ipoA, uint ipoB)
-{
-	BEGIN_TIMED_BLOCK;
-	// TODO: could optimise out checking indices if already known (as optional params?)
+	// NOTE: should be valid for circles or arcs
+	f32 S1Radius = Dist(Points[S1.Circle.ipoFocus], Points[S1.Circle.ipoRadius]);
+	f32 S2Radius = Dist(Points[S2.Circle.ipoFocus], Points[S2.Circle.ipoRadius]);
+	v2 S1Dir = V2Sub(Points[S1.Line.P2], Points[S1.Line.P1]);
+	v2 S2Dir = V2Sub(Points[S2.Line.P2], Points[S2.Line.P1]);
+#define POINTS(x) Points[S##x.Line.P1], Points[S##x.Line.P2]
+#define LINE(x) Points[S##x.Line.P1], S##x##Dir
+#define CIRCLE(x) Points[S##x.Circle.ipoFocus], S##x##Radius
+#define ARC(x) Points[S##x.Arc.ipoFocus], S##x##Radius, Points[S##x.Arc.ipoStart], Points[S##x.Arc.ipoEnd]
 	uint Result = 0;
-	// NOTE: avoids duplicate lines
-	b32 ExistingLine = 0;
-	for(uint ipoLine = 1; ipoLine <= State->iLastLinePoint; ipoLine += 2)
+	switch(S1.Kind)
 	{
-			// NOTE: no ordering
-		if( (State->LinePoints[ipoLine] == ipoA && State->LinePoints[ipoLine + 1] == ipoB) ||
-			(State->LinePoints[ipoLine] == ipoB && State->LinePoints[ipoLine + 1] == ipoA))
+		case SHAPE_Segment:
+		switch(S2.Kind)
 		{
-			ExistingLine = 1;
+			case SHAPE_Segment:
+				Result = IntersectSegmentsWinding (POINTS(1), POINTS(2),   Intersection1);                 break;
+			case SHAPE_Circle:
+				Result = IntersectSegmentCircle   (LINE(1),   CIRCLE(2), Intersection1, Intersection2);  break;
+			case SHAPE_Arc:
+				Result = IntersectSegmentArc	  (LINE(1),   ARC(2),    Intersection1, Intersection2);  break;
+			default:
+				Assert(SHAPE_Free);
+		} break;
+
+		case SHAPE_Circle:
+		switch(S2.Kind)
+		{																		  
+			case SHAPE_Segment:
+				Result = IntersectSegmentCircle   (LINE(2),   CIRCLE(1), Intersection1, Intersection2);  break;
+			case SHAPE_Circle:
+				Result = IntersectCircles		  (CIRCLE(1), CIRCLE(2), Intersection1, Intersection2);  break;
+			case SHAPE_Arc:
+				Result = IntersectCircleArc	      (CIRCLE(1), ARC(2),    Intersection1, Intersection2);  break;
+			default:
+				Assert(SHAPE_Free);
+		} break;
+
+		case SHAPE_Arc:
+		switch(S2.Kind)
+		{
+			case SHAPE_Segment:
+				Result = IntersectSegmentArc	  (LINE(2),   ARC(1),   Intersection1, Intersection2);   break;
+			case SHAPE_Circle:
+				Result = IntersectCircleArc	      (CIRCLE(2), ARC(1),   Intersection1, Intersection2);   break;
+			case SHAPE_Arc:
+				Result = IntersectArcs			  (ARC(1),    ARC(2),   Intersection1, Intersection2);   break;
+			default:
+				Assert(SHAPE_Free);
+		} break;
+
+		default:
+		{
+			Assert(SHAPE_Free);
+		}
+	}
+#undef LINE
+#undef CIRCLE
+#undef ARC
+
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+/// returns number of intersections
+internal uint
+AddShapeIntersections(draw_state *State, uint iShape)
+{
+	BEGIN_TIMED_BLOCK;
+	uint Result = 0, cIntersections;
+	shape Shape = State->Shapes[iShape];
+	shape *Shapes = State->Shapes;
+	v2 po1, po2;
+
+	// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
+	// IMPORTANT TODO: spatially separate, maybe hierarchically
+	for(uint i = 1; i <= State->iLastShape; ++i)
+	{
+		if(i == iShape) continue;
+
+		cIntersections = IntersectShapes(State, Shape, Shapes[i], &po1, &po2);
+		AddIntersections(State, po1, po2, cIntersections);
+		Result += cIntersections;
+	}
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+/// returns position in Shapes array
+internal uint
+AddShape(draw_state *State, shape Shape)
+{
+	BEGIN_TIMED_BLOCK;
+	uint Result = 0;
+	b32 ExistingShape = 0;
+	shape *Shapes = State->Shapes;
+	uint iShape;
+	// NOTE: check if exists already
+	for(iShape = 1; iShape <= State->iLastShape; ++iShape)
+	{
+		if(ShapeEq(Shape, Shapes[iShape]))
+		{
+			ExistingShape = 1;
 			break;
 		}
 	}
 
-	if(!ExistingLine)
+	if(!ExistingShape)
 	{
-		uint ipoEmptyLine = 0;
-		for(uint ipoLine = 1; ipoLine <= State->iLastLinePoint; ipoLine += 2)
+		// NOTE: check for free shape to fill
+		uint iEmptyShape = 0;
+		for(iShape = 1; iShape <= State->iLastShape; ++iShape)
 		{
-			// NOTE: only checking first line point of each pair
-			if(State->LinePoints[ipoLine] == 0)
+			if(Shapes[iShape].Kind == SHAPE_Free)
 			{
-				ipoEmptyLine = ipoLine;
+				iEmptyShape = iShape;
 				break;
 			}
 		}
 
-		if(ipoEmptyLine)
-		{
-			State->LinePoints[ipoEmptyLine]     = ipoA;
-			State->LinePoints[ipoEmptyLine + 1] = ipoB;
-			AddLineIntersections(State, ipoA, ipoB, ipoEmptyLine);
-			Result = ipoEmptyLine;
+		if(iEmptyShape)
+		{ // NOTE: fill empty shape
+			Shapes[iEmptyShape] = Shape;
+			AddShapeIntersections(State, iEmptyShape);
+			Result = iEmptyShape;
 		}
 		else
-		{
-			State->LinePoints[++State->iLastLinePoint] = ipoA;
-			State->LinePoints[++State->iLastLinePoint] = ipoB;
-			AddLineIntersections(State, ipoA, ipoB, State->iLastLinePoint-1);
-			Result = State->iLastLinePoint-1;
-			State->cLinePoints += 2; // TODO: numlines?
+		{ // NOTE: new shape
+			Shapes[++State->iLastShape] = Shape;
+			Result = State->iLastShape;
+			AddShapeIntersections(State, Result);
+			++State->cShapes;
 		}
 	}
-	// TODO: make thread-safe?
-	State->PointStatus[ipoA] |= POINT_Line;
-	State->PointStatus[ipoB] |= POINT_Line;
-
-	DebugReplace("AddLine => %d", Result);
 	END_TIMED_BLOCK;
 	return Result;
 }
 
-internal uint
-AddArc(draw_state *State, uint ipoFocus, uint ipoArcStart, uint ipoArcEnd)
+/// returns position in Shapes array
+internal inline uint
+AddSegment(draw_state *State, uint P1, uint P2)
 {
-	BEGIN_TIMED_BLOCK;
-	uint Result = 0;
-	arc NewArc;
-	NewArc.ipoFocus = ipoFocus;
-	NewArc.ipoStart = ipoArcStart;
-	NewArc.ipoEnd   = ipoArcEnd;
-	State->PointStatus[ipoFocus]    |= POINT_Focus;
-	State->PointStatus[ipoArcStart] |= POINT_Arc;
-	State->PointStatus[ipoArcEnd]   |= POINT_Arc;
-
-	// Ensure it's not a duplicate
-	b32 ExistingArc = 0;
-	for(uint iArc = 1; iArc <= State->iLastArc; ++iArc)
-	{
-		arc TestArc = State->Arcs[iArc];
-		if(TestArc.ipoFocus == ipoFocus && TestArc.ipoStart == ipoArcStart && TestArc.ipoEnd == ipoArcEnd)
-		{
-			ExistingArc = 1;
-			break;
-		}
-	}
-
-	if(!ExistingArc)
-	{
-		Result = ++State->iLastArc;
-		State->Arcs[Result] = NewArc;
-		++State->cArcs;
-		AddArcIntersections(State, NewArc, State->iLastArc);
-	}
-
-	END_TIMED_BLOCK;
+	shape Shape;
+	Shape.Kind = SHAPE_Segment;
+	Shape.Line.P1 = P1;
+	Shape.Line.P2 = P2;
+	uint Result = AddShape(State, Shape);
 	return Result;
 }
 
-internal uint
+/// returns position in Shapes array
+internal inline uint
 AddCircle(draw_state *State, uint ipoFocus, uint ipoRadius)
 {
-	BEGIN_TIMED_BLOCK;
-	uint Result = 0;
-	circle NewCircle;
-	NewCircle.ipoFocus = ipoFocus;
-	NewCircle.ipoRadius = ipoRadius;
-	State->PointStatus[ipoFocus] |= POINT_Focus;
-
-	// Ensure it's not a duplicate
-	b32 ExistingCircle = 0;
-	for(uint iCircle = 1; iCircle <= State->iLastCircle; ++iCircle)
-	{
-		circle TestCircle = State->Circles[iCircle];
-		if(TestCircle.ipoFocus == ipoFocus && TestCircle.ipoRadius == ipoRadius)
-		{
-			ExistingCircle = 1;
-			break;
-		}
-	}
-
-	if(!ExistingCircle)
-	{
-		Result = ++State->iLastCircle;
-		State->Circles[Result] = NewCircle;
-		++State->cCircles;
-		AddCircleIntersections(State, NewCircle.ipoFocus, NewCircle.ipoRadius, State->iLastCircle);
-	}
-
-	END_TIMED_BLOCK;
+	shape Shape;
+	Shape.Kind = SHAPE_Circle;
+	Shape.Circle.ipoFocus  = ipoFocus;
+	Shape.Circle.ipoRadius = ipoRadius;
+	uint Result = AddShape(State, Shape);
 	return Result;
 }
 
-internal void
-InvalidateLinesAtPoint(draw_state *State, uint ipo)
+/// returns position in Shapes array
+internal inline uint
+AddArc(draw_state *State, uint ipoFocus, uint ipoStart, uint ipoEnd)
+{
+	shape Shape;
+	Shape.Kind = SHAPE_Arc;
+	Shape.Arc.ipoFocus = ipoFocus;
+	Shape.Arc.ipoStart = ipoStart;
+	Shape.Arc.ipoEnd   = ipoEnd;
+	uint Result = AddShape(State, Shape);
+	return Result;
+}
+
+internal inline void
+InvalidateShapesAtPoint(draw_state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
-	// TODO: invalidate both points or just one?
-	// TODO: do I want this here or in drawing/adding..?
-	for(uint i = 1; i <= State->iLastLinePoint; ++i)
-	{
-		if(State->LinePoints[i] == ipo)
-		{
-			State->LinePoints[i] = 0;
-			State->LinePoints[MatchingPointIndex(i)] = 0;
-		}
+	shape *Shapes = State->Shapes;
+	for(uint i = 1; i <= State->iLastShape; ++i)
+	{ // NOTE: if any of the shape's points match, remove it
+		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
+			Shapes[i].Kind = SHAPE_Free;
 	}
 	END_TIMED_BLOCK;
 }
 
-internal void
-InvalidateCirclesWithFocusAtPoint(draw_state *State, uint ipo)
-{
-	BEGIN_TIMED_BLOCK;
-	// TODO: invalidate both points or just one?
-	// TODO: do I want this here or in drawing/adding..?
-	for(uint i = 1; i <= State->iLastCircle; ++i)
-	{
-		if(State->Circles[i].ipoFocus == ipo)
-		{
-			State->Circles[i].ipoFocus = 0;
-		}
-	}
-	END_TIMED_BLOCK;
-}
-
-internal void
+internal inline void
 InvalidatePoint(draw_state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
-	u8 Status = State->PointStatus[ipo];
-	if(Status & POINT_Line)
-	{
-		InvalidateLinesAtPoint(State, ipo);
-	}
-	if(Status & POINT_Focus)
-	{
-		InvalidateCirclesWithFocusAtPoint(State, ipo);
-	}
+	InvalidateShapesAtPoint(State, ipo);
 	State->PointStatus[ipo] = POINT_Free;
 	END_TIMED_BLOCK;
 }
@@ -773,7 +594,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Debug.P = V2(2.f, ScreenSize.Y-(2.f*Debug.FontSize));
 	}
 	Assert(State->OverflowTest == 0);
-	Assert(DRAW_STATE.cLinePoints % 2 == 0);
 
 	if(State->FrameCount < 4)
 	{
@@ -966,6 +786,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
 			{
+				// TODO: Alt-click and drag rather than 2 clicks: if alt is down on LMB down, set on LMB release
+				// otherwise set on alt-click
+				// TODO: if RMB held, set zoom as well - box aligned to new axis showing where screen will end up
 				State->tBasis = 0.f;
 				BASIS.XAxis = Norm(V2Sub(SnapMouseP, DRAW_STATE.Points[State->ipoSelect]));
 				DRAW_STATE.PointStatus[State->ipoSelect] = State->SavedStatus[0];
@@ -1002,7 +825,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if(!V2WithinEpsilon(DRAW_STATE.Points[State->ipoSelect], SnapMouseP, POINT_EPSILON))
 				{
 					// TODO: lines not adding properly..?
-					AddLine(&DRAW_STATE, State->ipoSelect, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Line, 0));
+					AddSegment(&DRAW_STATE, State->ipoSelect, AddPoint(&DRAW_STATE, SnapMouseP, POINT_Line, 0));
 				}
 				State->ipoSelect = 0;
 			}
@@ -1072,11 +895,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 
-		// NOTE: only gets odd numbers if there's an unfinished point
-		uint cLines = (DRAW_STATE.iLastLinePoint)/2; // completed lines ... 1?
-		v2 *Points = DRAW_STATE.Points;
-		uint *LinePoints = DRAW_STATE.LinePoints;
-
 		basis EndBasis = BASIS;
 		basis StartBasis = pBASIS;
 		f32 tBasis = State->tBasis;
@@ -1129,46 +947,38 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #endif
 
 		// NOTE: should be unchanged after this point in the frame
-		LOG("\tDRAW LINES");
-		for(uint iLine = 1; iLine <= cLines; ++iLine)
-		{
-			v2 poA = Points[LinePoints[2*iLine-1]];
-			v2 poB = Points[LinePoints[2*iLine]];
-			poA = V2CanvasToScreen(Basis, poA, ScreenCentre);
-			poB = V2CanvasToScreen(Basis, poB, ScreenCentre);
+		uint iLastShape = DRAW_STATE.iLastShape;
+		shape *Shapes = DRAW_STATE.Shapes;
+		v2 *Points = DRAW_STATE.Points;
 
-			if((DRAW_STATE.LinePoints[2*iLine-1] && DRAW_STATE.LinePoints[2*iLine]))
-			{
-				DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
-				DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB);
-			}
-		}
-
-		LOG("\tDRAW CIRCLES");
-		for(uint iCircle = 1; iCircle <= DRAW_STATE.iLastCircle; ++iCircle)
+		LOG("\tDRAW SHAPES");
+		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
 		{
-			circle Circle = DRAW_STATE.Circles[iCircle];
-			if(Circle.ipoFocus)
+			shape Shape = Shapes[iShape];
+			switch(Shape.Kind)
 			{
-				v2 poFocus = V2CanvasToScreen(Basis, DRAW_STATE.Points[Circle.ipoFocus], ScreenCentre);
-				v2 poRadius = V2CanvasToScreen(Basis, DRAW_STATE.Points[Circle.ipoRadius], ScreenCentre);
-				CircleLine(ScreenBuffer, poFocus, Dist(poFocus, poRadius), BLACK);
-			}
-		}
+				case SHAPE_Segment:
+				{
+					v2 poA = V2CanvasToScreen(Basis, Points[Shape.Line.P1], ScreenCentre);
+					v2 poB = V2CanvasToScreen(Basis, Points[Shape.Line.P2], ScreenCentre);
+					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
+					DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB);
+				} break;
+				
+				case SHAPE_Circle:
+				{
+					v2 poFocus  = V2CanvasToScreen(Basis, DRAW_STATE.Points[Shape.Circle.ipoFocus], ScreenCentre);
+					v2 poRadius = V2CanvasToScreen(Basis, DRAW_STATE.Points[Shape.Circle.ipoRadius], ScreenCentre);
+					CircleLine(ScreenBuffer, poFocus, Dist(poFocus, poRadius), BLACK);
+				} break;
 
- 		LOG("\tDRAW ARCS");
-		for(uint iArc = 1; iArc <= DRAW_STATE.iLastArc; ++iArc)
-		{
-			arc Arc = DRAW_STATE.Arcs[iArc];
-			if(Arc.ipoFocus)
-			{
-				v2 poFocus = Points[Arc.ipoFocus];
-				v2 poStart = Points[Arc.ipoStart];
-				v2 poEnd   = Points[Arc.ipoEnd];
-				poFocus = V2CanvasToScreen(Basis, poFocus, ScreenCentre);
-				poStart = V2CanvasToScreen(Basis, poStart, ScreenCentre);
-				poEnd   = V2CanvasToScreen(Basis, poEnd, ScreenCentre);
-				ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
+				case SHAPE_Arc:
+				{
+					v2 poFocus = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoFocus], ScreenCentre);
+					v2 poStart = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoStart], ScreenCentre);
+					v2 poEnd   = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoEnd],   ScreenCentre);
+					ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
+				} break;
 			}
 		}
 
@@ -1235,21 +1045,29 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		char Message[512];
 		f32 TextSize = 15.f;
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
-				"\nFrame time: %.2fms, Mouse: (%.2f, %.2f), Basis: (%.2f, %.2f), Offset: (%.2f, %.2f), Zoom: %.2f",
+				"\nFrame time: %.2fms, "
+				/* "Mouse: (%.2f, %.2f), " */
+				"Basis: (%.2f, %.2f), "
+				"Offset: (%.2f, %.2f), "
+				"Zoom: %.2f"
+				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(DRAW_STATE.PointStatus, DRAW_STATE.iLastPoint, POINT_Line), */
 				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
-				State->dt*1000.f, Mouse.P.X, Mouse.P.Y, BASIS.XAxis.X, BASIS.XAxis.Y,
-														BASIS.Offset.X, BASIS.Offset.Y,
-														BASIS.Zoom);
+				State->dt*1000.f,
+				/* Mouse.P.X, Mouse.P.Y, */
+				BASIS.XAxis.X, BASIS.XAxis.Y,
+				BASIS.Offset.X, BASIS.Offset.Y,
+				BASIS.Zoom
+				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
-		char LinePointInfo[512];
-		stbsp_sprintf(LinePointInfo, "L#  P#\n\n");
-		for(uint i = 1; i <= DRAW_STATE.cLinePoints && i <= 32; ++i)
+		char ShapeInfo[512];
+		stbsp_sprintf(ShapeInfo, "L#  P#\n\n");
+		for(uint i = 1; i <= DRAW_STATE.iLastShape && i <= 32; ++i)
 		{
-			stbsp_sprintf(LinePointInfo, "%s%02u  %02u\n", LinePointInfo, i, DRAW_STATE.LinePoints[i]);
+			stbsp_sprintf(ShapeInfo, "%s%02u  %04b\n", ShapeInfo, i, DRAW_STATE.Shapes[i].Kind);
 		}
 		char PointInfo[512];
 		stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
@@ -1258,7 +1076,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, DRAW_STATE.PointStatus[i]);
 		}
 		TextSize = 13.f;
-		DrawString(ScreenBuffer, &State->DefaultFont, LinePointInfo, TextSize,
+		DrawString(ScreenBuffer, &State->DefaultFont, ShapeInfo, TextSize,
 				ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
 		DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
 				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);

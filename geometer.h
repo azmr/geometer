@@ -3,7 +3,7 @@
 
 typedef struct debug_text
 {
-#define DEBUG_TEXT_SIZE 8192
+#define DEBUG_TEXT_SIZE 16384
 	uint Length;
 	char Text[DEBUG_TEXT_SIZE];
 } debug_text;
@@ -27,13 +27,13 @@ static debug_text DebugText;
 
 #define POINT_EPSILON 0.02f
 
-typedef struct line_points
+typedef struct line
 {
 	// NOTE: corresponds with point in index
 	uint P1;
 	uint P2;
-} line_points;
-line_points ZeroLineP = {0};
+} line;
+line ZeroLine = {0};
 
 typedef struct circle
 {
@@ -47,6 +47,40 @@ typedef struct arc
 	uint ipoStart;
 	uint ipoEnd;
 } arc;
+
+typedef enum shape_types
+{
+	SHAPE_Free = 0,
+	SHAPE_Line,
+	SHAPE_Ray,
+	SHAPE_Segment,
+	SHAPE_Circle,
+	SHAPE_Arc,
+} shape_types;
+
+typedef struct shape
+{
+	// TODO: does this guarantee a size?
+	shape_types Kind;
+	union
+	{
+		line Line;
+		circle Circle;
+		arc Arc;
+		uint P[3];
+	};
+} shape;
+shape gZeroShape;
+
+internal inline b32
+ShapeEq(shape S1, shape S2)
+{
+	b32 Result = S1.Kind == S2.Kind &&
+				 S1.P[0] == S2.P[0] &&
+				 S1.P[1] == S2.P[1] &&
+				 S1.P[2] == S2.P[2];
+	return Result;
+}
 
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
 typedef struct debug
@@ -88,20 +122,17 @@ typedef struct draw_state
 	basis Basis;
 
 	uint iLastPoint;
+	uint iLastShape;
 	uint cPoints;
-	uint iLastLinePoint;
-	uint cLinePoints;
-	uint iLastCircle;
-	uint cCircles;
+	uint cLines;
 	// TODO: should circles and arcs be consolidated?
-	uint iLastArc;
+	uint cCircles;
 	uint cArcs;
+	uint cShapes;
 	// TODO: allocate dynamically
 #define NUM_POINTS 256
 
-	uint LinePoints[NUM_POINTS*2];
-	circle Circles[NUM_POINTS];
-	arc Arcs[NUM_POINTS];
+	shape Shapes[NUM_POINTS];
 	v2 Points[NUM_POINTS];
 	u8 PointStatus[NUM_POINTS];
 } draw_state;

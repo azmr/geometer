@@ -142,6 +142,7 @@ IntersectSegmentsWinding(v2 A, v2 B, v2 C, v2 D, v2 *Out)
 	return Result;
 }
 
+// TODO: convert to RadiusSq. Ensure callers are using proper format
 /// expects d to be normalised
 /// returns number of intersections
 internal uint
