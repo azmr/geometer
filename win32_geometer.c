@@ -31,6 +31,7 @@ WinMain(HINSTANCE Instance,
 		LPSTR CommandLine,
 		int ShowCode)
 {
+	OPEN_LOG("win32_geometer_log.txt");
 	// UNUSED:
 	ShowCode; CommandLine; PrevInstance;
 
@@ -43,7 +44,9 @@ WinMain(HINSTANCE Instance,
 
 	Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16);
 
+	LOG("ALLOC MEMORY");
 #define MemSize (Megabytes(64))
+
 	memory Memory = {0};
 	// TODO: Track memory use and realloc when necessary
 	Memory.PermanentStorageSize = MemSize;
@@ -57,6 +60,14 @@ WinMain(HINSTANCE Instance,
 		OutputDebugStringA("Memory not allocated properly");
 		GlobalRunning = 0;
 	}
+
+	state *State = (state *)Memory.PermanentStorage;
+
+#define cSTART_POINTS 32
+	State->maPoints      = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+	State->maPointStatus = ArenaCalloc(sizeof(u8)     * cSTART_POINTS);
+	State->maShapes      = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	State->maActions     = ArenaCalloc(sizeof(action) * cSTART_POINTS);
 
 
 	Win32LoadXInput();
@@ -73,7 +84,6 @@ WinMain(HINSTANCE Instance,
 	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 
 	// ASSETS
-	state *State = (state *)Memory.PermanentStorage;
 #if 1
 	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	INIT_FONT(Bitstream, "Bitstream.ttf", FontBuffer, 1<<25);
@@ -149,11 +159,37 @@ WinMain(HINSTANCE Instance,
 		if(State->CloseApp) {GlobalRunning = 0; }
 		State->dt = FrameTimer.SecondsElapsedForFrame;
 
+		// REALLOCATION
+		// TODO: what to do if reallocation fails?
+		// NOTE: Can add multiple points per frame (intersections), but can't double
+		Assert(State->maPoints.Used <= State->maPoints.Size);
+		Assert(State->maPointStatus.Used <= State->maPointStatus.Size);
+		if(State->maPoints.Used >= State->maPoints.Size / 2)
+		{ LOG("Adding to points arena");
+			// NOTE: points and pointstatus should have exactly the same number of members
+			Assert(State->maPointStatus.Used/sizeof(u8) == State->maPoints.Used/sizeof(v2));
+			Assert(ArenaRealloc(&State->maPoints, State->maPoints.Size * 2));
+			Assert(ArenaRealloc(&State->maPointStatus, State->maPointStatus.Size * 2));
+		}
+
+		// NOTE: Can only create 1 shape/action per frame
+		Assert(State->maShapes.Used <= State->maShapes.Size);
+		if(State->maShapes.Used == State->maShapes.Size)
+		{ LOG("Adding to shapes arena");
+			Assert(ArenaRealloc(&State->maShapes, State->maShapes.Size * 2));
+		}
+		Assert(State->maActions.Used <= State->maActions.Size);
+		if(State->maActions.Used == State->maActions.Size)
+		{ LOG("Adding to actions arena");
+			Assert(ArenaRealloc(&State->maActions, State->maActions.Size * 2));
+		}
+
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);
 		++State->FrameCount;
 	}
 	// TODO:? free timer resolution
+	CLOSE_LOG();
 }
 
 #if SINGLE_EXECUTABLE

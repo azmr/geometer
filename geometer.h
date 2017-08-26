@@ -58,19 +58,48 @@ typedef enum shape_types
 	SHAPE_Arc,
 } shape_types;
 
+typedef enum action_types
+{
+	ACTION_Reset   = -2,
+	ACTION_Remove  = -1,
+	ACTION_Basis   = 0,
+	ACTION_Line    = SHAPE_Line,
+	ACTION_Ray     = SHAPE_Ray,
+	ACTION_Segment = SHAPE_Segment,
+	ACTION_Circle  = SHAPE_Circle,
+	ACTION_Arc     = SHAPE_Arc,
+	ACTION_Point,
+} action_types;
+
+typedef union shape_union
+{
+	line Line;
+	circle Circle;
+	arc Arc;
+	uint P[3];
+} shape_union;
+
 typedef struct shape
 {
 	// TODO: does this guarantee a size?
 	shape_types Kind;
-	union
-	{
-		line Line;
-		circle Circle;
-		arc Arc;
-		uint P[3];
-	};
+	shape_union;
 } shape;
 shape gZeroShape;
+
+// TODO: Add change of basis
+typedef struct action
+{
+	action_types Kind;
+	union {
+		shape_union;
+		uint iRemove;
+		struct {
+			uint ipo;
+			v2 po;
+		};
+	};
+} action;
 
 internal inline b32
 ShapeEq(shape S1, shape S2)
@@ -117,9 +146,17 @@ typedef struct basis
 	f32 Zoom;
 } basis;
 
-typedef struct draw_state
+typedef struct state
 {
+	memory_arena maPoints;
+	memory_arena maShapes;
+	memory_arena maActions; 
+	memory_arena maPointStatus;
+		
 	basis Basis;
+	basis pBasis;
+	uint iAction;
+	uint cActions;
 
 	uint iLastPoint;
 	uint iLastShape;
@@ -129,22 +166,7 @@ typedef struct draw_state
 	uint cCircles;
 	uint cArcs;
 	uint cShapes;
-	// TODO: allocate dynamically
-#define NUM_POINTS 256
 
-	shape Shapes[NUM_POINTS];
-	v2 Points[NUM_POINTS];
-	u8 PointStatus[NUM_POINTS];
-} draw_state;
-
-typedef struct state
-{
-#define NUM_UNDO_STATES 16
-	uint CurrentDrawState;
-	uint cDrawStates;
-	// TODO: uint StateWhenSaved;
-	draw_state Draw[NUM_UNDO_STATES];
-		
 	u64 FrameCount;
 	f32 dt;
 	f32 tBasis;
@@ -154,7 +176,6 @@ typedef struct state
 	b32 ShowDebugInfo;
 	b32 CloseApp;
 
-	// v2 Basis;
 	uint ipoDrag; // TODO: consolidate into ipoSelect
 	uint ipoSelect;
 	uint ipoArcStart;
