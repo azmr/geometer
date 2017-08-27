@@ -75,8 +75,9 @@ DrawPoint(image_buffer *ScreenBuffer, v2 po, b32 Active, colour Col)
 }
 
 // 0 means nothing could be found
+// NOTE: Dist is in canvas-space
 internal uint
-ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDist)
+ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 {
 	BEGIN_TIMED_BLOCK;
 	// NOTE: all valid points start at 1
@@ -102,7 +103,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDist)
 			}
 		}
 	}
-	*ClosestDist = Closest;
+	*ClosestDistSq = Closest;
 	END_TIMED_BLOCK;
 	return Result;
 }
@@ -132,6 +133,11 @@ Reset(state *State)
 	State->tBasis      = 1.f;
 	State->ipoSelect   = 0;
 	State->ipoArcStart = 0;
+
+	PushStruct(&State->maActions, action);
+	action Action;
+	Action.Kind = ACTION_Reset;
+	ACTIONS(++State->iLastAction) = Action;
 	END_TIMED_BLOCK;
 }
 
@@ -182,7 +188,14 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 	{
 		// NOTE: Use existing point, but add any new status (and confirm Extant)
 		if(PriorStatus) *PriorStatus = POINTSTATUS(Result);
-		POINTSTATUS(Result) |= PointTypes | POINT_Extant;
+		if((POINTSTATUS(Result) & (PointTypes | POINT_Extant)))
+		{
+			goto end;
+		}
+		else
+		{
+			POINTSTATUS(Result) |= PointTypes | POINT_Extant;
+		}
 	}
 
 	else 
@@ -216,6 +229,15 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 
 	DebugReplace("AddPoint => %u\n", Result);
 
+	PushStruct(&State->maActions, action);
+	action Action;
+	Action.Kind = ACTION_Point;
+	Action.i = Result;
+	Action.po = po;
+	Action.PointStatus = POINTSTATUS(Result);
+	ACTIONS(++State->iLastAction) = Action;
+
+end:
 	END_TIMED_BLOCK;
 	return Result;
 }
@@ -375,6 +397,15 @@ AddShape(state *State, shape Shape)
 			AddShapeIntersections(State, Result);
 			++State->cShapes;
 		}
+
+		PushStruct(&State->maActions, action);
+		action Action;
+		Action.Kind = Shape.Kind;
+		Action.i = Result;
+		Action.P[0] = Shape.P[0];
+		Action.P[1] = Shape.P[1];
+		Action.P[2] = Shape.P[2];
+		ACTIONS(++State->iLastAction) = Action;
 	}
 	END_TIMED_BLOCK;
 	return Result;
@@ -436,6 +467,11 @@ InvalidatePoint(state *State, uint ipo)
 	BEGIN_TIMED_BLOCK;
 	InvalidateShapesAtPoint(State, ipo);
 	POINTSTATUS(ipo) = POINT_Free;
+	PushStruct(&State->maActions, action);
+	action Action;
+	Action.Kind =  ACTION_Remove;
+	Action.i = ipo;
+	ACTIONS(++State->iLastAction) = Action;
 	END_TIMED_BLOCK;
 }
 
@@ -692,7 +728,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoClosest)
 		{
 			poClosest = POINTS(ipoClosest);
-			if(ClosestDistSq/BASIS.Zoom < 5000.f)
+			// NOTE: BASIS.Zoom needs to be squared to match ClosestDistSq
+			if(ClosestDistSq/(BASIS.Zoom * BASIS.Zoom) < 5000.f)
 			{
 				if(State->PointSnap)
 				{
@@ -992,8 +1029,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(POINTSTATUS(i) != POINT_Free)
 			{
-				v2 po = Points[i];
-				po = V2CanvasToScreen(Basis, po, ScreenCentre);
+				v2 po = V2CanvasToScreen(Basis, Points[i], ScreenCentre);
 				DrawPoint(ScreenBuffer, po, 0, LIGHT_GREY);
 			}
 		}
@@ -1005,16 +1041,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		if(State->ipoSelect) // A point is selected (currently drawing)
 		{
-			v2 poSelect = Points[State->ipoSelect];
-			poSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
+			v2 poSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
 		// TODO: start here, messing with mousep, snap, ss
 			if(State->ipoArcStart && !V2Equals(Points[State->ipoArcStart], SnapMouseP)) // drawing an arc
 			{
 				LOG("\tDRAW HALF-FINISHED ARC");
-				v2 poFocus = Points[State->ipoSelect];
-				v2 poStart = Points[State->ipoArcStart];
-				poFocus = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
-				poStart = V2CanvasToScreen(Basis, Points[State->ipoArcStart], ScreenCentre);
+				v2 poFocus = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
+				v2 poStart = V2CanvasToScreen(Basis, Points[State->ipoArcStart], ScreenCentre);
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, SSSnapMouseP, BLACK);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSelect, SSSnapMouseP, LIGHT_GREY);
