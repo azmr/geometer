@@ -41,15 +41,6 @@
 // - Animate between offsets on undo/redo so that you can keep track of where you are
 // - Resizable windo (maintain centre vs maintain absolute position)
 
-#define DRAW_STATE State->Draw[State->CurrentDrawState]
-#define pDRAW_STATE State->Draw[State->CurrentDrawState-1]
-#define BASIS State->Basis
-#define pBASIS State->pBasis
-#define POINTS(i) (*PullEl(State->maPoints, i, v2))
-#define POINTSTATUS(i) (*PullEl(State->maPointStatus, i, u8))
-#define ACTIONS(i) (*PullEl(State->maActions, i, action))
-#define SHAPES(i) (*PullEl(State->maShapes, i, shape))
-
 v2 gDebugV2;
 
 internal inline void
@@ -86,7 +77,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	f32 Closest = 0;
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{
-		if(*PullEl(State->maPointStatus, i, u8) != POINT_Free)
+		if(POINTSTATUS(i) != POINT_Free)
 		{
 			if(!Result) // i.e. first iteration
 			{
@@ -108,6 +99,21 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	return Result;
 }
 
+internal inline void
+UpdateDrawPointers(state *State, uint iPrevDraw)
+{
+	draw_state *Draw = State->Draw;
+	State->Points      = (v2 *)Draw[State->iCurrentDraw].maPoints.Base;
+	State->PointStatus = (u8 *)Draw[State->iCurrentDraw].maPointStatus.Base;
+	State->Shapes      = (shape *)Draw[State->iCurrentDraw].maShapes.Base;
+	// NOTE: ignore space for empty zeroth pos
+	State->iLastPoint = (uint)Draw[State->iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape = (uint)Draw[State->iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
+	State->pBasis = &Draw[iPrevDraw].Basis;
+	State->Basis  = &Draw[State->iCurrentDraw].Basis;
+	State->tBasis = 0;
+}
+
 internal void
 Reset(state *State)
 {
@@ -117,18 +123,20 @@ Reset(state *State)
 		POINTSTATUS(i) = POINT_Free;
 	}
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-	State->iLastPoint = 0;
-	State->iLastShape = 0;
+	DRAW_STATE.maPoints.Used  = sizeof(v2);
+	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
+	DRAW_STATE.maShapes.Used  = sizeof(shape);
+	UpdateDrawPointers(State, 1);
 
-	State->cPoints  = 0;
-	State->cLines   = 0;
-	State->cCircles = 0;
-	State->cArcs    = 0;
-	State->cShapes  = 0;
+	/* State->cPoints  = 0; */
+	/* State->cLines   = 0; */
+	/* State->cCircles = 0; */
+	/* State->cArcs    = 0; */
+	/* State->cShapes  = 0; */
 
-	State->Basis.XAxis  = V2(1.f, 0.f);
-	State->Basis.Offset = ZeroV2;
-	State->Basis.Zoom   = 0.1f;
+	State->Basis->XAxis  = V2(1.f, 0.f);
+	State->Basis->Offset = ZeroV2;
+	State->Basis->Zoom   = 0.1f;
 
 	State->tBasis      = 1.f;
 	State->ipoSelect   = 0;
@@ -138,6 +146,7 @@ Reset(state *State)
 	action Action;
 	Action.Kind = ACTION_Reset;
 	ACTIONS(++State->iLastAction) = Action;
+
 	END_TIMED_BLOCK;
 }
 
@@ -218,10 +227,10 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 		// NOTE: Create new point if needed
 		if(!Result)
 		{
-			PushStruct(&State->maPoints, v2);
-			PushStruct(&State->maPointStatus, u8);
+			PushStruct(&DRAW_STATE.maPoints, v2);
+			PushStruct(&DRAW_STATE.maPointStatus, u8);
 			Result = ++State->iLastPoint;
-			++State->cPoints;
+			/* ++State->cPoints; */
 		}
 		POINTS(Result) = po;
 		POINTSTATUS(Result) |= PointTypes | POINT_Extant;
@@ -242,6 +251,7 @@ end:
 	return Result;
 }
 
+// TODO: don't auto-add intersections - only suggest when mouse is near
 internal inline void
 AddIntersections(state *State, v2 po1, v2 po2, uint cIntersections)
 {
@@ -334,7 +344,7 @@ AddShapeIntersections(state *State, uint iShape)
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0, cIntersections;
 	shape Shape = SHAPES(iShape);
-	shape *Shapes = (shape *)State->maShapes.Base;
+	shape *Shapes = State->Shapes;
 	v2 po1, po2;
 
 	// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
@@ -358,7 +368,7 @@ AddShape(state *State, shape Shape)
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
 	b32 ExistingShape = 0;
-	shape *Shapes = (shape *)State->maShapes.Base;
+	shape *Shapes = State->Shapes;
 	uint iShape;
 	// NOTE: check if exists already
 	for(iShape = 1; iShape <= State->iLastShape; ++iShape)
@@ -391,11 +401,11 @@ AddShape(state *State, shape Shape)
 		}
 		else
 		{ // NOTE: new shape
-			PushStruct(&State->maShapes, shape);
+			PushStruct(&DRAW_STATE.maShapes, shape);
 			Shapes[++State->iLastShape] = Shape;
 			Result = State->iLastShape;
 			AddShapeIntersections(State, Result);
-			++State->cShapes;
+			/* ++State->cShapes; */
 		}
 
 		PushStruct(&State->maActions, action);
@@ -452,7 +462,7 @@ internal inline void
 InvalidateShapesAtPoint(state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
-	shape *Shapes = (shape *)State->maShapes.Base;
+	shape *Shapes = State->Shapes;
 	for(uint i = 1; i <= State->iLastShape; ++i)
 	{ // NOTE: if any of the shape's points match, remove it
 		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
@@ -497,28 +507,20 @@ internal inline void
 SaveUndoState(state *State)
 {
 	BEGIN_TIMED_BLOCK;
-	State;
-	/* state PrevDrawState = DRAW_STATE; */
+	uint iPrevDraw = State->iCurrentDraw;
+	State->iCurrentDraw = iDrawOffset(State, 1);
+	// NOTE: prevents redos
+	State->iLastDraw = State->iCurrentDraw;
 
-	/* // NOTE: Only needed for limited undo numbers */
-	/* if(State->cDrawStates == NUM_UNDO_STATES-1) */
-	/* { */
-	/* 	for(uint i = 0; i < NUM_UNDO_STATES-1; ++i) */
-	/* 	{ */
-	/* 		State->Draw[i] = State->Draw[i+1]; */
-	/* 	} */
-	/* } */
-	/* else */
-	/* { */
-	/* 	// NOTE: needed regardless of undo numbers */
-	/* 	++State->CurrentDrawState; */
-	/* } */
+	draw_state *Draw = State->Draw;
+	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
+	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
+	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
+	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
+	
+	UpdateDrawPointers(State, iPrevDraw);
 
-	/* state *CurrentDrawState = State; */
-	/* *CurrentDrawState = PrevDrawState; */
-
-	/* if(State->cDrawStates < State->CurrentDrawState)  State->cDrawStates = State->CurrentDrawState; */
-	/* State->cDrawStates = State->CurrentDrawState; */
+	++State->cDraws;
 	END_TIMED_BLOCK;
 }
 
@@ -598,6 +600,15 @@ V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 	return Result;
 }
 
+	internal inline void
+OffsetDraw(state *State, int Offset)
+{
+	uint iPrevDraw = State->iCurrentDraw;
+	State->iCurrentDraw = iDrawOffset(State, Offset);
+	UpdateDrawPointers(State, iPrevDraw);
+
+}
+
 // TODO: implement undo/redo
 UPDATE_AND_RENDER(UpdateAndRender)
 {
@@ -620,6 +631,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	if(!Memory->IsInitialized)
 	{
 		Reset(State);
+		State->cDraws = 0;
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
 		// NOTE: this allows use of 'previous Basis' without out-of-bounds access. It is also consistent that 0 is not
 		// used as an index
@@ -672,14 +684,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		f32 PanSpeed = 5.f;
 		if(Down != Up)
 		{
-			if(Down)       BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed, Perp(BASIS.XAxis)));
-			else /*Up*/    BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed, Perp(BASIS.XAxis)));
+			if(Down)       BASIS->Offset = V2Add(BASIS->Offset, V2Mult(-PanSpeed, Perp(BASIS->XAxis)));
+			else /*Up*/    BASIS->Offset = V2Add(BASIS->Offset, V2Mult( PanSpeed, Perp(BASIS->XAxis)));
 		}
 
 		if(Left != Right)
 		{
-			if(Left)       BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed,      BASIS.XAxis ));
-			else /*Right*/ BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed,      BASIS.XAxis ));
+			if(Left)       BASIS->Offset = V2Add(BASIS->Offset, V2Mult(-PanSpeed,      BASIS->XAxis ));
+			else /*Right*/ BASIS->Offset = V2Add(BASIS->Offset, V2Mult( PanSpeed,      BASIS->XAxis ));
 		}
 
 		b32 ZoomIn  = Keyboard.PgUp.EndedDown;
@@ -689,8 +701,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			f32 ZoomFactor = 0.9f;
 			f32 invZoomFactor = 1.f/ZoomFactor;
-			if(ZoomIn)        BASIS.Zoom *=    ZoomFactor;
-			else if(ZoomOut)  BASIS.Zoom *= invZoomFactor;
+			if(ZoomIn)        BASIS->Zoom *=    ZoomFactor;
+			else if(ZoomOut)  BASIS->Zoom *= invZoomFactor;
 		}
 
 		if(Mouse.ScrollV)
@@ -702,25 +714,25 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{ // Zooming out
 				Mouse.ScrollV = -Mouse.ScrollV;
 				ScrollFactor = invScrollFactor;
-#define ROTATED_OFFSET() V2RotateToAxis(BASIS.XAxis, V2Mult((1.f-ScrollFactor) * BASIS.Zoom, dMouseP))
+#define ROTATED_OFFSET() V2RotateToAxis(BASIS->XAxis, V2Mult((1.f-ScrollFactor) * BASIS->Zoom, dMouseP))
 				// NOTE: keep canvas under pointer in same screen location
-				BASIS.Offset = V2Add(BASIS.Offset, ROTATED_OFFSET());
+				BASIS->Offset = V2Add(BASIS->Offset, ROTATED_OFFSET());
 			}
 			else
 			{ // Zooming in
 				// NOTE: keep canvas under pointer in same screen location
-				BASIS.Offset = V2Add(BASIS.Offset, ROTATED_OFFSET());
+				BASIS->Offset = V2Add(BASIS->Offset, ROTATED_OFFSET());
 #undef ROTATED_OFFSET
 			}
 			// NOTE: wheel delta is in multiples of 120
 			for(int i = 0; i < Mouse.ScrollV/120; ++i)
 			{
-				BASIS.Zoom *= ScrollFactor;
+				BASIS->Zoom *= ScrollFactor;
 			}
 		}
 
 		f32 ClosestDistSq;
-		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
+		v2 CanvasMouseP = V2ScreenToCanvas(*BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
 		poClosest = CanvasMouseP;
 		ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
@@ -728,8 +740,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoClosest)
 		{
 			poClosest = POINTS(ipoClosest);
-			// NOTE: BASIS.Zoom needs to be squared to match ClosestDistSq
-			if(ClosestDistSq/(BASIS.Zoom * BASIS.Zoom) < 5000.f)
+			// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
+			if(ClosestDistSq/(BASIS->Zoom * BASIS->Zoom) < 5000.f)
 			{
 				if(State->PointSnap)
 				{
@@ -759,9 +771,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(DEBUGPress(Keyboard.Home))
 		{
 			SaveUndoState(State);
-			BASIS.Offset = ZeroV2;
+			BASIS->Offset = ZeroV2;
 			// TODO: do I want zoom to reset?
-			// BASIS.Zoom   = 1.f;
+			// BASIS->Zoom   = 1.f;
 			State->tBasis           = 0.f;
 		}
 
@@ -773,9 +785,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			}
 			// DRAG SCREEN AROUND
-			BASIS.Offset = V2Add(BASIS.Offset,
-				V2Sub(V2ScreenToCanvas(BASIS, pMouse.P, ScreenCentre),
-					  V2ScreenToCanvas(BASIS,  Mouse.P, ScreenCentre)));
+			BASIS->Offset = V2Add(BASIS->Offset,
+				V2Sub(V2ScreenToCanvas(*BASIS, pMouse.P, ScreenCentre),
+					  V2ScreenToCanvas(*BASIS,  Mouse.P, ScreenCentre)));
 			// NOTE: prevents later triggers of clicks, may not be required if input scheme changes.
 			Input.New->Mouse.LMB.EndedDown = 0;
 		}
@@ -823,7 +835,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
 				State->ipoSelect = 0;
 				State->ipoArcStart = 0;
-				/* --State->CurrentDrawState; */
+				OffsetDraw(State, -1);
 			}
 
 			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
@@ -832,7 +844,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				// otherwise set on alt-click
 				// TODO: if RMB held, set zoom as well - box aligned to new axis showing where screen will end up
 				State->tBasis = 0.f;
-				BASIS.XAxis = Norm(V2Sub(SnapMouseP, POINTS(State->ipoSelect)));
+				BASIS->XAxis = Norm(V2Sub(SnapMouseP, POINTS(State->ipoSelect)));
 				POINTSTATUS(State->ipoSelect) = State->SavedStatus[0];
 				POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
 				State->ipoSelect = 0;
@@ -882,16 +894,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		else // normal state
 		{
 			// UNDO
-			if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown)
+			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
+				// NOTE: making sure that there is a state available to undo into
+			  	((State->cDraws >= NUM_UNDO_STATES && State->iLastDraw != iDrawOffset(State, -1)) ||
+				 (State->cDraws <  NUM_UNDO_STATES && State->iCurrentDraw > 1)))
 			{
-				// NOTE: this allows for 0 as a buffer for accessing the 'previous state'
-				/* if(State->CurrentDrawState > 1)  --State->CurrentDrawState; */
+				OffsetDraw(State, -1);
 			}
 			// REDO
-			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Y)) ||
-					(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGRelease(Keyboard.Z)) )
+			if(((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Y)) ||
+				(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGRelease(Keyboard.Z))) &&
+					(State->iCurrentDraw < State->iLastDraw))
 			{
-				/* if(State->CurrentDrawState < State->cDrawStates)  ++State->CurrentDrawState; */
+				OffsetDraw(State, 1);
 			}
 
 			if(DEBUGClick(LMB))
@@ -937,8 +952,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 
-		basis EndBasis = BASIS;
-		basis StartBasis = pBASIS;
+		basis EndBasis = *BASIS;
+		basis StartBasis = *pBASIS;
 		f32 tBasis = State->tBasis;
 		// TODO: animate on undos
 		if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
@@ -990,8 +1005,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// NOTE: should be unchanged after this point in the frame
 		uint iLastShape = State->iLastShape;
-		shape *Shapes = (shape *)State->maShapes.Base;
-		v2 *Points = (v2 *)State->maPoints.Base;
+		shape *Shapes = State->Shapes;
+		v2 *Points = State->Points;
 
 		LOG("\tDRAW SHAPES");
 		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
@@ -1085,9 +1100,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				/* "Mouse: (%.2f, %.2f), " */
-				"Basis: (%.2f, %.2f), "
-				"Offset: (%.2f, %.2f), "
-				"Zoom: %.2f"
+				/* "Basis: (%.2f, %.2f), " */
+				/* "Offset: (%.2f, %.2f), " */
+				/* "Zoom: %.2f" */
+				"iLastPoint: %u"
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
@@ -1095,9 +1111,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f,
 				/* Mouse.P.X, Mouse.P.Y, */
-				BASIS.XAxis.X, BASIS.XAxis.Y,
-				BASIS.Offset.X, BASIS.Offset.Y,
-				BASIS.Zoom
+				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
+				/* BASIS->Offset.X, BASIS->Offset.Y, */
+				/* BASIS->Zoom */
+				State->iLastPoint
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
@@ -1109,7 +1126,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 		char PointInfo[512];
 		stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
-		for(uint i = 1; i <= State->cPoints && i <= 32; ++i)
+		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
 		{
 			stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, POINTSTATUS(i));
 		}

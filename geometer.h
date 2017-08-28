@@ -1,4 +1,13 @@
 #ifndef GEOMETER_H
+#define DRAW_STATE State->Draw[State->iCurrentDraw]
+#define pDRAW_STATE State->Draw[iDrawOffset(State, -1)]
+#define BASIS State->Basis
+#define pBASIS State->pBasis
+#define POINTS(i) (State->Points[i])
+#define POINTSTATUS(i) (State->PointStatus[i])
+#define SHAPES(i) (State->Shapes[i])
+#define ACTIONS(i) (*PullEl(State->maActions, i, action))
+
 #include <types.h>
 
 typedef struct debug_text
@@ -27,6 +36,14 @@ static debug_text DebugText;
 
 #define POINT_EPSILON 0.02f
 
+typedef struct basis
+{
+	v2 XAxis; // NOTE: describes X-axis. Y-axis is the perp.
+	v2 Offset;
+	// TODO: include in XAxis
+	f32 Zoom;
+} basis;
+
 typedef struct line
 {
 	// NOTE: corresponds with point in index
@@ -35,6 +52,7 @@ typedef struct line
 } line;
 line ZeroLine = {0};
 
+// TODO: should circles and arcs be consolidated?
 typedef struct circle
 {
 	uint ipoFocus;
@@ -87,16 +105,19 @@ typedef struct shape
 } shape;
 shape gZeroShape;
 
-// TODO: Add change of basis
+// TODO: will be more meaningful when intersections are separate
+// should map to user actions -> better undo facility
 typedef struct action
 {
 	action_types Kind;
+	uint i;
 	union {
 		shape_union;
-		uint iRemove;
-		struct {
-			uint ipo;
+		basis Basis;
+		struct
+		{
 			v2 po;
+			u8 PointStatus;
 		};
 	};
 } action;
@@ -138,34 +159,34 @@ typedef enum
 	POINT_Dist         = (1 << 7), 
 } point_flags;
 
-typedef struct basis
+typedef struct draw_state
 {
-	v2 XAxis; // NOTE: describes X-axis. Y-axis is the perp.
-	v2 Offset;
-	// TODO: include in XAxis
-	f32 Zoom;
-} basis;
+	memory_arena maPoints;
+	memory_arena maPointStatus;
+	memory_arena maShapes;
+	basis Basis;
+} draw_state;
 
 typedef struct state
 {
-	memory_arena maPoints;
-	memory_arena maShapes;
+	v2 *Points;
+	shape *Shapes;
+	u8 *PointStatus;
 	memory_arena maActions; 
-	memory_arena maPointStatus;
-		
-	basis Basis;
-	basis pBasis;
-	uint iAction;
-	uint cActions;
 
+#define NUM_UNDO_STATES 16
+	draw_state Draw[NUM_UNDO_STATES];
+	uint iLastDraw;
+	uint iCurrentDraw;
+	// NOTE: only for when only < NUM_UNDO_STATES are used
+	uint cDraws;
+
+	basis *Basis;
+	basis *pBasis;
+
+	uint iLastAction;
 	uint iLastPoint;
 	uint iLastShape;
-	uint cPoints;
-	uint cLines;
-	// TODO: should circles and arcs be consolidated?
-	uint cCircles;
-	uint cArcs;
-	uint cShapes;
 
 	u64 FrameCount;
 	f32 dt;
@@ -186,6 +207,13 @@ typedef struct state
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;
+
+internal inline uint
+iDrawOffset(state *State, int Offset)
+{
+	uint Result = (State->iCurrentDraw + Offset) % NUM_UNDO_STATES;
+	return Result;
+}
 
 #define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 

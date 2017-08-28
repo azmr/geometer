@@ -64,11 +64,13 @@ WinMain(HINSTANCE Instance,
 	state *State = (state *)Memory.PermanentStorage;
 
 #define cSTART_POINTS 32
-	State->maPoints      = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
-	State->maPointStatus = ArenaCalloc(sizeof(u8)     * cSTART_POINTS);
-	State->maShapes      = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	draw_state *Draw = State->Draw;
+	for(uint i = 0; i < NUM_UNDO_STATES; ++i) {
+		Draw[i].maPoints      = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)     * cSTART_POINTS);
+		Draw[i].maShapes      = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	}
 	State->maActions     = ArenaCalloc(sizeof(action) * cSTART_POINTS);
-
 
 	Win32LoadXInput();
 	// TODO: Pool with bitmap VirtualAlloc and font?
@@ -160,28 +162,32 @@ WinMain(HINSTANCE Instance,
 		State->dt = FrameTimer.SecondsElapsedForFrame;
 
 		// REALLOCATION
-		// TODO: what to do if reallocation fails?
+#define MEM_ERROR_ON_FAIL(x) if(!(x)) MessageBox(Window.Handle, "Unable to allocate more memory. Save and quit.", "Memory Allocation Error", MB_ICONERROR)
+		draw_state *NextDraw = &State->Draw[iDrawOffset(State, 1)];
+		// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
 		// NOTE: Can add multiple points per frame (intersections), but can't double
-		Assert(State->maPoints.Used <= State->maPoints.Size);
-		Assert(State->maPointStatus.Used <= State->maPointStatus.Size);
-		if(State->maPoints.Used >= State->maPoints.Size / 2)
+		// NOTE: Realloc the next undo state if needed
+		Assert(DRAW_STATE.maPoints.Used <= DRAW_STATE.maPoints.Size);
+		Assert(DRAW_STATE.maPointStatus.Used <= DRAW_STATE.maPointStatus.Size);
+		if(DRAW_STATE.maPoints.Used >= NextDraw->maPoints.Size / 2)
 		{ LOG("Adding to points arena");
 			// NOTE: points and pointstatus should have exactly the same number of members
-			Assert(State->maPointStatus.Used/sizeof(u8) == State->maPoints.Used/sizeof(v2));
-			Assert(ArenaRealloc(&State->maPoints, State->maPoints.Size * 2));
-			Assert(ArenaRealloc(&State->maPointStatus, State->maPointStatus.Size * 2));
+			Assert(DRAW_STATE.maPointStatus.Used/sizeof(u8) == DRAW_STATE.maPoints.Used/sizeof(v2));
+			MEM_ERROR_ON_FAIL(ArenaRealloc(&NextDraw->maPoints, NextDraw->maPoints.Size * 2));
+			MEM_ERROR_ON_FAIL(ArenaRealloc(&NextDraw->maPointStatus, NextDraw->maPointStatus.Size * 2));
 		}
 
-		// NOTE: Can only create 1 shape/action per frame
-		Assert(State->maShapes.Used <= State->maShapes.Size);
-		if(State->maShapes.Used == State->maShapes.Size)
+		// NOTE: Can only create 1 shape per frame
+		Assert(DRAW_STATE.maShapes.Used <= DRAW_STATE.maShapes.Size);
+		if(DRAW_STATE.maShapes.Used >= NextDraw->maShapes.Size)
 		{ LOG("Adding to shapes arena");
-			Assert(ArenaRealloc(&State->maShapes, State->maShapes.Size * 2));
+			MEM_ERROR_ON_FAIL(ArenaRealloc(&NextDraw->maShapes, NextDraw->maShapes.Size * 2));
 		}
 		Assert(State->maActions.Used <= State->maActions.Size);
-		if(State->maActions.Used == State->maActions.Size)
+		// TODO: this will change once action = user action
+		if(State->maActions.Used >= State->maActions.Size/2 - sizeof(action))
 		{ LOG("Adding to actions arena");
-			Assert(ArenaRealloc(&State->maActions, State->maActions.Size * 2));
+			MEM_ERROR_ON_FAIL(ArenaRealloc(&State->maActions, State->maActions.Size * 2));
 		}
 
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
