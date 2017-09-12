@@ -17,7 +17,7 @@ We would like to be able to draw a straight line from any one pixel (A) to any o
 ![Figure 1: A straight line from A to B](02_assets/fig1.png)
 *Figure 1: A straight line from A to B*
 
-The first issue here is that pixels are on a square grid with finite resolution, so from 1 pixel to the next we can only move in 3 types of directions: horizontally (a), vertically (b) and diagonally at exactly 45° (c).
+The main issue here is that pixels are on a square grid with finite resolution, so from 1 pixel to the next we can only move in 3 types of directions: horizontally (a), vertically (b) and diagonally at exactly 45° (c).
 ![Figure 2: Pixel directions](02_assets/fig2.png)
 *Figure 2: Pixel directions*
 
@@ -29,8 +29,7 @@ Abstract Solution
 
 It's clear that we can't get a perfect line at arbitrary angles, so we'll have to approximate.
 
-Assuming we want the line to be contiguous, after the first pixel the next will always be +/-1 horizontally, vertically or both.
-
+Assuming we want the line to be contiguous, after the first pixel the next will always be +/-1 horizontally, vertically or both.  
 Ignoring horizontal, vertical and 45° lines for a moment, we can consider lines as predominantly horizontal or predominantly vertical:
 
 ![Figure 3: Predominantly horizontal line mapped onto pixel grid](02_assets/fig3.png)
@@ -57,7 +56,7 @@ This means that a line drawn A-to-B will be slightly different from a line drawn
 This is not a huge issue, particularly when using a resolution much higher than 10 x 4, but should be easy to special case (see the partially transparent pixel).
 
 It's apparent from Figure 5 that the non-predominant component is both:
-- less that the predominant component (less than 1)
+- less than the predominant component (less than 1)
 - constant for a given line
 
 The 2 components and the section of line create a triangle that is similar to overall line and the x and y difference between A and B.
@@ -105,21 +104,21 @@ DrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, u32 Colour)
 
 
 // 3. Starting from the first point, loop for the number of pixels in the longer dimension, 
-      drawing the pixel, then moving on by the hypotenuse of the component triangle.
-/*************************************************************************************/
+//    drawing the pixel, then moving on by the hypotenuse of the component triangle.
+/*****************************************************************************************/
 
 	v2 PixelPos = Point1;
 	u32 LoopCounterEnd = RoundF32ToU32(LargestAbsDimension);
 	for(u32 LoopCounter = 0;
-			LoopCounter < LoopCounterEnd;
-			++LoopCounter)
+	    LoopCounter < LoopCounterEnd;
+	    ++LoopCounter)
 	{
 		// Turn 2D floating point coordinate to 1D integral coordinate
 		u32 LinearizedPosition = RoundF32ToU32(PixelPos.Y) * Width + RoundF32ToU32(PixelPos.X);
 		u32 *Pixel = (u32 *)Buffer->Memory + LinearizedPosition;
 		
 		if( (PixelPos.X > 0 && PixelPos.X <= Buffer->Width  - 1 &&		// don't draw outside the screen
-			 PixelPos.Y > 0 && PixelPos.Y <= Buffer->Height - 1) )
+		     PixelPos.Y > 0 && PixelPos.Y <= Buffer->Height - 1) )
 		{
 			*Pixel = Colour;	// No partial transparency, just a simple overwrite
 		}
@@ -130,7 +129,7 @@ DrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, u32 Colour)
 ```
 
 I've left out the code pertaining to alpha compositing (in my case blending colours with premultiplied alpha), as that's beyond the scope of this post. If you're interested, check out [the Wikipedia page](https://en.wikipedia.org/wiki/Alpha_compositing),
-[Tom Forsyth's](https://tomforsyth1000.github.io/blog.wiki.html#%5B%5BPremultiplied%20alpha%5D%5D) [blog posts](https://tomforsyth1000.github.io/blog.wiki.html#%5B%5BPremultiplied%20alpha%20part%202%5D%5D)],
+[Tom Forsyth's](https://tomforsyth1000.github.io/blog.wiki.html#%5B%5BPremultiplied%20alpha%5D%5D) [blog posts](https://tomforsyth1000.github.io/blog.wiki.html#%5B%5BPremultiplied%20alpha%20part%202%5D%5D),
 and/or [Porter & Duff's original paper on PMA](https://keithp.com/~keithp/porterduff/p253-porter.pdf).
 
 Conclusion
