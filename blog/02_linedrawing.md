@@ -79,8 +79,8 @@ DrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, u32 Colour)
 // 2. Find the largest component of AB and divide both compenents by it
 /**********************************************************************/
 
-	v2 Dir = V2Sub(Point2, Point1);		// consider the vector from Point1 to Point2
-	v2 AbsDir;							// may have to compare negatives
+	v2 Dir = V2Sub(Point2, Point1);    // consider the vector from Point1 to Point2
+	v2 AbsDir;                         // may have to compare negatives
 	AbsDir.X = Abs(Dir.X);
 	AbsDir.Y = Abs(Dir.Y);
 
@@ -92,14 +92,14 @@ DrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, u32 Colour)
 
 
 	v2 SignedDirFraction;
-	if(Result.LargestAbsDimension != 0)		// don't divide by 0
+	if(Result.LargestAbsDimension != 0)    // don't divide by 0
 	{
 		SignedDirFraction.X = Dir.X / LargestAbsDimension;
 		SignedDirFraction.Y = Dir.Y / LargestAbsDimension;
 	}
 	else
 	{
-		return;		// if the longest side is 0, there is nothing to draw
+		return;    // if the longest side is 0, there is nothing to draw
 	}
 
 
@@ -113,14 +113,14 @@ DrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, u32 Colour)
 	    LoopCounter < LoopCounterEnd;
 	    ++LoopCounter)
 	{
-		// Turn 2D floating point coordinate to 1D integral coordinate
+		// Turn 2D floating point coordinate to 1D integral coordinate:
 		u32 LinearizedPosition = RoundF32ToU32(PixelPos.Y) * Width + RoundF32ToU32(PixelPos.X);
 		u32 *Pixel = (u32 *)Buffer->Memory + LinearizedPosition;
 		
-		if( (PixelPos.X > 0 && PixelPos.X <= Buffer->Width  - 1 &&		// don't draw outside the screen
+		if( (PixelPos.X > 0 && PixelPos.X <= Buffer->Width  - 1 &&    // don't draw outside the screen
 		     PixelPos.Y > 0 && PixelPos.Y <= Buffer->Height - 1) )
 		{
-			*Pixel = Colour;	// No partial transparency, just a simple overwrite
+			*Pixel = Colour;    // no partial transparency, just a simple overwrite
 		}
 
 		PixelPos = V2Add(PixelPos, SignedDirFraction);
