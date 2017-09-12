@@ -1,7 +1,7 @@
 02: Line Drawing
 ================
 
-How I currently draw my fully aliased (sic) lines.
+This is how I currently draw my fully aliased (sic) lines (with a couple of changes for clarity).
 
 This was some time after watching Casey's video discussing the issue, so I can't say how much it was influenced by it.
 I have a feeling there may be some similarity to Bresenham's algorithm, but I haven't looked at it yet.
@@ -29,7 +29,7 @@ Abstract Solution
 
 It's clear that we can't get a perfect line at arbitrary angles, so we'll have to approximate.
 
-Assuming we want the line to be contiguous, after the first pixel the next will always be +/-1 horizontally, vertically or both.  
+Assuming we want the line to be contiguous, after the first pixel the next will always be +/-1 horizontally, vertically or both.
 Ignoring horizontal, vertical and 45° lines for a moment, we can consider lines as predominantly horizontal or predominantly vertical:
 
 ![Figure 3: Predominantly horizontal line mapped onto pixel grid](02_assets/fig3.png)
