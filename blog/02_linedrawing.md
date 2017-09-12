@@ -1,11 +1,11 @@
 02: Line Drawing
 ================
 
-This is how I currently draw my fully aliased (sic) lines (with a couple of changes for clarity).
+This is (a slightly simplified version of) how I currently draw my fully aliased (sic) lines.
 
-This was some time after watching Casey's video discussing the issue, so I can't say how much it was influenced by it.
+The code was initially written some time after watching Casey's video discussing the issue, so I can't say how much it was influenced by it.
 I have a feeling there may be some similarity to Bresenham's algorithm, but I haven't looked at it yet.
-As in large part my current programming practice in general and this project in particular are more focussed on improving my skills than quickly achieving results, I've tried to solve problems at least to a functional level myself, before possibly finding a better version from someone else.
+As in large part my current programming practice in general and this project in particular are more focused on improving my skills than quickly achieving results, I've tried to solve problems at least to a functional level myself, before possibly finding a better version from someone else.
 
 If you don't want that opportunity spoiled for yourself I recommend you stop reading here, implement an algorithm for drawing straight lines for yourself, then come back and compare techniques.
 
@@ -31,7 +31,6 @@ It's clear that we can't get a perfect line at arbitrary angles, so we'll have t
 
 Assuming we want the line to be contiguous, after the first pixel the next will always be +/-1 horizontally, vertically or both.
 Ignoring horizontal, vertical and 45° lines for a moment, we can consider lines as predominantly horizontal or predominantly vertical:
-
 ![Figure 3: Predominantly horizontal line mapped onto pixel grid](02_assets/fig3.png)
 *Figure 3: Predominantly horizontal line mapped onto pixel grid*
 
@@ -44,7 +43,7 @@ They are coloured as in Figure 2 relative to the previous pixel, if moving from 
 You can see that an adequate line can be created with the following algorithm:
 1. move 1 in the predominant direction
 2. intersect the line in the non predominant direction
-3. draw the pixel at the intersection
+3. draw the pixel that the intersection is over
 4. repeat starting from the intersection for the number of pixels in the predominant direction
 
 Shown visually:
@@ -59,8 +58,8 @@ It's apparent from Figure 5 that the non-predominant component is both:
 - less than the predominant component (less than 1)
 - constant for a given line
 
-The 2 components and the section of line create a triangle that is similar to overall line and the x and y difference between A and B.
-If overall triangle is scaled so that the predominant component is equal to 1, we will find the length of the non-predominant component (achieving step 2).
+The 2 components and the section of line create a triangle that is similar to the overall line and the x and y difference between A and B.
+If the overall triangle is scaled so that the predominant component is equal to 1, we will find the length of the non-predominant component (achieving step 2).
 This is equivalent to dividing both components by the longer one.
 ![Figure 6: Line components from Figure 2 scaled to pixel size](02_assets/fig6.png)
 *Figure 6: Line components from Figure 2 scaled to pixel size*
