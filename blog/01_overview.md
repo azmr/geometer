@@ -1,4 +1,4 @@
-01. Overview
+01: Overview
 ============
 
 This post is meant to provide a general overview of the code structure to contextualize later information.

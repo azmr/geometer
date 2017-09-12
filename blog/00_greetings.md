@@ -1,4 +1,4 @@
-00. Greetings
+00: Greetings
 ==============
 
 Hi all, thanks for checking out my project. The software I'm making, 'Geometer', is a desktop application for drawing in a way that emulates traditional construction with compass and straightedge. There's more info on the impetus behind it on the main project page, so I'll try not to repeat myself too much here.

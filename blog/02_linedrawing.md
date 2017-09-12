@@ -1,4 +1,4 @@
-02. Line Drawing
+02: Line Drawing
 ================
 
 How I currently draw my fully aliased (sic) lines.
