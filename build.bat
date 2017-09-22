@@ -1,9 +1,9 @@
 @echo off
 
 set SingleExecutable=0
-set CommonCompilerFlags=-nologo -MTd -fp:fast -Gm- -GR- -EHa -WX -Oi -W4 -FC -wd4010 -wd4201 -wd4204 -IE:\Documents\Coding\C\h -DINTERNAL=1 -DDEBUG_PREFIX=Main -DSINGLE_EXECUTABLE=%SingleExecutable%
+set CommonCompilerFlags=-nologo -MTd -fp:fast -Gm- -GR- -EHa -WX -Oi -W4 -FC -wd4010 -wd4201 -wd4204 -wd4146 -IE:\Documents\Coding\C\h -DINTERNAL=1 -DDEBUG_PREFIX=Main -DSINGLE_EXECUTABLE=%SingleExecutable%
 set DebugCompilerFlags=-Od -Z7
-set CommonLinkerFlags=-incremental:no -opt:ref user32.lib gdi32.lib winmm.lib
+set CommonLinkerFlags=-incremental:no -opt:ref user32.lib gdi32.lib winmm.lib Comdlg32.lib
 REM user32.lib gdi32.lib
 
 IF NOT EXIST E:\Documents\Coding\C\build mkdir E:\Documents\Coding\C\build
@@ -53,3 +53,4 @@ REM C4201: nonstandard extension used: nameless struct/union
 REM C4100: unreferenced formal parameter
 REM C4189: local variable is initialized but not referenced
 REM C4204: nonstandard extension used: non-constant aggregate initializer
+REM C4146: unary minus operator applied to unsigned type, result still unsigned

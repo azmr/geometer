@@ -100,18 +100,25 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 }
 
 internal inline void
-UpdateDrawPointers(state *State, uint iPrevDraw)
+SaveUndoState(state *State)
 {
+	BEGIN_TIMED_BLOCK;
+	uint iPrevDraw = State->iCurrentDraw;
+	State->iCurrentDraw = iDrawOffset(State, 1);
+	// NOTE: prevents redos
+	State->iLastDraw = State->iCurrentDraw;
+
 	draw_state *Draw = State->Draw;
-	State->Points      = (v2 *)Draw[State->iCurrentDraw].maPoints.Base;
-	State->PointStatus = (u8 *)Draw[State->iCurrentDraw].maPointStatus.Base;
-	State->Shapes      = (shape *)Draw[State->iCurrentDraw].maShapes.Base;
-	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint = (uint)Draw[State->iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape = (uint)Draw[State->iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
-	State->pBasis = &Draw[iPrevDraw].Basis;
-	State->Basis  = &Draw[State->iCurrentDraw].Basis;
-	State->tBasis = 0;
+	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
+	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
+	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
+	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
+	
+	UpdateDrawPointers(State, iPrevDraw);
+
+	++State->cDraws;
+	State->Modified = 1;
+	END_TIMED_BLOCK;
 }
 
 internal void
@@ -273,6 +280,8 @@ internal inline uint
 IntersectShapes(state *State, shape S1, shape S2, v2 *Intersection1, v2 *Intersection2)
 {
 	BEGIN_TIMED_BLOCK;
+	uint Result = 0;
+	if(S1.Kind == SHAPE_Free || S2.Kind == SHAPE_Free) goto end;
 	// NOTE: should be valid for circles or arcs
 	f32 S1Radius = Dist(POINTS(S1.Circle.ipoFocus), POINTS(S1.Circle.ipoRadius));
 	f32 S2Radius = Dist(POINTS(S2.Circle.ipoFocus), POINTS(S2.Circle.ipoRadius));
@@ -282,7 +291,6 @@ IntersectShapes(state *State, shape S1, shape S2, v2 *Intersection1, v2 *Interse
 #define LINE(x) POINTS(S##x.Line.P1), S##x##Dir
 #define CIRCLE(x) POINTS(S##x.Circle.ipoFocus), S##x##Radius
 #define ARC(x) POINTS(S##x.Arc.ipoFocus), S##x##Radius, POINTS(S##x.Arc.ipoStart), POINTS(S##x.Arc.ipoEnd)
-	uint Result = 0;
 	switch(S1.Kind)
 	{
 		case SHAPE_Segment:
@@ -333,6 +341,7 @@ IntersectShapes(state *State, shape S1, shape S2, v2 *Intersection1, v2 *Interse
 #undef CIRCLE
 #undef ARC
 
+end:
 	END_TIMED_BLOCK;
 	return Result;
 }
@@ -504,27 +513,6 @@ RemovePointsOfType(state *State, uint PointType)
 }
 
 internal inline void
-SaveUndoState(state *State)
-{
-	BEGIN_TIMED_BLOCK;
-	uint iPrevDraw = State->iCurrentDraw;
-	State->iCurrentDraw = iDrawOffset(State, 1);
-	// NOTE: prevents redos
-	State->iLastDraw = State->iCurrentDraw;
-
-	draw_state *Draw = State->Draw;
-	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
-	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
-	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
-	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
-	
-	UpdateDrawPointers(State, iPrevDraw);
-
-	++State->cDraws;
-	END_TIMED_BLOCK;
-}
-
-internal inline void
 ArcFromPoints(image_buffer *Buffer, v2 Centre, v2 A, v2 B, colour Colour)
 {
 	ArcLine(Buffer, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
@@ -613,7 +601,7 @@ OffsetDraw(state *State, int Offset)
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
-	OPEN_LOG("geometer_log.txt");
+	OPEN_LOG("geometer_log",".txt");
 	state *State = (state *)Memory->PermanentStorage;
 	memory_arena Arena;
 	v2 Origin;
@@ -630,12 +618,21 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	if(!Memory->IsInitialized)
 	{
-		Reset(State);
+		if(!State->OpenFile)
+		{
+			Reset(State);
+		}
+		else
+		{
+			State->tBasis = 1.f;
+			State->OpenFile = 0;
+		}
 		State->cDraws = 0;
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
-		// NOTE: this allows use of 'previous Basis' without out-of-bounds access. It is also consistent that 0 is not
-		// used as an index
+
+		// NOTE: need initial save state to undo to
 		SaveUndoState(State);
+		State->Modified = 0;
 
 		Memory->IsInitialized = 1;
 	}
@@ -830,6 +827,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			if(Keyboard.Esc.EndedDown)
 			{
+				// TODO: should this be an undo? ...then Modified could remain unchanged
 				// Cancel selection, point returns to saved location
 				POINTSTATUS(State->ipoSelect) = State->SavedStatus[0];
 				POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
@@ -840,6 +838,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			else if(Keyboard.Alt.EndedDown && DEBUGClick(LMB))
 			{
+				// TODO IMPORTANT: don't add point if pressed in free space
 				// TODO: Alt-click and drag rather than 2 clicks: if alt is down on LMB down, set on LMB release
 				// otherwise set on alt-click
 				// TODO: if RMB held, set zoom as well - box aligned to new axis showing where screen will end up
@@ -893,6 +892,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		else // normal state
 		{
+			// SAVE (AS)
+			if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.S))
+			{
+				State->SaveFile = 1;
+				if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
+			}
+			else if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.O))
+			{
+				// TODO IMPORTANT: seems to trap the 'o' down,
+				// so it needs to be pressed again before it's registered properly
+				State->OpenFile = 1;
+				if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
+			}
 			// UNDO
 			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 				// NOTE: making sure that there is a state available to undo into
@@ -946,7 +958,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 
 	{ LOG("RENDER");
-		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, RED);
+		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{
 			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
@@ -1100,10 +1112,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				/* "Mouse: (%.2f, %.2f), " */
-				/* "Basis: (%.2f, %.2f), " */
+				"Basis: (%.2f, %.2f), "
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
-				"iLastPoint: %u"
+				/* "iLastPoint: %u" */
+				"S: %u, SA: %u, O: %u"
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
@@ -1111,10 +1124,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f,
 				/* Mouse.P.X, Mouse.P.Y, */
-				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
+				BASIS->XAxis.X, BASIS->XAxis.Y,
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
-				State->iLastPoint
+				/* State->iLastPoint */
+				State->SaveFile, State->SaveAs, State->OpenFile
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 

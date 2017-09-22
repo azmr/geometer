@@ -25,7 +25,7 @@ static debug_text DebugText;
 #include <stb_sprintf.h>
 #include <maths.h>
 #include <intrinsics.h>
-#define LOGGING 1
+#define LOGGING 0
 #include <debug.h>
 #include <geometry.h>
 #include <platform.h>
@@ -33,6 +33,7 @@ static debug_text DebugText;
 #include "gfx.h"
 #include <fonts.h>
 #include <input.h>
+#include <misc.h>
 
 #define POINT_EPSILON 0.02f
 
@@ -193,8 +194,14 @@ typedef struct state
 	f32 tBasis;
 
 	font DefaultFont;
+	uint cchFilePath;
+	char *FilePath;
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
+	b32 SaveFile;
+	b32 SaveAs;
+	b32 OpenFile;
+	b32 Modified; // TODO: set to 0 when undos reach save level
 	b32 CloseApp;
 
 	uint ipoDrag; // TODO: consolidate into ipoSelect
@@ -214,6 +221,22 @@ iDrawOffset(state *State, int Offset)
 	uint Result = (State->iCurrentDraw + Offset) % NUM_UNDO_STATES;
 	return Result;
 }
+
+internal inline void
+UpdateDrawPointers(state *State, uint iPrevDraw)
+{
+	draw_state *Draw = State->Draw;
+	State->Points      = (v2 *)Draw[State->iCurrentDraw].maPoints.Base;
+	State->PointStatus = (u8 *)Draw[State->iCurrentDraw].maPointStatus.Base;
+	State->Shapes      = (shape *)Draw[State->iCurrentDraw].maShapes.Base;
+	// NOTE: ignore space for empty zeroth pos
+	State->iLastPoint = (uint)Draw[State->iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape = (uint)Draw[State->iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
+	State->pBasis = &Draw[iPrevDraw].Basis;
+	State->Basis  = &Draw[State->iCurrentDraw].Basis;
+	State->tBasis = 0;
+}
+
 
 #define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 
