@@ -454,6 +454,21 @@ WinMain(HINSTANCE Instance,
 		/* FrameTimer = Win32StartFrameTimer(FrameTimer); */
 		/* old_new_controller Keyboard = UpdateController(Input, 0); */
 
+		{
+			// NOTE: if the window is moved to a higher resolution monitor, reallocate
+			int NewScreenWidth, NewScreenHeight;
+			Win32ScreenResolution(Window.Handle, &NewScreenWidth, &NewScreenHeight);
+			if(NewScreenWidth > ScreenWidth || NewScreenHeight > ScreenHeight)
+			{
+				ScreenWidth = NewScreenWidth;
+				ScreenHeight = NewScreenHeight;
+				/* char ScreenStr[512]; */
+				/* stbsp_sprintf(ScreenStr, "Changed to larger monitor. New size: %u x %u.", ScreenWidth, ScreenHeight); */
+				/* MessageBox(Window.Handle, ScreenStr, "Monitor Change", 0); */
+				Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
+			}
+		}
+
 		// TODO: move to open/save?
 		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
 				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");

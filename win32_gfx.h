@@ -21,13 +21,36 @@ typedef struct win32_window
 } win32_window;
 win32_window ZeroWin32Window = {0};
 
+/// Gets DC for current monitor (GetDC gives the primary monitor)
+internal inline HDC
+Win32WindowDC(HWND WindowHandle)
+{
+	HMONITOR MonitorHandle = MonitorFromWindow(WindowHandle, MONITOR_DEFAULTTONEAREST);
+	MONITORINFOEX MonitorInfo = {0};
+	MonitorInfo.cbSize = sizeof(MONITORINFOEX);
+	GetMonitorInfo(MonitorHandle, (LPMONITORINFO)&MonitorInfo);
+	char *DeviceName = MonitorInfo.szDevice;
+	HDC DeviceContext = CreateDC("DISPLAY", DeviceName, 0, 0);
+	return DeviceContext;
+}
+
 internal inline void
-Win32ScreenResolution(HWND Handle, int *Width, int *Height)
+Win32PrimaryScreenResolution(HWND Handle, int *Width, int *Height)
 {
 	HDC DeviceContext = GetDC(Handle);
 	*Width = GetDeviceCaps(DeviceContext, HORZRES);
 	*Height = GetDeviceCaps(DeviceContext, VERTRES);
 	ReleaseDC(Handle, DeviceContext);
+}
+
+/// Gets resolution of window's current monitor
+internal inline void
+Win32ScreenResolution(HWND WindowHandle, int *Width, int *Height)
+{
+	HDC DeviceContext = Win32WindowDC(WindowHandle);
+	*Width = GetDeviceCaps(DeviceContext, HORZRES);
+	*Height = GetDeviceCaps(DeviceContext, VERTRES);
+	ReleaseDC(WindowHandle, DeviceContext);
 }
 
 internal void
@@ -96,10 +119,12 @@ Win32DisplayBufferInWindow(win32_image_buffer *Buffer, win32_window Window)
 	else
 #endif
 	{
-		PatBlt(DeviceContext, 0, 0, Window.Width, Window.OffsetY, BLACKNESS);
-		PatBlt(DeviceContext, 0, Window.OffsetY + Buffer->Height, Window.Width, Window.Height, BLACKNESS);
-		PatBlt(DeviceContext, 0, 0, Window.OffsetX, Window.Height, BLACKNESS);
-		PatBlt(DeviceContext, Window.OffsetX + Buffer->Width, 0, Window.Width, Window.Height, BLACKNESS);
+		// TODO: this is still blitting black?
+#define SCREEN_BG_COLOR WHITENESS
+		PatBlt(DeviceContext, 0, 0, Window.Width, Window.OffsetY, SCREEN_BG_COLOR);
+		PatBlt(DeviceContext, 0, Window.OffsetY + Buffer->Height, Window.Width, Window.Height, SCREEN_BG_COLOR);
+		PatBlt(DeviceContext, 0, 0, Window.OffsetX, Window.Height, SCREEN_BG_COLOR);
+		PatBlt(DeviceContext, Window.OffsetX + Buffer->Width, 0, Window.Width, Window.Height, SCREEN_BG_COLOR);
 
 		// NOTE: For prototyping purposes, we're going to always blit
 		// 1-to-1 pixels to make sure we don't introduce artifacts with
@@ -173,6 +198,7 @@ Win32ProcessPendingMessages()
             case WM_QUIT:
             {
             	// TODO: return 0 for caller to deal with
+				OutputDebugStringA("Quit\n");
                 GlobalRunning = 0;
             } break;
 
@@ -205,6 +231,8 @@ Win32MainWindowCallback(HWND   Window,
 			GlobalRunning = 0;
 		} break;
 		case WM_SIZE:
+		 // Zilarrezko: Often times I've seen that when my window was resized that it didn't seem to update the window,
+		 // so everytime WM_SIZE is called I do an UpdateAndRender, then I Blit the back buffer, and I make sure to call ValidateRect.
 		{ } break;
 
 		default:
