@@ -97,10 +97,10 @@ In roughly implementation order:
 - Panning
 - Zooming and rotation
 - Animate between changes in basis
-
-### TO DO
 - Unlimited points/shapes
 - File saves/loading
+
+### TO DO
 - Basic .png exports
 - Faster way to implement multiple arcs/circles of the same radius
 - Add text labels for points
