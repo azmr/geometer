@@ -113,6 +113,7 @@ ReadFileArrayToArena(FILE *File, memory_arena *maPoints, u32 cElements, u32 Elem
 	maPoints->Used = cBytesEl;
 	// TODO: check individual array size is right
 	// NOTE: add ElementSize to avoid writing valid elements to index 0
+	Assert(maPoints->Base);
 	u64 cElCheck = fread(maPoints->Base + ElementSize, ElementSize, cElements, File);
 	Assert(cElements == cElCheck);
 	return cBytesEl;
@@ -128,7 +129,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		FileErrorOnFail(WindowHandle, Result, FilePath); 
 		file_header FH;
 		LOG("\tCHECK ID");
-		fread(&FH, sizeof(FH), 1, Result);
+		Assert(fread(&FH, sizeof(FH), 1, Result));
 		if(!(FH.ID[0]=='G'&&FH.ID[1]=='e'&&FH.ID[2]=='o'&&FH.ID[3]=='m'&&
 			 FH.ID[4]=='e'&&FH.ID[5]=='t'&&FH.ID[6]=='e'&&FH.ID[7]=='r'))
 		{
@@ -146,8 +147,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				u32 cElements;
 				for(uint iArray = 0; iArray < FH.cArrays; ++iArray)
 				{
-					cBytesCheck += fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType);
-					cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements);
+					Assert(cBytesCheck += fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
+					Assert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
 					switch(ElType)
 					{
 #define DRAW_LVL 0
@@ -382,7 +383,8 @@ WinMain(HINSTANCE Instance,
 	FILE *OpenedFile = 0;
 
 	char **argv = __argv;
-	if(argv[1])
+	uint argc = __argc;
+	if(argc > 1)
 	{
 		LOG("OPEN FILENAME");
 		uint ArgLen = (uint)strlen(argv[1]) + 1;
@@ -392,9 +394,9 @@ WinMain(HINSTANCE Instance,
 		OpenedFile = OpenFileInCurrentWindow(State, FilePath, cchFilePath, Window.Handle);
 		State->OpenFile = 1;
 
-		if(argv[2])
+		if(argc > 2)
 		{ // Custom location/size
-			if(argv[3] && argv[4] && argv[5])
+			if(argc == 6)
 			{
 				/* u32 x = atoi(argv[2]); */
 				/* u32 y = atoi(argv[3]); */
@@ -424,8 +426,10 @@ WinMain(HINSTANCE Instance,
 	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 
 	// ASSETS
-#if 1
 	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
+#if 1
+	InitLoadedFont(&State->DefaultFont, FontBuffer);
+#else
 	INIT_FONT(Bitstream, "Bitstream.ttf", FontBuffer, 1<<25);
 	State->DefaultFont = Bitstream;
 #endif
