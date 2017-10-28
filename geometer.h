@@ -192,21 +192,26 @@ typedef struct state
 	u64 FrameCount;
 	f32 dt;
 	f32 tBasis;
+	// TODO: rename; (dynamic?) array
+	f32 Length;
 
 	font DefaultFont;
 	uint cchFilePath;
 	char *FilePath;
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
+	// TODO: move to a return, as only needed for end of frame
 	b32 SaveFile;
 	b32 SaveAs;
 	b32 OpenFile;
 	b32 Modified; // TODO: set to 0 when undos reach save level
 	b32 CloseApp;
 
+	// TODO: Consolidate to 2 points used as determined by flags
 	uint ipoDrag; // TODO: consolidate into ipoSelect
 	uint ipoSelect;
 	uint ipoArcStart;
+	uint ipoLineExtend;
 	v2 poSaved;
 	b32 PointSnap;
 

@@ -14,10 +14,10 @@
 // Text to add comment/label
 //
 // shift unlocks diameter, caps toggles it
-// set diameter with R-clicks when no point selected
+// set diameter with L-click + drag
 //
 // M-click/Space+L-click + drag -> move canvas
-// Scroll -> move up/down or zoom?
+// Scroll -> zoom
 
 // TODO:
 // =====
@@ -37,9 +37,12 @@
 // - For fast movements, make sweep effect, rather than ugly multiple line effect 
 // - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
 // - One end of line/arc constrained on another shape
-// - Consider making everything one long list of shapes (as a union)
 // - Animate between offsets on undo/redo so that you can keep track of where you are
 // - Resizable windo (maintain centre vs maintain absolute position)
+// - New file w/ ctrl-n
+// - Extendable lines
+// - Mark point on line at distance
+// - Break up current line into n parts
 
 v2 gDebugV2;
 
@@ -54,14 +57,11 @@ DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
 }
 
 internal inline void
-DrawPoint(image_buffer *ScreenBuffer, v2 po, b32 Active, colour Col)
+DrawActivePoint(image_buffer *ScreenBuffer, v2 po, colour Col)
 {
 	BEGIN_TIMED_BLOCK;
 	DrawCircleFill(ScreenBuffer, po, 3.f, Col);
-	if(Active)
-	{
-		CircleLine(ScreenBuffer, po, 5.f, Col);
-	}
+	CircleLine(ScreenBuffer, po, 5.f, Col);
 	END_TIMED_BLOCK;
 }
 
@@ -145,9 +145,12 @@ Reset(state *State)
 	State->Basis->Offset = ZeroV2;
 	State->Basis->Zoom   = 0.1f;
 
-	State->tBasis      = 1.f;
-	State->ipoSelect   = 0;
-	State->ipoArcStart = 0;
+	State->tBasis        = 1.f;
+	State->ipoSelect     = 0;
+	State->ipoArcStart   = 0;
+	State->ipoLineExtend = 0;
+
+	State->Length = 20.f;
 
 	PushStruct(&State->maActions, action);
 	action Action;
@@ -194,11 +197,11 @@ FindPointAtPos(state *State, v2 po, uint PointStatus)
 }
 
 /// returns index of point (may be new or existing)
-// TODO: less definite name? ProposePoint, ConsiderNewPoint...?
 internal uint
 AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 {
 	BEGIN_TIMED_BLOCK;
+	/* gDebugV2 = po; */
 	uint Result = FindPointAtPos(State, po, ~(uint)POINT_Free);
 	if(Result)
 	{
@@ -597,7 +600,6 @@ OffsetDraw(state *State, int Offset)
 
 }
 
-// TODO: implement undo/redo
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
@@ -645,12 +647,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 	Assert(State->OverflowTest == 0);
 
-	if(State->FrameCount < 4)
+	if(V2Equals(BASIS->XAxis, ZeroV2) || isnan(BASIS->XAxis.X) || isnan(BASIS->XAxis.Y))
 	{
-		// NOTE: prevents a point being added if double-click opening is in same region that app opens to
-		// TODO: more elegant solution? clear window messages in platform layer?
-		Input.New->Mouse.LMB.EndedDown = 0;
+		LOG("Invalid basis");
+		BASIS->XAxis.X = 1.f;
+		BASIS->XAxis.Y = 0.f;
 	}
+
+	/* if(State->FrameCount < 4) */
+	/* { */
+	/* 	// NOTE: prevents a point being added if double-click opening is in same region that app opens to */
+	/* 	// TODO: more elegant solution? clear window messages in platform layer? */
+	/* 	Input.New->Mouse.LMB.EndedDown = 0; */
+	/* } */
 
 	// Clear BG
 	BEGIN_NAMED_TIMED_BLOCK(ClearBG);
@@ -752,14 +761,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				ipoClosest = 0;
 			}
 		}
-		else
-		{
-			// TODO: ???
-		}
 
 		// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
-#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) &&  \
-		Input.Old->Mouse.button.EndedDown && !Input.New->Mouse.button.EndedDown)
+#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) && DEBUGPress(Mouse.button))
+		/* Input.Old->Mouse.button.EndedDown && !Input.New->Mouse.button.EndedDown) */
 #define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)
 #define DEBUGPress(button)   (!Input.Old->button.EndedDown && Input.New->button.EndedDown)
 
@@ -771,7 +776,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			BASIS->Offset = ZeroV2;
 			// TODO: do I want zoom to reset?
 			// BASIS->Zoom   = 1.f;
-			State->tBasis           = 0.f;
+			State->tBasis = 0.f;
 		}
 
 		// TODO: fix needed for if started and space released part way?
@@ -823,7 +828,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		/* 	ipoSnap = 0; */
 		/* } */
 
-		else if(State->ipoSelect)
+		else if(State->ipoSelect) // started drawing
 		{
 			if(Keyboard.Esc.EndedDown)
 			{
@@ -852,17 +857,22 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			else if(State->ipoArcStart)
 			{
-				if(!Mouse.RMB.EndedDown)
+				// NOTE: Not using button released in case it's missed for some reason
+				// also possible this fires at a weird time when focus returns or something...
+				if(!Mouse.LMB.EndedDown)
 				{
-					if(V2Equals(SnapMouseP, POINTS(State->ipoArcStart))) // Same angle -> full circle
+					v2 poSelect = POINTS(State->ipoSelect);
+					v2 poNew = V2WithDist(poSelect, SnapMouseP, State->Length);
+					if(V2WithinEpsilon(poNew, POINTS(State->ipoArcStart), POINT_EPSILON)) // Same angle -> full circle
 					{
-						AddCircle(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Radius, 0));
+						AddCircle(State, State->ipoSelect, AddPoint(State, poNew, POINT_Radius, 0));
 					}
+
 					else
 					{
-						v2 poFocus = POINTS(State->ipoSelect);
-						v2 poStart = POINTS(State->ipoArcStart);
-						v2 poEnd = V2Add(poFocus, V2WithLength(V2Sub(SnapMouseP, poFocus), Dist(poFocus, poStart))); // Attached to arc
+						/* v2 poFocus = poSelect; */
+						/* v2 poStart = POINTS(State->ipoArcStart); */
+						v2 poEnd = poNew; //V2WithDist(poFocus, SnapMouseP, Dist(poFocus, poStart)); // Attached to arc
 						uint ipoArcEnd = AddPoint(State, poEnd, POINT_Arc, 0);
 						AddArc(State, State->ipoSelect, State->ipoArcStart, ipoArcEnd);
 					}
@@ -871,34 +881,65 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 			}
 
-			else if(DEBUGClick(LMB))
+			else if(State->ipoLineExtend)
+			{
+				if(!Mouse.RMB.EndedDown)
+				{
+					v2 poSelect = POINTS(State->ipoSelect);
+					v2 poExtend = POINTS(State->ipoLineExtend);
+					v2 LineAxis = Norm(V2Sub(poExtend, poSelect));
+					gDebugV2 = V2Mult(20, LineAxis);
+					v2 RelMouse = V2Sub(SnapMouseP, poSelect);
+					// Project RelMouse onto LineAxis
+					f32 ExtendLength = Dot(LineAxis, RelMouse);
+					v2 poNew = V2WithDist(poSelect, poExtend, ExtendLength);
+					AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
+					State->ipoSelect = 0;
+					State->ipoLineExtend = 0;
+				}
+			}
+
+			else if(DEBUGRelease(Mouse.LMB)) // previously held down - setting length
+			{
+				// TODO: use DistSq
+				 f32 Length = Dist(POINTS(State->ipoSelect), SnapMouseP);
+				 if(Length > POINT_EPSILON) { State->Length = Length; }
+			}
+
+			else if(DEBUGClick(RMB))
 			{
 				// NOTE: completed line, set both points' status if line does not already exist
 				// and points aren't coincident
-				if(!V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
+				if(V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
+				{ // NOTE: don't  want to extend a line with no direction!
+					State->ipoSelect = 0;
+				}
+				else
 				{
 					// TODO: lines not adding properly..?
-					AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0));
+					/* AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0)); */
+					State->ipoLineExtend = AddPoint(State, SnapMouseP, POINT_Line, 0);
 				}
-				State->ipoSelect = 0;
 			}
 
-			else if(DEBUGPress(Mouse.RMB))
+			else if(DEBUGClick(LMB))
 			{
-				// TODO: stop snapping onto focus
-				State->ipoArcStart = AddPoint(State, SnapMouseP, POINT_Arc, 0);
+				// TODO: stop snapping onto focus - add exceptions to snapping
+				v2 poNew = V2WithDist(POINTS(State->ipoSelect), SnapMouseP, State->Length);
+				// TODO (optimise): there is a 1 frame lag even if pressed and released within 1...
+				State->ipoArcStart = AddPoint(State, poNew, POINT_Arc, 0);
 			}
 		}
 
 		else // normal state
 		{
 			// SAVE (AS)
-			if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.S))
+			if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.S))
 			{
 				State->SaveFile = 1;
 				if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
 			}
-			else if(Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.O))
+			else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.O))
 			{
 				// TODO IMPORTANT: seems to trap the 'o' down,
 				// so it needs to be pressed again before it's registered properly
@@ -906,7 +947,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
 			}
 			// UNDO
-			if((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
+			if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 				// NOTE: making sure that there is a state available to undo into
 			  	((State->cDraws >= NUM_UNDO_STATES && State->iLastDraw != iDrawOffset(State, -1)) ||
 				 (State->cDraws <  NUM_UNDO_STATES && State->iCurrentDraw > 1)))
@@ -914,8 +955,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				OffsetDraw(State, -1);
 			}
 			// REDO
-			if(((Keyboard.Ctrl.EndedDown && DEBUGRelease(Keyboard.Y)) ||
-				(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGRelease(Keyboard.Z))) &&
+			if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
+				(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
 					(State->iCurrentDraw < State->iLastDraw))
 			{
 				OffsetDraw(State, 1);
@@ -923,7 +964,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			if(DEBUGClick(LMB))
 			{
-				// NOTE: Starting a line, save the first point
+				// NOTE: Starting a shape, save the first point
 				/* State->SavedPoint = SnapMouseP; */
 				SaveUndoState(State);
 				State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
@@ -934,8 +975,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				if(DEBUGClick(RMB))
 				{
-					SaveUndoState(State);
-					InvalidatePoint(State, ipoSnap);
+					// TODO: deleting points
+					/* SaveUndoState(State); */
+					/* InvalidatePoint(State, ipoSnap); */
 				}
 			}
 
@@ -948,7 +990,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* State->ipoDrag = ipoSnap; */
 			/* } */ 
 
-			if(DEBUGRelease(Keyboard.Backspace))
+			if(DEBUGPress(Keyboard.Backspace))
 			{
 				SaveUndoState(State);
 				Reset(State);
@@ -959,10 +1001,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	{ LOG("RENDER");
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
-		if(!V2Equals(gDebugV2, ZeroV2))
-		{
-			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
-		}
 
 		basis EndBasis = *BASIS;
 		basis StartBasis = *pBASIS;
@@ -982,6 +1020,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 				tBasis *= 2.f;
 			}
+
 			else
 			{
 				if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
@@ -993,7 +1032,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					StartBasis.XAxis = Perp(EndBasis.XAxis);
 				}
 				tBasis = (tBasis-0.5f) * 2.f;
-
 			}
 		}
 		else
@@ -1057,7 +1095,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(POINTSTATUS(i) != POINT_Free)
 			{
 				v2 po = V2CanvasToScreen(Basis, Points[i], ScreenCentre);
-				DrawPoint(ScreenBuffer, po, 0, LIGHT_GREY);
+				DrawCircleFill(ScreenBuffer, po, 3.f, LIGHT_GREY);
 			}
 		}
 
@@ -1069,7 +1107,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(State->ipoSelect) // A point is selected (currently drawing)
 		{
 			v2 poSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre);
-		// TODO: start here, messing with mousep, snap, ss
 			if(State->ipoArcStart && !V2Equals(Points[State->ipoArcStart], SnapMouseP)) // drawing an arc
 			{
 				LOG("\tDRAW HALF-FINISHED ARC");
@@ -1081,11 +1118,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			}
 			else
 			{
-				LOG("\tDRAW SOMETHING");
+				LOG("\tDRAW PREVIEW");
 				// NOTE: Mid-way through drawing a line
 				DrawCircleFill(ScreenBuffer, poSelect, 3.f, RED);
 				CircleLine(ScreenBuffer, poSelect, 5.f, RED);
-				CircleLine(ScreenBuffer, poSelect, Dist(poSelect, SSSnapMouseP), LIGHT_GREY);
+
+				f32 SSLength = State->Length/BASIS->Zoom; 
+				if(Mouse.LMB.EndedDown && !Keyboard.Space.EndedDown)
+				{ SSLength = Dist(poSelect, SSSnapMouseP); }
+				CircleLine(ScreenBuffer, poSelect,  SSLength, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSelect, SSSnapMouseP, LIGHT_GREY);
 				/* DebugAdd("\n\nMouse Angle: %f", MouseAngle/TAU); */
 			}
@@ -1094,7 +1135,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoSnap)
 		{
 			// NOTE: Overdraws...
-			DrawPoint(ScreenBuffer, poClosest, 1, BLUE);
+			DrawActivePoint(ScreenBuffer, poClosest, BLUE);
+		}
+
+		if(!V2Equals(gDebugV2, ZeroV2))
+		{
+#if 0
+			DrawActivePoint(ScreenBuffer, V2CanvasToScreen(*BASIS, gDebugV2, ScreenCentre), ORANGE);
+#else
+			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
+#endif
 		}
 	}
 
@@ -1111,24 +1161,24 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		f32 TextSize = 15.f;
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
-				/* "Mouse: (%.2f, %.2f), " */
+				"Mouse: (%.2f, %.2f), "
 				"Basis: (%.2f, %.2f), "
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
-				"S: %u, SA: %u, O: %u"
+				/* "S: %u, SA: %u, O: %u" */
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
 				/* Keyboard.Esc.EndedDown, */
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f,
-				/* Mouse.P.X, Mouse.P.Y, */
-				BASIS->XAxis.X, BASIS->XAxis.Y,
+				Mouse.P.X, Mouse.P.Y,
+				BASIS->XAxis.X, BASIS->XAxis.Y
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
 				/* State->iLastPoint */
-				State->SaveFile, State->SaveAs, State->OpenFile
+				/* State->SaveFile, State->SaveAs, State->OpenFile */
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
