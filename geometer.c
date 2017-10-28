@@ -591,13 +591,24 @@ V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 	return Result;
 }
 
-	internal inline void
+internal inline void
 OffsetDraw(state *State, int Offset)
 {
 	uint iPrevDraw = State->iCurrentDraw;
 	State->iCurrentDraw = iDrawOffset(State, Offset);
 	UpdateDrawPointers(State, iPrevDraw);
 
+}
+
+internal inline v2
+ExtendSegment(v2 poStart, v2 poAngle, v2 poLength)
+{
+	v2 LineAxis = Norm(V2Sub(poAngle, poStart));
+	v2 RelLength = V2Sub(poLength, poStart);
+	// Project RelLength onto LineAxis
+	f32 ExtendLength = Dot(LineAxis, RelLength);
+	v2 Result = V2WithDist(poStart, poAngle, ExtendLength);
+	return Result;
 }
 
 UPDATE_AND_RENDER(UpdateAndRender)
@@ -887,12 +898,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				{
 					v2 poSelect = POINTS(State->ipoSelect);
 					v2 poExtend = POINTS(State->ipoLineExtend);
-					v2 LineAxis = Norm(V2Sub(poExtend, poSelect));
-					gDebugV2 = V2Mult(20, LineAxis);
-					v2 RelMouse = V2Sub(SnapMouseP, poSelect);
-					// Project RelMouse onto LineAxis
-					f32 ExtendLength = Dot(LineAxis, RelMouse);
-					v2 poNew = V2WithDist(poSelect, poExtend, ExtendLength);
+					v2 poNew = ExtendSegment(poSelect, poExtend, SnapMouseP);
 					AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
 					State->ipoSelect = 0;
 					State->ipoLineExtend = 0;
@@ -1115,6 +1121,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				ArcFromPoints(ScreenBuffer, poFocus, poStart, SSSnapMouseP, BLACK);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSelect, SSSnapMouseP, LIGHT_GREY);
+			}
+			else if(State->ipoLineExtend)
+			{
+				// TODO (feature): draw a light grey ray to edge of screen
+				// TODO (feature): draw a light grey perpendicular line to mouse pointer/SnapMouseP?
+				v2 poAngle = V2CanvasToScreen(Basis, Points[State->ipoLineExtend], ScreenCentre);
+				v2 poExtend = ExtendSegment(poSelect, poAngle, SSSnapMouseP);
+				DEBUGDrawLine(ScreenBuffer, poSelect, poExtend, BLACK);
+				DrawActivePoint(ScreenBuffer, poExtend, RED);
 			}
 			else
 			{
