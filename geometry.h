@@ -228,19 +228,22 @@ IntersectSegmentCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2
 {
 	f32 t1, t2;
 	v2 d = Norm(Dir);
+	// If the tangent is a line, how many times would it go intersect the circle?
 	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
 
 	if(Result)
 	{ 
 		b32 FirstPoint = 1;
 		b32 SecondPoint = 1;
-		if(t1 < 0.f)                            FirstPoint = 0;
-		if(LenSq(V2Mult(t2, d)) > LenSq(Dir))  SecondPoint = 0;
+		// Are any line intersections inside the segment?
+		if(t1 < 0.f || LenSq(V2Mult(t1, d)) > LenSq(Dir))  FirstPoint  = 0;
+		if(t2 < 0.f || LenSq(V2Mult(t2, d)) > LenSq(Dir))  SecondPoint = 0;
 		Result = FirstPoint + SecondPoint;
 
 		if(FirstPoint)
 		{
 			*Intersection1 = V2Add(P, V2Mult(t1, d));
+			// This will be ignored if only one intersection:
 			*Intersection2 = V2Add(P, V2Mult(t2, d));
 		}
 		else if(SecondPoint)
