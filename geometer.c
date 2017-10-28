@@ -626,6 +626,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
 	ScreenCentre;
 
+	// REMOVE
+	static int testcharindex = 0;
+
 	memory_arena TempArena;
 	InitArena(&TempArena, (u8 *)Memory->TransientStorage, Memory->TransientStorageSize);
 
@@ -790,8 +793,83 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			State->tBasis = 0.f;
 		}
 
+		if(DEBUGPress(Keyboard.Tab))
+		{
+			f32 tLength = State->Length;
+			State->Length = State->pLength;
+			State->pLength = tLength;
+		}
+
+#define KEYBOARD_LENGTH_FACTOR(keynum, factor) \
+		if(DEBUGPress(Keyboard.n ## keynum)) \
+		{ \
+			State->pLength = State->Length; \
+			/* TODO (UI): choose modifier key */ \
+			if(Keyboard.Shift.EndedDown) { State->Length *= factor; } \
+			else                         { State->Length /= factor; } \
+		}
+		KEYBOARD_LENGTH_FACTOR(1, 2.f)
+		KEYBOARD_LENGTH_FACTOR(2, 3.f)
+		KEYBOARD_LENGTH_FACTOR(3, 4.f)
+		KEYBOARD_LENGTH_FACTOR(4, 5.f)
+		KEYBOARD_LENGTH_FACTOR(5, 6.f)
+		KEYBOARD_LENGTH_FACTOR(6, 7.f)
+		KEYBOARD_LENGTH_FACTOR(7, 8.f)
+		KEYBOARD_LENGTH_FACTOR(8, 9.f)
+		KEYBOARD_LENGTH_FACTOR(9, 10.f)
+		KEYBOARD_LENGTH_FACTOR(0, 11.f)
+#undef KEYBOARD_LENGTH_FACTOR
+
+#if 1
+#define KEYBOARD_LENGTH_STORE(key, index) \
+		if(DEBUGPress(Keyboard.key)) \
+		{ \
+			int Index; \
+			if(Keyboard.Shift.EndedDown) { Index = index; } \
+			else /*straight after caps*/ { Index = index + 26; } \
+			testcharindex = Index; \
+			Assert(Index >= 0 && Index < 52) \
+			if(Keyboard.Alt.EndedDown) { State->LengthStores[Index] = State->Length; } \
+			else if(State->LengthStores[Index] > 0.f && \
+					State->LengthStores[Index] != State->Length) \
+			{ \
+				State->pLength = State->Length; \
+				State->Length = State->LengthStores[Index]; \
+			} \
+		}
+		KEYBOARD_LENGTH_STORE(A, 0)
+		KEYBOARD_LENGTH_STORE(B, 1)
+		KEYBOARD_LENGTH_STORE(C, 2)
+		KEYBOARD_LENGTH_STORE(D, 3)
+		KEYBOARD_LENGTH_STORE(E, 4)
+		KEYBOARD_LENGTH_STORE(F, 5)
+		KEYBOARD_LENGTH_STORE(G, 6)
+		KEYBOARD_LENGTH_STORE(H, 7)
+		KEYBOARD_LENGTH_STORE(I, 8)
+		KEYBOARD_LENGTH_STORE(J, 9)
+		KEYBOARD_LENGTH_STORE(K, 10)
+		KEYBOARD_LENGTH_STORE(L, 11)
+		KEYBOARD_LENGTH_STORE(M, 12)
+		KEYBOARD_LENGTH_STORE(N, 13)
+		KEYBOARD_LENGTH_STORE(O, 14)
+		KEYBOARD_LENGTH_STORE(P, 15)
+		KEYBOARD_LENGTH_STORE(Q, 16)
+		KEYBOARD_LENGTH_STORE(R, 17)
+		KEYBOARD_LENGTH_STORE(S, 18)
+		KEYBOARD_LENGTH_STORE(T, 19)
+		KEYBOARD_LENGTH_STORE(U, 20)
+		KEYBOARD_LENGTH_STORE(V, 21)
+		KEYBOARD_LENGTH_STORE(W, 22)
+		KEYBOARD_LENGTH_STORE(X, 23)
+		KEYBOARD_LENGTH_STORE(Y, 24)
+		KEYBOARD_LENGTH_STORE(Z, 25)
+#undef KEYBOARD_LENGTH_STORE
+#endif
+
+
+
 		// TODO: fix needed for if started and space released part way?
-		else if((Keyboard.Space.EndedDown && Mouse.LMB.EndedDown) || Mouse.MMB.EndedDown)
+		if((Keyboard.Space.EndedDown && Mouse.LMB.EndedDown) || Mouse.MMB.EndedDown)
 		{
 			if(DEBUGPress(Mouse.LMB) || DEBUGPress(Mouse.MMB))
 			{
@@ -909,7 +987,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				// TODO: use DistSq
 				 f32 Length = Dist(POINTS(State->ipoSelect), SnapMouseP);
-				 if(Length > POINT_EPSILON) { State->Length = Length; }
+				 if(Length > POINT_EPSILON) {
+				 	 State->pLength = State->Length;
+				 	 State->Length = Length;
+				 }
 			}
 
 			else if(DEBUGClick(RMB))
@@ -1177,6 +1258,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				"\nFrame time: %.2fms, "
 				"Mouse: (%.2f, %.2f), "
 				"Basis: (%.2f, %.2f), "
+				"Char: %d (%c)"
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
@@ -1188,7 +1270,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* Input.New->Controllers[0].Button.A.EndedDown, */
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
-				BASIS->XAxis.X, BASIS->XAxis.Y
+				BASIS->XAxis.X, BASIS->XAxis.Y,
+				testcharindex, testcharindex
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
 				/* State->iLastPoint */

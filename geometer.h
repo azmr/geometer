@@ -194,6 +194,9 @@ typedef struct state
 	f32 tBasis;
 	// TODO: rename; (dynamic?) array
 	f32 Length;
+	f32 pLength;
+	// TODO (feature): include these in save
+	f32 LengthStores[52];
 
 	font DefaultFont;
 	uint cchFilePath;
