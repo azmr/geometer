@@ -146,13 +146,13 @@ IntersectSegmentsWinding(v2 A, v2 B, v2 C, v2 D, v2 *Out)
 /// expects d to be normalised
 /// returns number of intersections
 internal uint
-IntersectLineCircleForT(v2 P, v2 d, v2 Focus, f32 Radius, f32 *t1, f32 *t2)
+IntersectLineCircleForT(v2 P, v2 d, v2 poFocus, f32 Radius, f32 *t1, f32 *t2)
 {
 	uint Result = 0;
 	// Distance from point on line to circle centre == radius:
 	// 		(P + td - C) DOT (P + td - C) == radius^2
 	// m=P-C
-	v2 m = V2Sub(P, Focus);
+	v2 m = V2Sub(P, poFocus);
 	// Simplifies to t^2 + 2(m DOT d)t + (m DOT m) - r^2 == 0
 	// Solving quadratic equation  -b +/- sqrt(b^2 - c)
 	f32 b = Dot(m, d);
@@ -181,11 +181,11 @@ IntersectLineCircleForT(v2 P, v2 d, v2 Focus, f32 Radius, f32 *t1, f32 *t2)
 
 /// returns number of intersections
 internal uint
-IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+IntersectLineCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
 	f32 t1, t2;
 	v2 d = Norm(Dir);
-	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+	uint Result = IntersectLineCircleForT(P, d, poFocus, Radius, &t1, &t2);
 
 	if(Result)
 	{
@@ -198,11 +198,11 @@ IntersectLineCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *I
 
 /// returns number of intersections
 internal uint
-IntersectRayCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+IntersectRayCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
 	f32 t1, t2;
 	v2 d = Norm(Dir);
-	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+	uint Result = IntersectLineCircleForT(P, d, poFocus, Radius, &t1, &t2);
 
 	if(Result)
 	{
@@ -224,12 +224,12 @@ IntersectRayCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *In
 
 /// returns number of intersections
 internal uint
-IntersectSegmentCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
+IntersectSegmentCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
 	f32 t1, t2;
 	v2 d = Norm(Dir);
 	// If the tangent is a line, how many times would it go intersect the circle?
-	uint Result = IntersectLineCircleForT(P, d, Focus, Radius, &t1, &t2);
+	uint Result = IntersectLineCircleForT(P, d, poFocus, Radius, &t1, &t2);
 
 	if(Result)
 	{ 
@@ -256,9 +256,9 @@ IntersectSegmentCircle(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 *Intersection1, v2
 
 /// returns number of intersections
 internal uint
-IntersectCircles(v2 Focus1, f32 R1, v2 Focus2, f32 R2, v2 *Intersection1, v2 *Intersection2)
+IntersectCircles(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 *Intersection1, v2 *Intersection2)
 {
-	v2 Dir = V2Sub(Focus2, Focus1);
+	v2 Dir = V2Sub(poFocus2, poFocus1);
 	// TODO: optimise out
 	f32 dSq = LenSq(Dir);
 	f32 RadAdd = R1 + R2;
@@ -267,14 +267,14 @@ IntersectCircles(v2 Focus1, f32 R1, v2 Focus2, f32 R2, v2 *Intersection1, v2 *In
 	{
 		// NOTE: early out for tangents
 		Result = 1;
-		*Intersection1 = V2Add(Focus1, V2Mult(R1, Norm(Dir)));
+		*Intersection1 = V2Add(poFocus1, V2Mult(R1, Norm(Dir)));
 	}
 
 	else
 	{
 		f32 Fraction = 0.5f * ((R1*R1 / dSq) - (R2*R2 / dSq) + 1);
-		v2 ChordCross = V2Add(Focus1, V2Mult(Fraction, Dir));
-		Result = IntersectLineCircle(ChordCross, Perp(Dir), Focus1, R1, Intersection1, Intersection2);
+		v2 ChordCross = V2Add(poFocus1, V2Mult(Fraction, Dir));
+		Result = IntersectLineCircle(ChordCross, Perp(Dir), poFocus1, R1, Intersection1, Intersection2);
 	}
 	return Result;
 }
@@ -309,18 +309,20 @@ V2WithinBoundaries(v2 A, v2 B1, v2 B2)
 }
 
 internal inline uint
-CheckCircleCollisionsForArc(v2 ArcFocus, v2 ArcStart, v2 ArcEnd, v2 *Intersection1, v2 *Intersection2, uint NumCircleCollisions)
+CheckCircleCollisionsForArc(v2 poArcFocus, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2, uint NumCircleCollisions)
 {
 	uint Result = NumCircleCollisions;
 	if(Result)
 	{
-		v2 RelIntersect1 = V2Sub(*Intersection1, ArcFocus);
-		b32 ArcIntersect1 = V2WithinBoundaries(RelIntersect1, ArcStart, ArcEnd);
+		v2 RelArcStart   = V2Sub(poArcStart,     poArcFocus);
+		v2 RelArcEnd     = V2Sub(poArcEnd,       poArcFocus);
+		v2 RelIntersect1 = V2Sub(*Intersection1, poArcFocus);
+		b32 ArcIntersect1 = V2WithinBoundaries(RelIntersect1, RelArcStart, RelArcEnd);
 		b32 ArcIntersect2 = 0;
 		if(Result == 2)
 		{
-			v2 RelIntersect2 = V2Sub(*Intersection2, ArcFocus);
-			ArcIntersect2 = V2WithinBoundaries(RelIntersect2, ArcStart, ArcEnd);
+			v2 RelIntersect2 = V2Sub(*Intersection2, poArcFocus);
+			ArcIntersect2 = V2WithinBoundaries(RelIntersect2, RelArcStart, RelArcEnd);
 
 			if(ArcIntersect2 && !ArcIntersect1)
 			{
@@ -333,43 +335,43 @@ CheckCircleCollisionsForArc(v2 ArcFocus, v2 ArcStart, v2 ArcEnd, v2 *Intersectio
 }
 
 internal inline uint
-IntersectLineArc(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 ArcStart, v2 ArcEnd, v2 *Intersection1, v2 *Intersection2)
+IntersectLineArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
-	uint NumCircleCollisions = IntersectLineCircle(P, Dir, Focus, Radius, Intersection1, Intersection2);
-	uint Result = CheckCircleCollisionsForArc(Focus, ArcStart, ArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	uint NumCircleCollisions = IntersectLineCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
+	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
 	return Result;
 }
 
 internal inline uint
-IntersectRayArc(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 ArcStart, v2 ArcEnd, v2 *Intersection1, v2 *Intersection2)
+IntersectRayArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
-	uint NumCircleCollisions = IntersectRayCircle(P, Dir, Focus, Radius, Intersection1, Intersection2);
-	uint Result = CheckCircleCollisionsForArc(Focus, ArcStart, ArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	uint NumCircleCollisions = IntersectRayCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
+	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
 	return Result;
 }
 
 internal inline uint
-IntersectSegmentArc(v2 P, v2 Dir, v2 Focus, f32 Radius, v2 ArcStart, v2 ArcEnd, v2 *Intersection1, v2 *Intersection2)
+IntersectSegmentArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
-	uint NumCircleCollisions = IntersectSegmentCircle(P, Dir, Focus, Radius, Intersection1, Intersection2);
-	uint Result = CheckCircleCollisionsForArc(Focus, ArcStart, ArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	uint NumCircleCollisions = IntersectSegmentCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
+	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
 	return Result;
 }
 
 internal inline uint
-IntersectCircleArc(v2 Focus1, f32 R1, v2 Focus2, f32 R2, v2 ArcStart, v2 ArcEnd, v2 *Intersection1, v2 *Intersection2)
+IntersectCircleArc(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
-	uint NumCircleCollisions = IntersectCircles(Focus1, R1, Focus2, R2, Intersection1, Intersection2);
-	uint Result = CheckCircleCollisionsForArc(Focus2, ArcStart, ArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	uint NumCircleCollisions = IntersectCircles(poFocus1, R1, poFocus2, R2, Intersection1, Intersection2);
+	uint Result = CheckCircleCollisionsForArc(poFocus2, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
 	return Result;
 }
 
 internal inline uint
-IntersectArcs(v2 Focus1, f32 R1, v2 ArcStart1, v2 ArcEnd1, v2 Focus2, f32 R2, v2 ArcStart2, v2 ArcEnd2, v2 *Intersection1, v2 *Intersection2)
+IntersectArcs(v2 poFocus1, f32 R1, v2 poArcStart1, v2 poArcEnd1, v2 poFocus2, f32 R2, v2 poArcStart2, v2 poArcEnd2, v2 *Intersection1, v2 *Intersection2)
 {
-	uint NumCircleCollisions = IntersectCircles(Focus1, R1, Focus2, R2, Intersection1, Intersection2);
-	uint Result = CheckCircleCollisionsForArc(Focus1, ArcStart1, ArcEnd1, Intersection1, Intersection2, NumCircleCollisions);
-	     Result = CheckCircleCollisionsForArc(Focus2, ArcStart2, ArcEnd2, Intersection1, Intersection2, Result);
+	uint NumCircleCollisions = IntersectCircles(poFocus1, R1, poFocus2, R2, Intersection1, Intersection2);
+	uint Result = CheckCircleCollisionsForArc(poFocus1, poArcStart1, poArcEnd1, Intersection1, Intersection2, NumCircleCollisions);
+	     Result = CheckCircleCollisionsForArc(poFocus2, poArcStart2, poArcEnd2, Intersection1, Intersection2, Result);
 	return Result;
 }
 #define GEOMETRY_H
