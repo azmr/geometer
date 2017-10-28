@@ -426,10 +426,13 @@ WinMain(HINSTANCE Instance,
 	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 
 	// ASSETS
-	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 #if 1
-	InitLoadedFont(&State->DefaultFont, FontBuffer);
+	if(!InitLoadedFont(&State->DefaultFont, BitstreamBinary))
+	{
+		MessageBox(Window.Handle, "Unable to load font.", "Font error", MB_ICONERROR);
+	}
 #else
+	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	INIT_FONT(Bitstream, "Bitstream.ttf", FontBuffer, 1<<25);
 	State->DefaultFont = Bitstream;
 #endif
@@ -470,8 +473,8 @@ WinMain(HINSTANCE Instance,
 		}
 
 		// TODO: move to open/save?
-		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
-				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
+		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s - Length: %f", "Geometer",
+				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "", State->Length);
 		SetWindowText(Window.Handle, TitleText);
 
 #if 1
