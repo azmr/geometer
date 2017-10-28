@@ -211,8 +211,8 @@ typedef struct state
 	uint ipoDrag; // TODO: consolidate into ipoSelect
 	uint ipoSelect;
 	uint ipoArcStart;
-	uint ipoLineExtend;
 	v2 poSaved;
+	b32 ExtendLine;
 	b32 PointSnap;
 
 	u8 SavedStatus[2];

@@ -145,10 +145,10 @@ Reset(state *State)
 	State->Basis->Offset = ZeroV2;
 	State->Basis->Zoom   = 0.1f;
 
-	State->tBasis        = 1.f;
-	State->ipoSelect     = 0;
-	State->ipoArcStart   = 0;
-	State->ipoLineExtend = 0;
+	State->tBasis      = 1.f;
+	State->ipoSelect   = 0;
+	State->ipoArcStart = 0;
+	State->ExtendLine  = 0;
 
 	State->Length = 20.f;
 
@@ -892,16 +892,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 			}
 
-			else if(State->ipoLineExtend)
+			else if(State->ExtendLine)
 			{
 				if(!Mouse.RMB.EndedDown)
 				{
 					v2 poSelect = POINTS(State->ipoSelect);
-					v2 poExtend = POINTS(State->ipoLineExtend);
+					v2 poExtend = State->poSaved;
 					v2 poNew = ExtendSegment(poSelect, poExtend, SnapMouseP);
 					AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
 					State->ipoSelect = 0;
-					State->ipoLineExtend = 0;
+					State->ExtendLine = 0;
 				}
 			}
 
@@ -922,9 +922,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 				else
 				{
-					// TODO: lines not adding properly..?
-					/* AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0)); */
-					State->ipoLineExtend = AddPoint(State, SnapMouseP, POINT_Line, 0);
+					State->poSaved = SnapMouseP;
+					State->ExtendLine = 1;
 				}
 			}
 
@@ -1122,11 +1121,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				DEBUGDrawLine(ScreenBuffer, poSelect, poStart, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSelect, SSSnapMouseP, LIGHT_GREY);
 			}
-			else if(State->ipoLineExtend)
+			else if(State->ExtendLine)
 			{
 				// TODO (feature): draw a light grey ray to edge of screen
 				// TODO (feature): draw a light grey perpendicular line to mouse pointer/SnapMouseP?
-				v2 poAngle = V2CanvasToScreen(Basis, Points[State->ipoLineExtend], ScreenCentre);
+				v2 poAngle = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				v2 poExtend = ExtendSegment(poSelect, poAngle, SSSnapMouseP);
 				DEBUGDrawLine(ScreenBuffer, poSelect, poExtend, BLACK);
 				DrawActivePoint(ScreenBuffer, poExtend, RED);
