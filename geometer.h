@@ -192,7 +192,6 @@ typedef struct state
 	u64 FrameCount;
 	f32 dt;
 	f32 tBasis;
-	// TODO: rename; (dynamic?) array
 	f32 Length;
 	f32 pLength;
 	// TODO (feature): include these in save
@@ -203,19 +202,21 @@ typedef struct state
 	char *FilePath;
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
+	b32 Modified; // TODO: set to 0 when undos reach save level
 	// TODO: move to a return, as only needed for end of frame
 	b32 SaveFile;
 	b32 SaveAs;
 	b32 OpenFile;
-	b32 Modified; // TODO: set to 0 when undos reach save level
 	b32 CloseApp;
 
 	// TODO: Consolidate to 2 points used as determined by flags
 	uint ipoDrag; // TODO: consolidate into ipoSelect
 	uint ipoSelect;
-	uint ipoArcStart;
+	uint ipoArcStart; // Non-zero -> drawing arc
 	v2 poSaved;
-	b32 ExtendLine;
+	b32 ExtendingLine;
+	b32 SettingLength;
+	b32 LocatingPointAtDist;
 	b32 PointSnap;
 
 	u8 SavedStatus[2];
