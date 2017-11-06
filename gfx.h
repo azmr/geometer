@@ -955,7 +955,7 @@ ArcLineAngles(image_buffer *Buffer, v2 Centre, f32 Radius, f32 Angle1, f32 Angle
 
 	for(uint i = 0; i < NumSegs; ++i)
 	{
-		DebugAdd("Seg: %u\n", Seg);
+		/* DebugAdd("Seg: %u\n", Seg); */
 		SegDrawn |= 1 << Seg;
 		if(i >= 1 && i < NumSegs-1)  SegComplete |= 1 << Seg;
 		EndSeg = Seg;
@@ -967,7 +967,7 @@ ArcLineAngles(image_buffer *Buffer, v2 Centre, f32 Radius, f32 Angle1, f32 Angle
 	if(StartAngle < 0)  StartAngle += TAU;
 	if(EndAngle < 0)  EndAngle += TAU;
 
-	DebugAdd("SegsDrawn:    %08b\nSegsComplete: %08b\nStart: %d; End: %d\n", SegDrawn, SegComplete, StartSeg, EndSeg);
+	/* DebugAdd("SegsDrawn:    %08b\nSegsComplete: %08b\nStart: %d; End: %d\n", SegDrawn, SegComplete, StartSeg, EndSeg); */
 
 	b32 Shown = 0;
 	int LoopCounter = 0;
@@ -979,10 +979,10 @@ ArcLineAngles(image_buffer *Buffer, v2 Centre, f32 Radius, f32 Angle1, f32 Angle
 		if(PixelAngle < EndAngle && !Shown)//LoopCounter == 2 || LoopCounter == 30 || LoopCounter == 150)
 		{
 			Shown = 1;
-			DebugReplace("\n(%u)\nAStart: %4f\nAEnd:  %4f\nAPix:  %4f\nAMirr: %4f\n%u\n"
-					"StartSeg: %u\nEndSeg: %u\nOneSegOnly: %u\nAngle >= StartAngle: %u\nAngle <= EndAngle: %u",
-					LoopCounter, StartAngle, EndAngle, PixelAngle, MirrorPixelAngle,
-					StartSeg, EndSeg, OneSegOnly, PixelAngle >= StartAngle, PixelAngle <= EndAngle);
+			/* DebugReplace("\n(%u)\nAStart: %4f\nAEnd:  %4f\nAPix:  %4f\nAMirr: %4f\n%u\n" */
+			/* 		"StartSeg: %u\nEndSeg: %u\nOneSegOnly: %u\nAngle >= StartAngle: %u\nAngle <= EndAngle: %u", */
+			/* 		LoopCounter, StartAngle, EndAngle, PixelAngle, MirrorPixelAngle, */
+			/* 		StartSeg, EndSeg, OneSegOnly, PixelAngle >= StartAngle, PixelAngle <= EndAngle); */
 		}
 		
 		// arranged anticlockwise starting pointing right
@@ -1072,10 +1072,10 @@ ArcLine(image_buffer *Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
 	f32 TAU_8 = TAU/8.f;
 	f32 TotalAngle = Angle2 - Angle1;
 	if(TotalAngle < 0.f)  TotalAngle += TAU;
-	uint SegNum = (uint)(TotalAngle / TAU_8) % 8;
-	DebugAdd("NumSegs: %u\n", SegNum);
+	/* uint SegNum = (uint)(TotalAngle / TAU_8) % 8; */
+	/* DebugAdd("NumSegs: %u\n", SegNum); */
 	/* uint NumSegs = SegNum + 1; // 1 to 8 rather than 0 to 7 */
-	DebugAdd("Angle1: %.4f; Angle2: %.4f\nIncluded Angle: %f\n", Angle1/TAU, Angle2/TAU, TotalAngle);
+	/* DebugAdd("Angle1: %.4f; Angle2: %.4f\nIncluded Angle: %f\n", Angle1/TAU, Angle2/TAU, TotalAngle); */
 
 	enum {
 		SEG_Empty = 0,
@@ -1090,14 +1090,14 @@ ArcLine(image_buffer *Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
 	uint EndSeg = (uint)(Angle2 / TAU_8) % 8;
 	int NumBoundaries = (EndSeg - StartSeg) % 8;
 	if(NumBoundaries == 0 && Angle2 < Angle1)  NumBoundaries = 8;
-	DebugAdd("NumBoundaries: %u\n", NumBoundaries);
+	/* DebugAdd("NumBoundaries: %u\n", NumBoundaries); */
 	u8 SegTypes[8] = {0};
 	LOG("Calc boundaries");
 	for(int i = 0; i < NumBoundaries; ++i)
 	{
 		if(i >= 1 && i < NumBoundaries)
 		{
-			DebugAdd("seg: %u\n", Seg);
+			/* DebugAdd("seg: %u\n", Seg); */
 			SegTypes[Seg] = SEG_Full;
 		}
 		Seg = (Seg+1) % 8;
@@ -1111,7 +1111,7 @@ ArcLine(image_buffer *Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
 		SegTypes[StartSeg] = SEG_Start;
 		SegTypes[EndSeg]   = SEG_End;
 	}
-	for(uint i = 0; i < 8; ++i) DebugAdd("Type[%u]: %u\n", i, SegTypes[i]);
+	/* for(uint i = 0; i < 8; ++i) DebugAdd("Type[%u]: %u\n", i, SegTypes[i]); */
 
 	/* DebugAdd("SegsDrawn:    %08b\nSegsComplete: %08b\nStart: %d; End: %d\n", SegDrawn, SegComplete, StartSeg, EndSeg); */
 

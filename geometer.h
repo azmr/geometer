@@ -90,6 +90,31 @@ typedef enum action_types
 	ACTION_Point,
 } action_types;
 
+typedef enum input_mode
+{
+	MODE_Normal = 0,
+	MODE_SetBasis,
+	MODE_SetLength,
+		MODE_DrawArc,
+			MODE_ExtendArc,
+	MODE_SetPerp,
+		MODE_DrawSeg,
+			MODE_ExtendSeg,
+			MODE_ExtendLinePt,
+} input_mode;
+char *InputModeText[] =
+{
+	"MODE_Normal",
+	"MODE_SetBasis",
+	"MODE_SetLength",
+		"MODE_DrawArc",
+			"MODE_ExtendArc",
+	"MODE_SetPerp",
+		"MODE_DrawSeg",
+			"MODE_ExtendSeg",
+			"MODE_ExtendLinePt",
+};
+
 typedef union shape_union
 {
 	line Line;
@@ -208,6 +233,7 @@ typedef struct state
 	b32 SaveAs;
 	b32 OpenFile;
 	b32 CloseApp;
+	input_mode InputMode;
 
 	// TODO: Consolidate to 2 points used as determined by flags
 	uint ipoDrag; // TODO: consolidate into ipoSelect
