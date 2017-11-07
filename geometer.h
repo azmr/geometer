@@ -240,9 +240,6 @@ typedef struct state
 	uint ipoSelect;
 	uint ipoArcStart; // Non-zero -> drawing arc
 	v2 poSaved;
-	b32 ExtendingLine;
-	b32 SettingLength;
-	b32 LocatingPointAtDist;
 	b32 PointSnap;
 
 	u8 SavedStatus[2];

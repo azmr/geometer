@@ -109,6 +109,66 @@ Signed2DTriAreaDoubled(v2 A, v2 B, v2 C)
 	return Result;
 }
 
+// TODO (feature/fix): deal with collinear lines...
+/// Info: https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
+// t is number of times Dir1 away from P1
+internal b32
+IntersectLinesForT(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t)
+{
+	b32 Result = 0;
+	// t = (P2 − P1) × Dir2 / (Dir1 × Dir2)
+	f32 Dir1_X_Dir2 = Cross(Dir1, Dir2);
+	// TODO: should this have an epsilon?
+	if(Dir1_X_Dir2 != 0) // lines are not parallel/collinear
+	{ 
+		*t = Cross(V2Sub(P2, P1), Dir2)  /  Dir1_X_Dir2;
+		Result = 1;
+	}
+	return Result;
+}
+
+internal b32
+IntersectLinesForTAndU(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t, f32 *u)
+{
+	b32 Result = 0;
+	// t = (P2 − P1) × Dir2 / (Dir1 × Dir2)
+	// u = (P2 − P1) × Dir1 / (Dir1 × Dir2)
+	f32 Dir1_X_Dir2 = Cross(Dir1, Dir2);
+	v2 P2_Sub_1 = V2Sub(P2, P1);
+	// TODO: should this have an epsilon?
+	if(Dir1_X_Dir2 != 0) // lines are not parallel/collinear
+	{
+		*t = Cross(P2_Sub_1, Dir2)  /  Dir1_X_Dir2;
+		*u = Cross(P2_Sub_1, Dir1)  /  Dir1_X_Dir2;
+		Result = 1;
+	}
+	return Result;
+}
+
+internal inline b32
+IntersectLines(v2 P1, v2 Dir1, v2 P2, v2 Dir2, v2 *Intersection)
+{
+	f32 t = 0.f;
+	b32 Result = IntersectLinesForT(P1, Dir1, P2, Dir2, &t);
+	*Intersection = V2Add(P1, V2Mult(t, Dir1));
+	return Result;
+}
+
+/// SegDir should be encompass the entire segment (i.e. SegQ-SegP)
+internal inline b32
+IntersectLineSegment(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection)
+{
+	f32 t = 0.f;
+	b32 Result = IntersectLinesForT(SegP, SegDir, LineP, LineDir, &t);
+	if(Result && t >= 0.f && t <= 1.f)  // intersection within segment
+	{ *Intersection = V2Add(SegP, V2Mult(t, SegDir)); }
+	else
+	{ Result = 0; }
+	DebugReplace("Intersection: %f, %f", Intersection->X, Intersection->Y);
+
+	return Result;
+}
+
 // NOTE: From Ericson - Real Time Collision (p153)
 // TODO: compare dot/cross product based intersection
 internal b32

@@ -205,9 +205,6 @@ Reset(state *State)
 	State->tBasis        = 1.f;
 	State->ipoSelect     = 0;
 	State->ipoArcStart   = 0;
-	State->ExtendingLine = 0;
-	State->SettingLength = 0;
-	State->LocatingPointAtDist = 0;
 
 	State->Length = 20.f;
 
@@ -740,7 +737,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	mouse_state Mouse;
 	mouse_state pMouse;
 	v2 SnapMouseP, poClosest;
-	v2 poAtDist = State->poSaved;
+	v2 poAtDist = ZeroV2;
+	v2 poOnLine = ZeroV2;
 	uint ipoSnap;
 	uint ipoClosest = 0;
 	{ LOG("INPUT");
@@ -982,10 +980,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
 			OffsetDraw(State, -1);
 #endif
-			State->LocatingPointAtDist = 0;
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
-			State->ExtendingLine = 0;
 			State->InputMode = MODE_Normal;
 		}
 
@@ -1031,7 +1027,6 @@ input_mode_switch:
 						// NOTE: Starting a shape, save the first point
 						SaveUndoState(State);
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
-						State->SettingLength = 1;
 						State->InputMode = MODE_SetLength;
 						// TODO (opt): jump straight to the right mode. Are jump pts set up automatically
 						// for switches?
@@ -1043,7 +1038,6 @@ input_mode_switch:
 						// NOTE: Starting a shape, save the first point
 						SaveUndoState(State);
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
-						State->SettingLength = 1;
 						State->InputMode = MODE_SetPerp;
 						// TODO (opt): jump straight to the right mode. Are jump pts set up automatically
 						// for switches?
@@ -1113,7 +1107,6 @@ input_mode_switch:
 							State->pLength = State->Length;
 							State->Length = Length;
 						}
-						State->SettingLength = 0;
 						// TODO (UI): do I want it automatically continuing to draw here?
 						/* State->ipoSelect = 0; */
 						State->InputMode = MODE_DrawArc;
@@ -1142,7 +1135,6 @@ input_mode_switch:
 
 						v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
 						v2 *Points = State->Points;
-						uint cTotalIntersects = 0;
 						for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
 						{
 							shape Shape = State->Shapes[iShape];
@@ -1178,23 +1170,18 @@ input_mode_switch:
 								default: { /* do nothing */ }
 							}
 
-							cTotalIntersects += cIntersects;
 							// update closest candidate
 							if(cIntersects      && DistSq(CanvasMouseP, poIntersect1) < DistSq(CanvasMouseP, poAtDist))
 							{ poAtDist = poIntersect1; }
 							if(cIntersects == 2 && DistSq(CanvasMouseP, poIntersect2) < DistSq(CanvasMouseP, poAtDist))
 							{ poAtDist = poIntersect2; }
-							DebugReplace("Point i: %u, v2: %f, %f\nIntersect number: %u\n",
-									FindPointAtPos(State, poAtDist, 0xFFFFFFFF), poAtDist.X, poAtDist.Y, cTotalIntersects);
 						}
-						DebugAdd("Total Intersects: %u\npoSaved: %f, %f", cTotalIntersects, State->poSaved.X, State->poSaved.Y);
 
 						if(DEBUGClick(C_PointOnly))
 						{ // add point intersecting shape 
 							SaveUndoState(State);
 							// TODO IMPORTANT (fix): don't add when no shape intersected
 							AddPoint(State, poAtDist, POINT_Extant, 0);
-							State->LocatingPointAtDist = 0;
 							State->InputMode = MODE_Normal;
 						}
 					}
@@ -1249,8 +1236,20 @@ input_mode_switch:
 						else
 						{ // (expected behaviour)
 							State->poSaved = SnapMouseP;
-							State->ExtendingLine = 1;
 							State->InputMode = MODE_ExtendSeg;
+						}
+					}
+					else if(DEBUGClick(C_PointOnly))
+					{
+						if(V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
+						{ // NOTE: don't  want to extend a line with no direction!
+							State->ipoSelect = 0;
+							State->InputMode = MODE_Normal;
+						}
+						else
+						{ // (expected behaviour)
+							State->poSaved = SnapMouseP;
+							State->InputMode = MODE_ExtendLinePt;
 						}
 					}
 				} break;
@@ -1266,8 +1265,72 @@ input_mode_switch:
 						v2 poNew = ExtendSegment(poSelect, poExtend, SnapMouseP);
 						AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
 						State->ipoSelect = 0;
-						State->ExtendingLine = 0;
 						State->InputMode = MODE_Normal;
+					}
+				} break;
+
+				case MODE_ExtendLinePt:
+				{
+					{ // find point on shape closest to mouse along line
+						// TODO (feature): only do this when C_ShapeLock is applied, otherwise...
+						// ... just create a point anywhere on the line?
+						v2 TestStart = POINTS(State->ipoSelect); 
+						poOnLine = TestStart; 
+						v2 poExtend = State->poSaved;
+						v2 TestDir = V2Sub(poExtend, TestStart);
+
+						v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
+						v2 *Points = State->Points;
+						// TODO (opt): extract to function with function params
+						for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
+						{
+							shape Shape = State->Shapes[iShape];
+							uint cIntersects = 0;
+							switch(Shape.Kind)
+							{ // find the intersects with a line going through poExtend
+								case SHAPE_Circle:
+									{
+										v2 poFocus = Points[Shape.Circle.ipoFocus];
+										f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
+										cIntersects = IntersectLineCircle(TestStart, TestDir, poFocus, Radius,
+												&poIntersect1, &poIntersect2);
+									} break;
+
+								case SHAPE_Arc:
+									{
+										v2 poFocus = Points[Shape.Arc.ipoFocus];
+										v2 poStart = Points[Shape.Arc.ipoStart];
+										v2 poEnd   = Points[Shape.Arc.ipoEnd];
+										f32 Radius = Dist(poFocus, poStart);
+										cIntersects = IntersectLineArc(TestStart, TestDir, poFocus, Radius, poStart, poEnd,
+												&poIntersect1, &poIntersect2);
+									} break;
+
+								case SHAPE_Segment:
+									{
+										// TODO (fix): not finding intersects
+										v2 po = Points[Shape.Line.P1];
+										v2 Dir = V2Sub(Points[Shape.Line.P2], po);
+										cIntersects = IntersectLineSegment(TestStart, TestDir, po, Dir, &poIntersect1);
+									} break;
+
+								default: { /* do nothing */ }
+							}
+
+							// update closest candidate
+							if(cIntersects      && DistSq(CanvasMouseP, poIntersect1) < DistSq(CanvasMouseP, poOnLine))
+							{ poOnLine = poIntersect1; }
+							if(cIntersects == 2 && DistSq(CanvasMouseP, poIntersect2) < DistSq(CanvasMouseP, poOnLine))
+							{ poOnLine = poIntersect2; }
+						}
+
+						if(!C_PointOnly.EndedDown)
+						{ // add point intersecting shape 
+							SaveUndoState(State);
+							// TODO IMPORTANT (fix): don't add when no shape intersected
+							AddPoint(State, poOnLine, POINT_Extant, 0);
+							State->InputMode = MODE_Normal;
+						}
 					}
 				} break;
 
@@ -1390,6 +1453,7 @@ input_mode_switch:
 		{
 			case MODE_Normal:
 			{
+				// TODO (UI): animate when (un)snapping
 				CircleLine(ScreenBuffer, SSSnapMouseP, SSLength, LIGHT_GREY);
 			} break;
 
@@ -1443,16 +1507,16 @@ input_mode_switch:
 			case MODE_DrawSeg:
 			{
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, LIGHT_GREY);
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, BLUE);
 			} break;
 
 
 			case MODE_ExtendSeg:
 			{ // preview extending a line
 			/* if(State->ExtendingLine) */
-				// TODO (feature): draw a light grey ray to edge of screen
-				v2 poAngle = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poExtend = ExtendSegment(poSSSelect, poAngle, SSSnapMouseP);
+				// TODO (feature): draw a light grey ray/line to edge of screen
+				v2 poDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
+				v2 poExtend = ExtendSegment(poSSSelect, poDir, SSSnapMouseP);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poExtend, BLACK);
 				DrawActivePoint(ScreenBuffer, poExtend, RED);
 			} break;
@@ -1460,7 +1524,16 @@ input_mode_switch:
 
 			case MODE_ExtendLinePt:
 			{
-
+				// TODO (feature): draw light grey line to screen edges
+				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
+				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
+#if 0
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, poExtend, LIGHT_GREY);
+#endif
+				DrawActivePoint(ScreenBuffer, poSSExtend, BLUE);
+				v2 poSSOnLine = V2CanvasToScreen(Basis, poOnLine, ScreenCentre);
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSExtend, LIGHT_GREY);
+				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
 		}
 
