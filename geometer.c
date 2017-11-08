@@ -657,13 +657,13 @@ OffsetDraw(state *State, int Offset)
 }
 
 internal inline v2
-ExtendSegment(v2 poStart, v2 poAngle, v2 poLength)
+ExtendSegment(v2 poStart, v2 poDir, v2 poLength)
 {
-	v2 LineAxis = Norm(V2Sub(poAngle, poStart));
+	v2 LineAxis = Norm(V2Sub(poDir, poStart));
 	v2 RelLength = V2Sub(poLength, poStart);
 	// Project RelLength onto LineAxis
 	f32 ExtendLength = Dot(LineAxis, RelLength);
-	v2 Result = V2WithDist(poStart, poAngle, ExtendLength);
+	v2 Result = V2WithDist(poStart, poDir, ExtendLength);
 	return Result;
 }
 
@@ -739,6 +739,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP, poClosest;
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
+	v2 PerpDir = ZeroV2;
 	uint ipoSnap;
 	uint ipoClosest = 0;
 	{ LOG("INPUT");
@@ -1217,6 +1218,17 @@ input_mode_switch:
 
 				case MODE_SetPerp:
 				{
+					v2 poSelect = POINTS(State->ipoSelect);
+					if( ! V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON) )
+					{
+						PerpDir = Perp(V2Sub(SnapMouseP, poSelect));
+						State->poSaved = PerpDir;
+					}
+					else
+					{
+						State->poSaved = ZeroV2;
+					}
+
 					if(!C_Line.EndedDown)
 					{
 						State->InputMode = MODE_DrawSeg;
@@ -1226,6 +1238,7 @@ input_mode_switch:
 
 				case MODE_DrawSeg:
 				{ // start drawing line
+					// TODO (feature): poSaved != ZeroV2 -> perp
 					if(DEBUGClick(C_FullShape))
 					{
 						if(V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
@@ -1235,7 +1248,10 @@ input_mode_switch:
 						}
 						else
 						{ // (expected behaviour)
-							State->poSaved = SnapMouseP;
+							if(V2Equals(State->poSaved, ZeroV2)) // perpendicular not set
+							{ State->poSaved = SnapMouseP; }
+							else
+							{ State->poSaved = V2Add(POINTS(State->ipoSelect), State->poSaved); }
 							State->InputMode = MODE_ExtendSeg;
 						}
 					}
@@ -1255,6 +1271,8 @@ input_mode_switch:
 				} break;
 
 
+				// TODO (feature): perp already sets angle, so extension is meaningless,
+				// instead, extend could perp again to provide parallel with initial...
 				case MODE_ExtendSeg:
 				{
 				/* if(State->ExtendingLine) */
@@ -1449,6 +1467,7 @@ input_mode_switch:
 		v2 poSSSelect = ZeroV2;
 		f32 SSLength = State->Length/BASIS->Zoom; 
 		if(State->ipoSelect)  { poSSSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre); }
+		v2 poSelect = Points[State->ipoSelect];
 		switch(State->InputMode)
 		{
 			case MODE_Normal:
@@ -1501,13 +1520,31 @@ input_mode_switch:
 			case MODE_SetPerp:
 			{
 				// TODO (feature): draw a light grey perpendicular line to mouse pointer/SnapMouseP?
+				if( ! V2Equals(PerpDir, ZeroV2))
+				{
+					v2 poSSStart = V2CanvasToScreen(Basis, poSelect, ScreenCentre);
+					v2 poSSPerp = V2CanvasToScreen(Basis, V2Add(poSelect, PerpDir), ScreenCentre);
+					v2 poSSNPerp = V2CanvasToScreen(Basis, V2Add(poSelect, V2Neg(PerpDir)), ScreenCentre);
+					DEBUGDrawLine(ScreenBuffer, poSSStart, SSSnapMouseP, LIGHT_GREY);
+					DEBUGDrawLine(ScreenBuffer, poSSNPerp, poSSPerp, LIGHT_GREY);
+				}
 			} break;
 
 
 			case MODE_DrawSeg:
 			{
+				v2 poSSEnd;
+				if(V2Equals(State->poSaved, ZeroV2))
+				{
+					poSSEnd = SSSnapMouseP;
+				}
+				else
+				{
+					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->poSaved), ScreenCentre);
+					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
+				}
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, BLUE);
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, BLUE);
 			} break;
 
 
@@ -1564,7 +1601,8 @@ input_mode_switch:
 				"Mouse: (%.2f, %.2f), "
 				"Basis: (%.2f, %.2f), "
 				/* "Char: %d (%c), " */
-				"Mode: %s"
+				"Mode: %s, "
+				"poSaved: %.2f, %.2f "
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
@@ -1577,7 +1615,8 @@ input_mode_switch:
 				Mouse.P.X, Mouse.P.Y,
 				BASIS->XAxis.X, BASIS->XAxis.Y,
 				/* testcharindex + 65, testcharindex + 65, */
-				InputModeText[State->InputMode]
+				InputModeText[State->InputMode],
+				State->poSaved.X, State->poSaved.Y
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
 				/* State->iLastPoint */
