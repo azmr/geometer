@@ -18,6 +18,66 @@ ProjN(v2 V, v2 W)
 	return Result;
 }
 
+// NOTE: must be less than 180°
+// order matters - CCW of B1, CW of B2
+// inclusive at start, exclusive at end?
+internal inline b32
+V2WithinNarrowBoundaries(v2 A, v2 B1, v2 B2)
+{
+	b32 CCW_OfB1 = PerpDot(B1, A) >= 0.f;
+	b32 CW__OfB2 = PerpDot(B2, A) <  0.f;
+	b32 Result = CCW_OfB1 && CW__OfB2;
+	return Result;
+}
+
+internal inline b32
+V2WithinBoundaries(v2 A, v2 B1, v2 B2)
+{
+	b32 Result;
+	v2 PerpB1 = Perp(B1);
+	// Boundaries span less than half-circle
+	if(Dot(PerpB1, B2) >= 0.f)
+		Result = V2WithinNarrowBoundaries(A, B1, B2);
+	// TestPoint is within the fully-covered half-circle
+	else if(Dot(PerpB1, A) >= 0.f)
+		Result = 1;
+	// B2 is still CCW of -B1, so check if A is between those
+	else
+		Result = V2WithinNarrowBoundaries(A, V2Neg(B1), B2);
+	return Result;
+}
+
+internal inline v2
+ClosestPtOnCircle(v2 P, v2 Focus, f32 Radius)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 Dir = V2Sub(P, Focus);
+	v2 poRel = V2WithLength(Dir, Radius);
+	v2 Result = V2Add(Focus, poRel);
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+internal inline v2
+ClosestPtOnArc(v2 P, v2 Focus, v2 ArcStart, v2 ArcEnd)
+{
+	v2 Result;
+	v2 RelP     = V2Sub(P,        Focus);
+	v2 RelStart = V2Sub(ArcStart, Focus);
+	v2 RelEnd   = V2Sub(ArcEnd,   Focus);
+	if(V2WithinBoundaries(RelP, RelStart, RelEnd))
+	{
+		Result = ClosestPtOnCircle(P, Focus, Dist(Focus, ArcStart));
+	}
+	else
+	{
+		f32 DistSqStart = DistSq(P, ArcStart);
+		f32 DistSqEnd   = DistSq(P, ArcEnd);
+		Result = (DistSqStart <= DistSqEnd) ? ArcStart : ArcEnd;
+	}
+	return Result;
+}
+
 /// AB = B - A
 internal inline v2
 ClosestPtOnSegment(v2 P, v2 a, v2 ab)
@@ -336,35 +396,6 @@ IntersectCircles(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 *Intersection1, v2
 		v2 ChordCross = V2Add(poFocus1, V2Mult(Fraction, Dir));
 		Result = IntersectLineCircle(ChordCross, Perp(Dir), poFocus1, R1, Intersection1, Intersection2);
 	}
-	return Result;
-}
-
-// NOTE: must be less than 180°
-// order matters - CCW of B1, CW of B2
-// inclusive at start, exclusive at end?
-internal inline b32
-V2WithinNarrowBoundaries(v2 A, v2 B1, v2 B2)
-{
-	b32 CCW_OfB1 = PerpDot(B1, A) >= 0.f;
-	b32 CW__OfB2 = PerpDot(B2, A) <  0.f;
-	b32 Result = CCW_OfB1 && CW__OfB2;
-	return Result;
-}
-
-internal inline b32
-V2WithinBoundaries(v2 A, v2 B1, v2 B2)
-{
-	b32 Result;
-	v2 PerpB1 = Perp(B1);
-	// Boundaries span less than half-circle
-	if(Dot(PerpB1, B2) >= 0.f)
-		Result = V2WithinNarrowBoundaries(A, B1, B2);
-	// TestPoint is within the fully-covered half-circle
-	else if(Dot(PerpB1, A) >= 0.f)
-		Result = 1;
-	// B2 is still CCW of -B1, so check if A is between those
-	else
-		Result = V2WithinNarrowBoundaries(A, V2Neg(B1), B2);
 	return Result;
 }
 

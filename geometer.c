@@ -109,7 +109,24 @@ DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnSegment(po, lipoA, V2Sub(lipoB, lipoA));
 	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
-	/* DEBUGDrawLine(ScreenBuffer, po1, po, LIGHT_GREY); */
+	END_TIMED_BLOCK;
+}
+
+internal inline void
+DrawClosestPtOnCircle(image_buffer *ScreenBuffer, v2 po, v2 poFocus, f32 Radius)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 po1 = ClosestPtOnCircle(po, poFocus, Radius);
+	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
+	END_TIMED_BLOCK;
+}
+
+internal inline void
+DrawClosestPtOnArc(image_buffer *ScreenBuffer, v2 po, v2 poFocus, v2 poStart, v2 poEnd)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 po1 = ClosestPtOnArc(po, poFocus, poStart, poEnd);
+	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
 	END_TIMED_BLOCK;
 }
 
@@ -1430,7 +1447,9 @@ input_mode_switch:
 				{
 					v2 poFocus  = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoFocus], ScreenCentre);
 					v2 poRadius = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoRadius], ScreenCentre);
-					CircleLine(ScreenBuffer, poFocus, Dist(poFocus, poRadius), BLACK);
+					f32 Radius = Dist(poFocus, poRadius);
+					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
+					DrawClosestPtOnCircle(ScreenBuffer, Mouse.P, poFocus, Radius);
 				} break;
 
 				case SHAPE_Arc:
@@ -1439,6 +1458,7 @@ input_mode_switch:
 					v2 poStart = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoStart], ScreenCentre);
 					v2 poEnd   = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoEnd],   ScreenCentre);
 					ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
+					DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd);
 				} break;
 			}
 		}
