@@ -2,52 +2,76 @@
 #include "geometer.h"
 #include <fonts.c>
  
-// Old UI:
+// UI:
+// ===
+//
+// Drawing
 // =======
-//
-// Click on point to select it OR make new point (which is then selected)
-// L-click on another point to draw to it, or L-click and drag to set direction at point, then release to set drag length
-// OR R-click to draw circle at current diameter, or R-click and drag to set arc beginning and release at arc end
-//
-// Esc to cancel point
-// Enter to input text
-//
-// shift unlocks diameter, caps toggles it
-// set diameter with L-click + drag
-//
-// M-click/Space+L-click + drag -> move canvas
-// Scroll -> zoom
-//
-// New UI:
-// =======
-//
-// LMB-drag - set length
+// Arcs (compass)
+// --------------
+// LMB-drag - set length/radius
 // LMB      - add point, start drawing arcs
 //     LMB      - circle
 //     LMB-onPt - circle
 //     LMB-drag - arc
-//     RMB      - point at dist
-//     RMB-onPt - cancel?
-//     RMB-drag - continue drawing?
+//     RMB      - point at distance/radius
+//     RMB-onPt - leave one point
+//     RMB-drag - N/A
+//
+// Segments/lines (straight-edge)
+// ------------------------------
 // RMB-drag - set perpendicular line
 // RMB      - add point, start drawing lines
 //     LMB      - line
-//     LMB-onPt - line
+//     LMB-onPt - line (?)
 //     LMB-drag - extend line
-//     RMB      - ?
-//     RMB-onPt - cancel?
+//     RMB      - another point (?)
+//     RMB-onPt - leave one point
 //     RMB-drag - point along line
+//
+// Modifiers
+// =========
+// Esc      - cancel current shape
 // Ctrl     - snap to shape
 // Shift    - no point snapping
-// Alt      - general modifier (basis, number store...)
+// Alt      - general modifier (number store...)
 // Space    - canvas modifier (pan, basis?)
+//
+// Canvas/view manipulation
+// ========================
+// MMB-drag       - pan viewport around canvas
+// Space+LMB-drag - pan viewport around canvas
+// Space+RMB-drag - set horizontal axis of viewport (rotate)
+// Scroll   - zoom to cursor
+// PgUp/PgDn- zoom to centre
+// Home     - return to centre
+// Backspace- reset canvas drawing
+// Alt+Enter- fullscreen
+//
+// Length/radius manipulation
+// ==========================
+// 2-0      - divide length by 2-10
+// Alt+2-0  - multiply length by 2-10
+// a-z,A-Z  - get stored length/radius
+// Alt+a-Z  - set stored length/radius
+// Tab      - swap to previously used length/radius
+//
+// File manipulation
+// =================
+// Ctrl+Z   - undo
+// Ctrl+Y   - redo
+// Ctrl+Sh+Z- redo
+// Ctrl+S   - save file
+// Ctrl+Sh+S- save file as...
+// Ctrl+O   - open file
+// Ctrl+Sh+O- open file in new window
+// Ctrl+N   - new file [TODO]
+// Ctrl+Sh+N- new file in new window [TODO]
 
 // TODO:
 // =====
 //
 // - Find (and colour) lines intersecting at a given point
-// - Bases and canvas movement
-// - Arcs (not just full circles)
 // - Unlimited undo states
 //  	- save to disk for lots of them? (temporary/pich up undos on load?)
 //  	- undo history (show overall/with layers)
@@ -59,15 +83,9 @@
 // - Togglable layers (should points be separate from layers, but have status set per layer?)
 // - For fast movements, make sweep effect, rather than ugly multiple line effect 
 // - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
-// - One end of line/arc constrained on another shape
-// - Animate between offsets on undo/redo so that you can keep track of where you are
 // - Resizable windo (maintain centre vs maintain absolute position)
 // - New file w/ ctrl-n
-// - Extendable lines
-// - Mark point on line at distance
-// - Break up current line into n parts
-// - Add point created by non-drawn straight line intersecting
-// - Constraint system? Paid version?
+// - Constraint system? Macros? Paid version?
 
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
@@ -1115,16 +1133,18 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(Keyboard.Shift.EndedDown) { State->Length *= factor; } \
 			else                         { State->Length /= factor; } \
 		}
-		KEYBOARD_LENGTH_FACTOR(1, 2.f)
-		KEYBOARD_LENGTH_FACTOR(2, 3.f)
-		KEYBOARD_LENGTH_FACTOR(3, 4.f)
-		KEYBOARD_LENGTH_FACTOR(4, 5.f)
-		KEYBOARD_LENGTH_FACTOR(5, 6.f)
-		KEYBOARD_LENGTH_FACTOR(6, 7.f)
-		KEYBOARD_LENGTH_FACTOR(7, 8.f)
-		KEYBOARD_LENGTH_FACTOR(8, 9.f)
-		KEYBOARD_LENGTH_FACTOR(9, 10.f)
-		KEYBOARD_LENGTH_FACTOR(0, 11.f)
+		// TODO (UI): something more interesting with 1...
+		// return to previous store? ...?
+		/* KEYBOARD_LENGTH_FACTOR(1, 1.f) */
+		KEYBOARD_LENGTH_FACTOR(2, 2.f)
+		KEYBOARD_LENGTH_FACTOR(3, 3.f)
+		KEYBOARD_LENGTH_FACTOR(4, 4.f)
+		KEYBOARD_LENGTH_FACTOR(5, 5.f)
+		KEYBOARD_LENGTH_FACTOR(6, 6.f)
+		KEYBOARD_LENGTH_FACTOR(7, 7.f)
+		KEYBOARD_LENGTH_FACTOR(8, 8.f)
+		KEYBOARD_LENGTH_FACTOR(9, 9.f)
+		KEYBOARD_LENGTH_FACTOR(0, 10.f)
 #undef KEYBOARD_LENGTH_FACTOR
 
 #if 1
