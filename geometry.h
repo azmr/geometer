@@ -230,6 +230,23 @@ IntersectLines(v2 P1, v2 Dir1, v2 P2, v2 Dir2, v2 *Intersection)
 
 /// SegDir should be encompass the entire segment (i.e. SegQ-SegP)
 internal inline b32
+IntersectLineSegmentAndT(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection, f32 *LineT)
+{
+	f32 t = 0.f;
+	f32 u = 0.f;
+	b32 Result = IntersectLinesForTAndU(SegP, SegDir, LineP, LineDir, &t, &u);
+	if(Result && t >= 0.f && t <= 1.f)  // intersection within segment
+	{
+		*Intersection = V2Add(SegP, V2Mult(t, SegDir));
+		*LineT = u;
+	}
+	else
+	{ Result = 0; }
+	DebugReplace("Intersection: %f, %f", Intersection->X, Intersection->Y);
+
+	return Result;
+}
+internal inline b32
 IntersectLineSegment(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection)
 {
 	f32 t = 0.f;

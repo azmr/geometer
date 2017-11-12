@@ -955,8 +955,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
 
-		State->PointSnap = Held(Keyboard.Shift) ? 0 : 1;
-
 		// Pan with arrow keys
 		b32 Down  = C_PanDown.EndedDown;
 		b32 Up    = C_PanUp.EndedDown;
@@ -1653,6 +1651,8 @@ input_mode_switch:
 
 
 		LOG("\tDRAW PREVIEW");
+		// TODO (UI): animate previews in and out by smoothstepping alpha over a few frames
+		// so that they don't pop too harshly when only seen briefly
 		v2 poSSSelect = ZeroV2;
 		f32 SSLength = State->Length/BASIS->Zoom; 
 		if(State->ipoSelect)  { poSSSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre); }
@@ -1741,10 +1741,11 @@ input_mode_switch:
 			{ // preview extending a line
 			/* if(State->ExtendingLine) */
 				// TODO (feature): draw a light grey ray/line to edge of screen
-				v2 poDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poExtend = ExtendSegment(poSSSelect, poDir, SSSnapMouseP);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poExtend, BLACK);
-				DrawActivePoint(ScreenBuffer, poExtend, RED);
+				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
+				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
+				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSExtend, BLACK);
+				DrawActivePoint(ScreenBuffer, poSSExtend, RED);
 			} break;
 
 
@@ -1756,9 +1757,9 @@ input_mode_switch:
 #if 0
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poExtend, LIGHT_GREY);
 #endif
+				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSExtend, BLUE);
 				v2 poSSOnLine = V2CanvasToScreen(Basis, poOnLine, ScreenCentre);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSExtend, LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
 		}

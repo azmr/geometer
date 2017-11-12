@@ -240,7 +240,6 @@ typedef struct state
 	uint ipoSelect;
 	uint ipoArcStart; // Non-zero -> drawing arc
 	v2 poSaved;
-	b32 PointSnap;
 
 	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:

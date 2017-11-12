@@ -789,6 +789,58 @@ DEBUGDrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, colour Colour)
 	END_TIMED_BLOCK;
 }
 
+internal inline void
+DrawFullScreenLine(image_buffer *Buffer, v2 Point1, v2 Dir, colour Colour)
+{
+	f32 W = (f32) Buffer->Width;
+	f32 H = (f32) Buffer->Height;
+	v2 FarCorner = V2(W, H);
+	v2 BottomIntersect, LeftIntersect, TopIntersect, RightIntersect;
+	f32 tBottom, tLeft, tTop, tRight;
+#define INTERSECT_SIDE(side, start, dir) \
+	b32 side = IntersectLineSegmentAndT(Point1, Dir, start, dir, &side##Intersect, &t##side)
+	INTERSECT_SIDE(Bottom, ZeroV2,    V2(W,  0));
+	INTERSECT_SIDE(Left,   ZeroV2,    V2(0,  H));
+	INTERSECT_SIDE(Top,    FarCorner, V2(-W, 0));
+	INTERSECT_SIDE(Right,  FarCorner, V2(0, -H));
+#undef INTERSECT_SIDE
+	v2 LineStart = ZeroV2, LineEnd = ZeroV2;
+	b32 StartSet = 0, EndSet = 0;
+	uint cSides = Bottom + Left + Top + Right;
+	if(cSides == 2)
+	{
+#define SET_SIDE(side) \
+		if(side) \
+		{ \
+			if(!StartSet) \
+			{ \
+				LineStart = side##Intersect; \
+				StartSet = 1; \
+			} \
+			else if(!EndSet) \
+			{ \
+				LineEnd = side##Intersect; \
+				EndSet = 1; \
+			} \
+		}
+		SET_SIDE(Bottom)
+		SET_SIDE(Left)
+		SET_SIDE(Top)
+		SET_SIDE(Right)
+
+		DEBUGDrawLine(Buffer, LineStart, LineEnd, Colour);
+	}
+	else if(cSides > 2)
+	{
+		// TODO: probably exactly in corner?
+		Assert(0);
+	}
+	else
+	{ // should always cross at least 2
+		Assert(0);
+	}
+}
+
 internal alpha_map
 RasterCircleLine(memory_arena *Arena, f32 Radius)
 {
