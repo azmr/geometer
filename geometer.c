@@ -864,14 +864,18 @@ ClosestPtIntersectingLine(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 T
 /* 	return cTotalIntersects; */
 /* } */
 
-internal inline v2
-CircumferencePosition(v2 P, v2 poFocus, f32 Radius)
+/// returns true if is in centre
+internal inline b32
+CircumferencePosition(v2 P, v2 poFocus, f32 Radius, v2 *CircP)
 {
-	v2 Result; 
+	b32 Result = 0; 
 	if(V2WithinEpsilon(poFocus, P, POINT_EPSILON))
-	{ Result = V2Add(poFocus, V2(Radius, 0.f)); }
+	{
+		*CircP = V2Add(poFocus, V2(Radius, 0.f));
+		Result = 1;
+	}
 	else
-	{ Result = V2WithDist(poFocus, P, Radius); }
+	{ *CircP = V2WithDist(poFocus, P, Radius); }
 	return Result;
 }
 
@@ -1369,11 +1373,19 @@ input_mode_switch:
 					if(DEBUGClick(C_Arc))
 					{ // start drawing arc/circle
 						// TODO (go from here): don't allow extension
-						v2 poNew = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length); 
+						v2 poNew;
+						b32 IsCentre = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length, &poNew); 
 						// TODO (opt): there is a 1 frame lag even if pressed and released within 1...
-						State->ipoArcStart = AddPoint(State, poNew, POINT_Arc, 0);
-						State->InputMode = MODE_ExtendArc;
-						goto input_mode_switch;
+						if(IsCentre)
+						{
+							AddCircle(State, State->ipoSelect, AddPoint(State, poNew, POINT_Radius, 0));
+							State->InputMode = MODE_Normal;
+						}
+						else
+						{
+							State->ipoArcStart = AddPoint(State, poNew, POINT_Arc, 0);
+							State->InputMode = MODE_ExtendArc;
+						}
 					}
 
 					{ // find point on shape closest to mouse along circumference
@@ -1412,10 +1424,11 @@ input_mode_switch:
 					// also possible this fires at a weird time when focus returns or something...
 					if(!C_Arc.EndedDown)
 					{ // finish drawing arc/circle
-						v2 poNew = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length); 
-						if(V2WithinEpsilon(poNew, POINTS(State->ipoArcStart), POINT_EPSILON))
+						v2 poNew;
+						b32 IsCentre = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length, &poNew); 
+						if(IsCentre || V2WithinEpsilon(poNew, POINTS(State->ipoArcStart), POINT_EPSILON))
 						{ // Same angle -> full circle
-							AddCircle(State, State->ipoSelect, AddPoint(State, poNew, POINT_Radius, 0));
+							AddCircle(State, State->ipoSelect, State->ipoArcStart);
 						}
 
 						else
@@ -1709,7 +1722,6 @@ input_mode_switch:
 
 			case MODE_SetPerp:
 			{
-				// TODO (feature): draw a light grey perpendicular line to mouse pointer/SnapMouseP?
 				if( ! V2Equals(PerpDir, ZeroV2))
 				{
 					v2 poSSStart = V2CanvasToScreen(Basis, poSelect, ScreenCentre);
@@ -1740,8 +1752,6 @@ input_mode_switch:
 
 			case MODE_ExtendSeg:
 			{ // preview extending a line
-			/* if(State->ExtendingLine) */
-				// TODO (feature): draw a light grey ray/line to edge of screen
 				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
@@ -1752,7 +1762,6 @@ input_mode_switch:
 
 			case MODE_ExtendLinePt:
 			{
-				// TODO (feature): draw light grey line to screen edges
 				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 #if 0
