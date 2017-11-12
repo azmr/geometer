@@ -40,6 +40,7 @@
 // Ctrl     - snap to shape
 // Shift    - no point snapping
 // Alt      - general modifier (basis, number store...)
+// Space    - canvas modifier (pan, basis?)
 
 // TODO:
 // =====
@@ -81,8 +82,11 @@
 // get store length    a-z,A-Z
 // set store length    Alt + a-z,A-Z
 
-#define C_BasisSet     Mouse.LMB
-#define C_BasisMod     Keyboard.Alt
+#define C_NoSnap       Keyboard.Shift
+#define C_ShapeLock    Keyboard.Ctrl
+
+#define C_BasisSet     Mouse.RMB
+#define C_BasisMod     Keyboard.Space
 #define C_Pan          Mouse.MMB
 #define C_PanDown      Keyboard.Down
 #define C_PanUp        Keyboard.Up
@@ -684,6 +688,193 @@ ExtendSegment(v2 poStart, v2 poDir, v2 poLength)
 	return Result;
 }
 
+internal uint
+ClosestPtIntersectingCircle(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 TestFocus, f32 TestRadius, v2 *poClosest)
+{
+	// TODO: necessary?
+	*poClosest = TestFocus; 
+
+	v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
+	uint cTotalIntersects = 0;
+	for(uint iShape = 1; iShape <= iLastShape; ++iShape)
+	{
+		shape Shape = Shapes[iShape];
+		uint cIntersects = 0;
+		switch(Shape.Kind)
+		{ // find the intersects with a circle from poSaved to mouse
+			case SHAPE_Circle:
+				{
+					v2 poFocus = Points[Shape.Circle.ipoFocus];
+					f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
+					cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius,
+							&poIntersect1, &poIntersect2);
+				} break;
+
+			case SHAPE_Arc:
+				{
+					v2 poFocus = Points[Shape.Arc.ipoFocus];
+					v2 poStart = Points[Shape.Arc.ipoStart];
+					v2 poEnd   = Points[Shape.Arc.ipoEnd];
+					f32 Radius = Dist(poFocus, poStart);
+					cIntersects = IntersectCircleArc(TestFocus, TestRadius, poFocus, Radius, poStart, poEnd,
+							&poIntersect1, &poIntersect2);
+				} break;
+
+			case SHAPE_Segment:
+				{
+					v2 po = Points[Shape.Line.P1];
+					v2 Dir = V2Sub(Points[Shape.Line.P2], po);
+					cIntersects = IntersectSegmentCircle(po, Dir, TestFocus, TestRadius,
+							&poIntersect1, &poIntersect2);
+				} break;
+
+			default: { /* do nothing */ }
+		}
+		cTotalIntersects += cIntersects;
+
+		// update closest candidate
+		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
+		{ *poClosest = poIntersect1; }
+		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest))
+		{ *poClosest = poIntersect2; }
+	}
+	return cTotalIntersects;
+}
+
+internal uint
+ClosestPtIntersectingLine(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 TestStart, v2 TestDir, v2 *poClosest)
+{
+	*poClosest = TestStart; 
+
+	v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
+	uint cTotalIntersects = 0;
+	// TODO (opt): extract to function with function params
+	for(uint iShape = 1; iShape <= iLastShape; ++iShape)
+	{
+		shape Shape = Shapes[iShape];
+		uint cIntersects = 0;
+		switch(Shape.Kind)
+		{ // find the intersects with a line going through poExtend
+			case SHAPE_Circle:
+				{
+					v2 poFocus = Points[Shape.Circle.ipoFocus];
+					f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
+					cIntersects = IntersectLineCircle(TestStart, TestDir, poFocus, Radius,
+							&poIntersect1, &poIntersect2);
+				} break;
+
+			case SHAPE_Arc:
+				{
+					v2 poFocus = Points[Shape.Arc.ipoFocus];
+					v2 poStart = Points[Shape.Arc.ipoStart];
+					v2 poEnd   = Points[Shape.Arc.ipoEnd];
+					f32 Radius = Dist(poFocus, poStart);
+					cIntersects = IntersectLineArc(TestStart, TestDir, poFocus, Radius, poStart, poEnd,
+							&poIntersect1, &poIntersect2);
+				} break;
+
+			case SHAPE_Segment:
+				{
+					v2 po = Points[Shape.Line.P1];
+					v2 Dir = V2Sub(Points[Shape.Line.P2], po);
+					cIntersects = IntersectLineSegment(TestStart, TestDir, po, Dir, &poIntersect1);
+				} break;
+
+			default: { /* do nothing */ }
+		}
+
+		cTotalIntersects += cIntersects;
+
+		// update closest candidate
+		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
+		{ *poClosest = poIntersect1; }
+		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest))
+		{ *poClosest = poIntersect2; }
+	}
+
+	return cTotalIntersects;
+}
+
+/* internal uint */
+/* ClosestPtIntersectingShape(v2 *Points, shape *Shapes, uint iLastShape, v2 P, shape TestShape, v2 *poClosest) */
+/* { */
+/* 	*poClosest = TestShape.P[0]; // either focus or line start */
+
+/* 	v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2; */
+/* 	uint cTotalIntersects = 0; */
+/* 	// TODO (opt): extract to function with function params */
+/* 	for(uint iShape = 1; iShape <= iLastShape; ++iShape) */
+/* 	{ */
+/* 		shape Shape = Shapes[iShape]; */
+/* 		uint cIntersects = 0; */
+/* 		switch(Shape.Kind) */
+/* 		{ // find the intersects with a line going through poExtend */
+/* 			case SHAPE_Circle: */
+/* 				{ */
+/* 					v2 poFocus = Points[Shape.Circle.ipoFocus]; */
+/* 					f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]); */
+/* 					if(TestShape.Kind == SHAPE_Line) */
+/* 					{ cIntersects = IntersectLineCircle(TestStart, TestDir, poFocus, Radius, */
+/* 									&poIntersect1, &poIntersect2); } */
+/* 					else if(TestShape.Kind == SHAPE_Circle) */
+/* 					{ cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius, */
+/* 									&poIntersect1, &poIntersect2); } */
+/* 					else { Assert(0); } */
+/* 				} break; */
+
+/* 			case SHAPE_Arc: */
+/* 				{ */
+/* 					v2 poFocus = Points[Shape.Arc.ipoFocus]; */
+/* 					v2 poStart = Points[Shape.Arc.ipoStart]; */
+/* 					v2 poEnd   = Points[Shape.Arc.ipoEnd]; */
+/* 					f32 Radius = Dist(poFocus, poStart); */
+/* 					if(TestShape.Kind == SHAPE_Line) */
+/* 					{ cIntersects = IntersectLineArc(TestStart, TestDir, poFocus, Radius, poStart, poEnd, */
+/* 								&poIntersect1, &poIntersect2); } */
+/* 					else if(TestShape.Kind == SHAPE_Circle) */
+/* 					{ cIntersects = IntersectCircleArc(TestFocus, TestRadius, poFocus, Radius, poStart, poEnd, */
+/* 								&poIntersect1, &poIntersect2); } */
+/* 					else { Assert(0); } */
+/* 				} break; */
+
+/* 			case SHAPE_Segment: */
+/* 				{ */
+/* 					v2 po = Points[Shape.Line.P1]; */
+/* 					v2 Dir = V2Sub(Points[Shape.Line.P2], po); */
+/* 					if(TestShape.Kind == SHAPE_Line) */
+/* 					{ cIntersects = IntersectLineSegment(TestStart, TestDir, po, Dir, &poIntersect1); } */
+/* 					else if(TestShape.Kind == SHAPE_Circle) */
+/* 					{ cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius, */
+/* 									&poIntersect1, &poIntersect2); } */
+/* 					else { Assert(0); } */
+/* 				} break; */
+
+/* 			default: { /1* do nothing *1/ } */
+/* 		} */
+
+/* 		cTotalIntersects += cIntersects; */
+
+/* 		// update closest candidate */
+/* 		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest)) */
+/* 		{ *poClosest = poIntersect1; } */
+/* 		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest)) */
+/* 		{ *poClosest = poIntersect2; } */
+/* 	} */
+
+/* 	return cTotalIntersects; */
+/* } */
+
+internal inline v2
+CircumferencePosition(v2 P, v2 poFocus, f32 Radius)
+{
+	v2 Result; 
+	if(V2WithinEpsilon(poFocus, P, POINT_EPSILON))
+	{ Result = V2Add(poFocus, V2(Radius, 0.f)); }
+	else
+	{ Result = V2WithDist(poFocus, P, Radius); }
+	return Result;
+}
+
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
@@ -822,6 +1013,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			}
 		}
 
+		// SNAPPING
 		f32 ClosestDistSq;
 		v2 CanvasMouseP = V2ScreenToCanvas(*BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
@@ -834,7 +1026,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
 			if(ClosestDistSq/(BASIS->Zoom * BASIS->Zoom) < 5000.f)
 			{ // closest point within range
-				if(State->PointSnap)
+				if( ! C_NoSnap.EndedDown)
 				{
 					SnapMouseP = poClosest;
 					ipoSnap = ipoClosest;
@@ -844,6 +1036,48 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			else
 			{ // closest point outside range
 				ipoClosest = 0;
+			}
+		}
+		if(C_ShapeLock.EndedDown)
+		{
+			for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
+			{
+				v2 TestP = ZeroV2;
+				shape Shape = State->Shapes[iShape];
+				switch(Shape.Kind)
+				{
+					case SHAPE_Circle:
+					{
+						circle Circle = Shape.Circle;
+						v2 poFocus = POINTS(Circle.ipoFocus);
+						f32 Radius = Dist(poFocus, POINTS(Circle.ipoRadius));
+						TestP = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius);
+					} break;
+
+					case SHAPE_Arc:
+					{
+						arc Arc = Shape.Arc;
+						v2 poFocus = POINTS(Arc.ipoFocus);
+						v2 poStart = POINTS(Arc.ipoStart);
+						v2 poEnd = POINTS(Arc.ipoEnd);
+						TestP = ClosestPtOnArc(CanvasMouseP, poFocus, poStart, poEnd);
+					} break;
+
+					case SHAPE_Segment:
+					{
+						line Seg = Shape.Line;
+						v2 po1 = POINTS(Seg.P1);
+						v2 Dir = V2Sub(POINTS(Seg.P2), po1);
+						TestP = ClosestPtOnSegment(CanvasMouseP, po1, Dir);
+					} break;
+
+					default:
+					{
+						// do nothing
+					}
+				}
+				if(iShape == 1 || DistSq(TestP, CanvasMouseP) < DistSq(SnapMouseP, CanvasMouseP))
+				{ SnapMouseP = TestP; }
 			}
 		}
 
@@ -1136,8 +1370,7 @@ input_mode_switch:
 				{
 					if(DEBUGClick(C_Arc))
 					{ // start drawing arc/circle
-						// TODO: stop snapping onto focus - add exceptions to snapping
-						v2 poNew = V2WithDist(POINTS(State->ipoSelect), SnapMouseP, State->Length);
+						v2 poNew = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length); 
 						// TODO (opt): there is a 1 frame lag even if pressed and released within 1...
 						State->ipoArcStart = AddPoint(State, poNew, POINT_Arc, 0);
 						State->InputMode = MODE_ExtendArc;
@@ -1147,52 +1380,19 @@ input_mode_switch:
 					{ // find point on shape closest to mouse along circumference
 						// TODO (feature): only do this when C_ShapeLock is applied, otherwise...
 						// ... just create a point anywhere on the circumference?
-						v2 TestFocus = POINTS(State->ipoSelect); 
-						poAtDist = TestFocus; 
-						f32 TestRadius = State->Length;
+						v2 poFocus = POINTS(State->ipoSelect);
+						f32 Radius = State->Length;
 
-						v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
-						v2 *Points = State->Points;
-						for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
+						uint cIntersects = 0;
+						if(C_ShapeLock.EndedDown)
 						{
-							shape Shape = State->Shapes[iShape];
-							uint cIntersects = 0;
-							switch(Shape.Kind)
-							{ // find the intersects with a circle from poSaved to mouse
-								case SHAPE_Circle:
-									{
-										v2 poFocus = Points[Shape.Circle.ipoFocus];
-										f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
-										cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius,
-												&poIntersect1, &poIntersect2);
-									} break;
-
-								case SHAPE_Arc:
-									{
-										v2 poFocus = Points[Shape.Arc.ipoFocus];
-										v2 poStart = Points[Shape.Arc.ipoStart];
-										v2 poEnd   = Points[Shape.Arc.ipoEnd];
-										f32 Radius = Dist(poFocus, poStart);
-										cIntersects = IntersectCircleArc(TestFocus, TestRadius, poFocus, Radius, poStart, poEnd,
-												&poIntersect1, &poIntersect2);
-									} break;
-
-								case SHAPE_Segment:
-									{
-										v2 po = Points[Shape.Line.P1];
-										v2 Dir = V2Sub(Points[Shape.Line.P2], po);
-										cIntersects = IntersectSegmentCircle(po, Dir, TestFocus, TestRadius,
-												&poIntersect1, &poIntersect2);
-									} break;
-
-								default: { /* do nothing */ }
-							}
-
-							// update closest candidate
-							if(cIntersects      && DistSq(CanvasMouseP, poIntersect1) < DistSq(CanvasMouseP, poAtDist))
-							{ poAtDist = poIntersect1; }
-							if(cIntersects == 2 && DistSq(CanvasMouseP, poIntersect2) < DistSq(CanvasMouseP, poAtDist))
-							{ poAtDist = poIntersect2; }
+							cIntersects = ClosestPtIntersectingCircle(State->Points, State->Shapes, State->iLastShape, CanvasMouseP,
+									poFocus, Radius, &poAtDist);
+							if(cIntersects == 0) { poAtDist = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius); }
+						}
+						else
+						{
+							poAtDist = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius);
 						}
 
 						if(DEBUGClick(C_PointOnly))
@@ -1213,8 +1413,7 @@ input_mode_switch:
 					// also possible this fires at a weird time when focus returns or something...
 					if(!C_Arc.EndedDown)
 					{ // finish drawing arc/circle
-						v2 poSelect = POINTS(State->ipoSelect);
-						v2 poNew = V2WithDist(poSelect, SnapMouseP, State->Length);
+						v2 poNew = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length); 
 						if(V2WithinEpsilon(poNew, POINTS(State->ipoArcStart), POINT_EPSILON))
 						{ // Same angle -> full circle
 							AddCircle(State, State->ipoSelect, AddPoint(State, poNew, POINT_Radius, 0));
@@ -1310,60 +1509,27 @@ input_mode_switch:
 						// TODO (feature): only do this when C_ShapeLock is applied, otherwise...
 						// ... just create a point anywhere on the line?
 						v2 TestStart = POINTS(State->ipoSelect); 
-						poOnLine = TestStart; 
 						v2 poExtend = State->poSaved;
 						v2 TestDir = V2Sub(poExtend, TestStart);
-
-						v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
-						v2 *Points = State->Points;
-						// TODO (opt): extract to function with function params
-						for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
+						uint cIntersects = 0;
+						if(C_ShapeLock.EndedDown)
 						{
-							shape Shape = State->Shapes[iShape];
-							uint cIntersects = 0;
-							switch(Shape.Kind)
-							{ // find the intersects with a line going through poExtend
-								case SHAPE_Circle:
-									{
-										v2 poFocus = Points[Shape.Circle.ipoFocus];
-										f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
-										cIntersects = IntersectLineCircle(TestStart, TestDir, poFocus, Radius,
-												&poIntersect1, &poIntersect2);
-									} break;
-
-								case SHAPE_Arc:
-									{
-										v2 poFocus = Points[Shape.Arc.ipoFocus];
-										v2 poStart = Points[Shape.Arc.ipoStart];
-										v2 poEnd   = Points[Shape.Arc.ipoEnd];
-										f32 Radius = Dist(poFocus, poStart);
-										cIntersects = IntersectLineArc(TestStart, TestDir, poFocus, Radius, poStart, poEnd,
-												&poIntersect1, &poIntersect2);
-									} break;
-
-								case SHAPE_Segment:
-									{
-										// TODO (fix): not finding intersects
-										v2 po = Points[Shape.Line.P1];
-										v2 Dir = V2Sub(Points[Shape.Line.P2], po);
-										cIntersects = IntersectLineSegment(TestStart, TestDir, po, Dir, &poIntersect1);
-									} break;
-
-								default: { /* do nothing */ }
-							}
-
-							// update closest candidate
-							if(cIntersects      && DistSq(CanvasMouseP, poIntersect1) < DistSq(CanvasMouseP, poOnLine))
-							{ poOnLine = poIntersect1; }
-							if(cIntersects == 2 && DistSq(CanvasMouseP, poIntersect2) < DistSq(CanvasMouseP, poOnLine))
-							{ poOnLine = poIntersect2; }
+							cIntersects =
+								ClosestPtIntersectingLine(State->Points, State->Shapes, State->iLastShape, CanvasMouseP,
+										TestStart, TestDir, &poOnLine);
+							if(cIntersects == 0)  { poOnLine = ClosestPtOnLine(CanvasMouseP, TestStart, TestDir); }
 						}
+						else
+						{ poOnLine = ClosestPtOnLine(CanvasMouseP, TestStart, TestDir); }
 
 						if(!C_PointOnly.EndedDown)
 						{ // add point intersecting shape 
 							SaveUndoState(State);
 							// TODO IMPORTANT (fix): don't add when no shape intersected
-							AddPoint(State, poOnLine, POINT_Extant, 0);
+							if(cIntersects)
+							{ AddPoint(State, poOnLine, POINT_Extant, 0); }
+							else
+							{ AddPoint(State, SnapMouseP, POINT_Extant, 0); }
 							State->InputMode = MODE_Normal;
 						}
 					}
@@ -1440,7 +1606,8 @@ input_mode_switch:
 					v2 poA = V2CanvasToScreen(Basis, Points[Shape.Line.P1], ScreenCentre);
 					v2 poB = V2CanvasToScreen(Basis, Points[Shape.Line.P2], ScreenCentre);
 					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
-					DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB);
+					if(State->ShowDebugInfo)
+					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
 				} break;
 				
 				case SHAPE_Circle:
@@ -1449,7 +1616,8 @@ input_mode_switch:
 					v2 poRadius = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoRadius], ScreenCentre);
 					f32 Radius = Dist(poFocus, poRadius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
-					DrawClosestPtOnCircle(ScreenBuffer, Mouse.P, poFocus, Radius);
+					if(State->ShowDebugInfo)
+					{ DrawClosestPtOnCircle(ScreenBuffer, Mouse.P, poFocus, Radius); }
 				} break;
 
 				case SHAPE_Arc:
@@ -1458,7 +1626,8 @@ input_mode_switch:
 					v2 poStart = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoStart], ScreenCentre);
 					v2 poEnd   = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoEnd],   ScreenCentre);
 					ArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
-					DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd);
+					if(State->ShowDebugInfo)
+					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
 				} break;
 			}
 		}

@@ -80,6 +80,20 @@ ClosestPtOnArc(v2 P, v2 Focus, v2 ArcStart, v2 ArcEnd)
 
 /// AB = B - A
 internal inline v2
+ClosestPtOnLine(v2 P, v2 a, v2 ab)
+{
+	BEGIN_TIMED_BLOCK;
+	// Project P onto ab, computing parameterized position d(t) = a + t*(b - a)
+	// TODO: Dot(ab, ab) better as Len(ab)?
+	f32 t = Dot(V2Sub(P, a), ab) / Dot(ab, ab);
+	// TODO: is t wanted as well?
+	v2 Result = V2Add(a, V2Mult(t, ab));
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+/// AB = B - A
+internal inline v2
 ClosestPtOnSegment(v2 P, v2 a, v2 ab)
 {
 	BEGIN_TIMED_BLOCK;

@@ -473,8 +473,8 @@ WinMain(HINSTANCE Instance,
 		}
 
 		// TODO: move to open/save?
-		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s - Length: %f", "Geometer",
-				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "", State->Length);
+		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
+				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
 		SetWindowText(Window.Handle, TitleText);
 
 #if 1
