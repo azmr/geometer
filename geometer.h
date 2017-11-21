@@ -208,7 +208,9 @@ typedef struct state
 	uint cDraws;
 
 	basis *Basis;
-	basis *pBasis;
+	// NOTE: probably has to be a pointer to a draw state's basis
+	// if you want bases to create a new undo state
+	basis pBasis;
 
 	uint iLastAction;
 	uint iLastPoint;
@@ -227,6 +229,7 @@ typedef struct state
 	char *FilePath;
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
+	b32 ShowHelpInfo;
 	b32 Modified; // TODO: set to 0 when undos reach save level
 	// TODO: move to a return, as only needed for end of frame
 	b32 SaveFile;
@@ -238,7 +241,11 @@ typedef struct state
 	// TODO: Consolidate to 2 points used as determined by flags
 	uint ipoDrag; // TODO: consolidate into ipoSelect
 	uint ipoSelect;
-	uint ipoArcStart; // Non-zero -> drawing arc
+	union
+	{
+		uint ipoArcStart; // Non-zero -> drawing arc
+		uint ipoLength; // Lines at length aways from start
+	};
 	v2 poSaved;
 
 	u8 SavedStatus[2];
@@ -257,14 +264,15 @@ internal inline void
 UpdateDrawPointers(state *State, uint iPrevDraw)
 {
 	draw_state *Draw = State->Draw;
-	State->Points      = (v2 *)Draw[State->iCurrentDraw].maPoints.Base;
-	State->PointStatus = (u8 *)Draw[State->iCurrentDraw].maPointStatus.Base;
-	State->Shapes      = (shape *)Draw[State->iCurrentDraw].maShapes.Base;
+	uint iCurrentDraw = State->iCurrentDraw;
+	State->Points      = (v2 *)Draw[iCurrentDraw].maPoints.Base;
+	State->PointStatus = (u8 *)Draw[iCurrentDraw].maPointStatus.Base;
+	State->Shapes      = (shape *)Draw[iCurrentDraw].maShapes.Base;
 	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint = (uint)Draw[State->iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape = (uint)Draw[State->iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
-	State->pBasis = &Draw[iPrevDraw].Basis;
-	State->Basis  = &Draw[State->iCurrentDraw].Basis;
+	State->iLastPoint = (uint)Draw[iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape = (uint)Draw[iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
+	State->pBasis = Draw[iPrevDraw].Basis;
+	State->Basis  = &Draw[iCurrentDraw].Basis;
 	State->tBasis = 0;
 }
 

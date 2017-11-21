@@ -952,6 +952,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		LOG("Invalid basis");
 		BASIS->XAxis.X = 1.f;
 		BASIS->XAxis.Y = 0.f;
+		// TODO (UI): should I reset zoom here as well?
 	}
 
 	// Clear BG
@@ -1034,6 +1035,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		// SNAPPING
+		if(State->InputMode == MODE_ExtendSeg)
+		{ // Temp point added so that lines can be extended to the given length
+			v2 poAtLength = ClosestPtOnCircle(State->poSaved, POINTS(State->ipoSelect), State->Length);
+			State->ipoLength = AddPoint(State, poAtLength, POINT_Arc, 0);
+		}
+
 		f32 ClosestDistSq;
 		v2 CanvasMouseP = V2ScreenToCanvas(*BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
@@ -1043,11 +1050,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(ipoClosest)
 		{
 			poClosest = POINTS(ipoClosest);
+#define POINT_SNAP_DIST 5000.f
 			// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
-			if(ClosestDistSq/(BASIS->Zoom * BASIS->Zoom) < 5000.f)
+			if(ClosestDistSq/(BASIS->Zoom * BASIS->Zoom) < POINT_SNAP_DIST)
 			{ // closest point within range
 				if( ! C_NoSnap.EndedDown)
-				{
+				{ // point snapping still on
 					SnapMouseP = poClosest;
 					ipoSnap = ipoClosest;
 				}
@@ -1247,21 +1255,24 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			Input.New->Mouse.LMB.EndedDown = 0;
 		}
 
-		else if(C_Cancel.EndedDown)
+		else if(DEBUGPress(C_Cancel) && State->InputMode != MODE_Normal)
 		{ // cancel selection, point returns to saved location
-#if 0
 			POINTSTATUS(State->ipoSelect) = State->SavedStatus[0];
 			POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
 			OffsetDraw(State, -1);
-#endif
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
 			State->InputMode = MODE_Normal;
 		}
 
+		else if(DEBUGPress(Keyboard.F1))
+		{
+			State->ShowHelpInfo = !State->ShowHelpInfo;
+		}
+
 		else
 		{
-input_mode_switch:
+input_mode_switch: // TODO (opt): is this really needed?
 			switch(State->InputMode)
 			{
 				case MODE_Normal:
@@ -1355,14 +1366,13 @@ input_mode_switch:
 					// TODO (fix): don't move if same axis is set again (starting from a fixed pBasis?)
 					if(!C_BasisSet.EndedDown)
 					{ // set basis on release
-						State->tBasis = 0.f;
-#if 0
-						BASIS->XAxis = Norm(V2Sub(SnapMouseP, POINTS(State->ipoSelect)));
-						POINTSTATUS(State->ipoSelect) = State->SavedStatus[0];
-						POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
-#else
-						BASIS->XAxis = Norm(V2Sub(SnapMouseP, State->poSaved));
-#endif
+						// SetAnimatedBasis
+						{
+							State->tBasis = 0.f;
+							pBASIS = *BASIS;
+							BASIS->XAxis = Norm(V2Sub(SnapMouseP, State->poSaved));
+						}
+
 						State->ipoSelect = 0;
 						State->ipoArcStart = 0;
 						State->InputMode = MODE_Normal;
@@ -1519,14 +1529,17 @@ input_mode_switch:
 				} break;
 
 
-				// TODO (feature): perp already sets angle, so extension is meaningless,
-				// instead, extend could perp again to provide parallel with initial...
 				case MODE_ExtendSeg:
 				{
-				/* if(State->ExtendingLine) */
+					v2 poSelect = POINTS(State->ipoSelect);
+
+					// remove temp point in case length changes for next frame
+					// NOTE: currently relies on not being overwritten...
+					// may want to move after draw
+					POINTSTATUS(State->ipoLength) = POINT_Free;
+
 					if(!C_FullShape.EndedDown)
 					{ // finish drawing a line
-						v2 poSelect = POINTS(State->ipoSelect);
 						v2 poExtend = State->poSaved;
 						v2 poNew = ExtendSegment(poSelect, poExtend, SnapMouseP);
 						AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
@@ -1534,6 +1547,7 @@ input_mode_switch:
 						State->InputMode = MODE_Normal;
 					}
 				} break;
+
 
 				case MODE_ExtendLinePt:
 				{
@@ -1557,7 +1571,6 @@ input_mode_switch:
 						if(!C_PointOnly.EndedDown)
 						{ // add point intersecting shape 
 							SaveUndoState(State);
-							// TODO IMPORTANT (fix): don't add when no shape intersected
 							if(cIntersects)
 							{ AddPoint(State, poOnLine, POINT_Extant, 0); }
 							else
@@ -1580,7 +1593,8 @@ input_mode_switch:
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
 
 		basis EndBasis = *BASIS;
-		basis StartBasis = *pBASIS;
+		/* pBASIS = &pDRAW_STATE.Basis; */
+		basis StartBasis = pBASIS;
 		f32 tBasis = State->tBasis;
 		// TODO: animate on undos
 		if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
@@ -1761,7 +1775,7 @@ input_mode_switch:
 					poSSEnd = SSSnapMouseP;
 				}
 				else
-				{
+				{ // draw perpendicular segment
 					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->poSaved), ScreenCentre);
 					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				}
@@ -1774,6 +1788,7 @@ input_mode_switch:
 			{ // preview extending a line
 				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
+				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSExtend, BLACK);
 				DrawActivePoint(ScreenBuffer, poSSExtend, RED);
@@ -1805,8 +1820,85 @@ input_mode_switch:
 		}
 	}
 
+	f32 TextSize = ScreenSize.Y/38;
+	if(TextSize > 20.f)  { TextSize = 20.f; }
+
+	if(State->ShowHelpInfo)
+	{ LOG("PRINT HELP");
+		char LeftHelpBuffer[] =
+			"Drawing\n"
+			"=======\n"
+			"Arcs (compass)\n"
+			"--------------\n"
+			"LMB-drag - set length/radius\n"
+			"LMB      - add point, start drawing arcs\n"
+			" -> LMB      - circle\n"
+			" -> LMB-onPt - circle\n"
+			" -> LMB-drag - arc\n"
+			" -> RMB      - point at distance/radius\n"
+			" -> RMB-onPt - leave one point\n"
+
+			"\n"
+			"Segments/lines (straight-edge)\n"
+			"------------------------------\n"
+			"RMB-drag - set perpendicular line\n"
+			"RMB      - add point, start drawing lines\n"
+			" -> LMB      - line\n"
+			" -> LMB-drag - extend line\n"
+			" -> RMB      - another point\n"
+			" -> RMB-onPt - leave one point\n"
+			" -> RMB-drag - point along line\n"
+
+			"\n"
+			"Modifiers\n"
+			"=========\n"
+			"Esc      - cancel current shape\n"
+			"Ctrl     - snap to shape\n"
+			"Shift    - no snapping\n"
+			"Alt      - general modifier (number store...)\n"
+			"Space    - canvas modifier (pan, basis)";
+
+		char RightHelpBuffer[] =
+			"Canvas/view manipulation\n"
+			"========================\n"
+			"MMB-drag       - pan viewport around canvas\n"
+			"Space+LMB-drag - pan viewport around canvas\n"
+			"Space+RMB-drag - set horizontal of viewport (rotate)\n"
+			"Scroll         - zoom to cursor\n"
+			"PgUp/PgDn      - zoom to centre\n"
+			"Home           - return to centre\n"
+			"Backspace      - reset canvas drawing\n"
+			"Alt+Enter      - fullscreen\n"
+
+			"\n"
+			"Length/radius manipulation\n"
+			"==========================\n"
+			"2-0      - divide length by 2-10\n"
+			"Alt+2-0  - multiply length by 2-10\n"
+			"a-z,A-Z  - get stored length/radius\n"
+			"Alt+a-Z  - set stored length/radius\n"
+			"Tab      - swap to previously used length\n"
+
+			"\n"
+			"File manipulation\n"
+			"=================\n"
+			"Ctrl+Z    - undo\n"
+			"Ctrl+Y    - redo\n"
+			"Ctrl+Sh+Z - redo\n"
+			"Ctrl+S    - save file\n"
+			"Ctrl+Sh+S - save file as...\n"
+			"Ctrl+O    - open file\n"
+			"Ctrl+Sh+O - open file in new window\n"
+			"Ctrl+N    - new file [TODO]\n"
+			"Ctrl+Sh+N - new file in new window [TODO]"
+			;
+
+		DrawString(ScreenBuffer, &State->DefaultFont, LeftHelpBuffer,  TextSize, 10.f, ScreenSize.Y-2.f*TextSize, 0, BLACK);
+		DrawString(ScreenBuffer, &State->DefaultFont, RightHelpBuffer, TextSize, ScreenSize.X - 32.f*TextSize, ScreenSize.Y-2.f*TextSize, 0, BLACK);
+	}
+
 	if(State->ShowDebugInfo)
-	{ LOG("PRINT");
+	{ LOG("PRINT DEBUG");
 		DebugPrint();
 		/* DrawSuperSlowCircleLine(ScreenBuffer, ScreenCentre, 50.f, RED); */
 
@@ -1815,14 +1907,15 @@ input_mode_switch:
 		// TODO: Highlight status for currently selected/hovered points
 
 		char Message[512];
-		f32 TextSize = 15.f;
+		TextSize = 15.f;
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%.2f, %.2f), "
 				"Basis: (%.2f, %.2f), "
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
-				"poSaved: %.2f, %.2f "
+				"pBasis: (%.2f, %.2f)"
+				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
@@ -1836,7 +1929,8 @@ input_mode_switch:
 				BASIS->XAxis.X, BASIS->XAxis.Y,
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
-				State->poSaved.X, State->poSaved.Y
+				State->pBasis.XAxis.X, State->pBasis.XAxis.Y
+				/* State->iCurrentDraw */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
 				/* State->iLastPoint */
@@ -1856,11 +1950,20 @@ input_mode_switch:
 		{
 			stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, POINTSTATUS(i));
 		}
+		char BasisInfo[512];
+		BasisInfo[0] = '\0';
+		for(uint i = 0; i <= NUM_UNDO_STATES && i <= 32; ++i)
+		{
+			stbsp_sprintf(BasisInfo, "%s%u) %x (%.2f, %.2f)\n", BasisInfo, i,
+					&State->Draw[i].Basis, State->Draw[i].Basis.XAxis.X, State->Draw[i].Basis.XAxis.Y);
+		}
 		TextSize = 13.f;
 		DrawString(ScreenBuffer, &State->DefaultFont, ShapeInfo, TextSize,
 				ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
 		DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
 				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
+		DrawString(ScreenBuffer, &State->DefaultFont, BasisInfo, TextSize,
+				ScreenSize.X - 420.f, ScreenSize.Y - 30.f, 0, BLACK);
 	}
 
 	CLOSE_LOG();
