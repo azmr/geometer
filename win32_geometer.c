@@ -72,6 +72,13 @@ ChangeFilePath(state *State, char *FilePath, uint cchFilePath)
 	State->cchFilePath = cchFilePath;
 }
 
+internal inline b32
+FileHasName(state *State)
+{
+	b32 Result = State->FilePath[0];
+	return Result;
+}
+
 internal OPENFILENAME
 OpenFilenameDefault(HWND OwnerWindow, uint cchFilePath)
 {
@@ -136,8 +143,13 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			goto open_end;
 		}
 
+		// all in from now?
 		ChangeFilePath(State, FilePath, cchFilePath);
+		State->iCurrentDraw = 0;
+		State->cDraws = 0;
+		State->iLastDraw = 0;
 
+		uint iCurrentDraw = State->iCurrentDraw;
 		switch(FH.FormatVersion)
 		{
 			case 1:
@@ -151,7 +163,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 					Assert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
 					switch(ElType)
 					{
-#define DRAW_LVL 0
+#define DRAW_LVL iCurrentDraw
 						case HEAD_Points_v1:
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->Draw[DRAW_LVL].maPoints,
@@ -202,13 +214,13 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			} break;
 		}
 
-		// TODO: CRC32
-		// TODO: where to put fclose?
+		// TODO IMPORTANT: CRC32
+		// fclose?
 		UpdateDrawPointers(State, DRAW_LVL);
 	}
 
 open_end:
-	State->OpenFile = 0;
+	// TODO (rm): State->OpenFile = 0;
 	return Result;
 
 open_error:
@@ -219,26 +231,11 @@ open_error:
 
 // TODO: error checking
 internal void
-SaveToFile(state *State, HWND WindowHandle)
+SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 {
 	BEGIN_TIMED_BLOCK;
-	if(State->SaveAs || !State->FilePath[0])
-	{
-		OPENFILENAME File = OpenFilenameDefault(WindowHandle, State->cchFilePath);
-		char *FilePath = Win32GetSaveFilename(WindowHandle, &File);
-		if(FilePath)
-		{
-			ChangeFilePath(State, FilePath, File.nMaxFile);
-		}
-		else
-		{
-			goto save_end;
-		}
-		State->SaveAs = 0;
-	}
-
-	FILE *SaveFile = fopen(State->FilePath, "wb");
-	FileErrorOnFail(WindowHandle, SaveFile, State->FilePath); 
+	FILE *SaveFile = fopen(FilePath, "wb");
+	FileErrorOnFail(WindowHandle, SaveFile, FilePath); 
 	file_header Header = {0};
 	Header.ID[0] = 'G';
 	Header.ID[1] = 'e';
@@ -259,7 +256,7 @@ SaveToFile(state *State, HWND WindowHandle)
 	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->Shapes + 1);\
 	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, (action *)State->maActions.Base + 1); \
 	DATA_PROCESS(HEAD_Basis_v1,       One,                State->Basis)
-	//                       elementType          cElements           arraybase
+	//           elementType          cElements           arraybase
 
 	// NOTE: needed to fix size of enum
 	u32 Tag; 
@@ -290,10 +287,6 @@ SaveToFile(state *State, HWND WindowHandle)
 
 	// TODO: use checksum to ensure written properly?
 	fclose(SaveFile);
-
-	State->Modified = 0;
-save_end:
-	State->SaveFile = 0;
 	END_TIMED_BLOCK;
 }
 
@@ -326,6 +319,143 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	{ LOG("Adding to actions arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maActions, State->maActions.Size * 2));
 	}
+}
+
+/// Open a new geometer window.
+/// If FilePath is an empty string (""), open a blank file,
+/// otherwise try to open the FilePath given.
+/// Returns 0 on failure.
+internal b32
+Win32OpenGeometerWindow(char *FilePath)
+{
+	size_t PathLen;
+	char *EXEPath = Win32GetEXEPath(&PathLen);
+	size_t FileLen = strlen(FilePath);
+	// TODO (opt): move to string pool / better string system
+	size_t SysLen = sizeof("start") + PathLen + FileLen + 2; // extra space and \0
+	char *SysCall = malloc(SysLen);
+	stbsp_snprintf(SysCall, (int)SysLen, "start %s %s", EXEPath, FilePath);
+
+	// start call returns 0 on success
+	b32 Result = ! system(SysCall);
+
+	free(EXEPath);
+	free(SysCall);
+	return Result;
+}
+
+internal void
+Save(state *State, HWND WindowHandle, b32 SaveAs)
+{
+	BEGIN_TIMED_BLOCK;
+	char *SavePath = State->FilePath;
+	b32 Unnamed = ! FileHasName(State);
+	b32 ContinueSave = 1;
+	if(SaveAs || Unnamed) // explicitly requested or no current name
+	{
+		OPENFILENAME File = OpenFilenameDefault(WindowHandle, State->cchFilePath);
+		char *DialogTitle = SaveAs ? "Save as and open in new window" : 0;
+		SavePath = Win32GetSaveFilename(WindowHandle, &File, DialogTitle);
+		if(SavePath)
+		{ // for SaveAs, the new window will have the new file path
+			if(Unnamed && ! SaveAs)
+			{ ChangeFilePath(State, SavePath, File.nMaxFile); }
+		}
+		else
+		{
+			LOG("FILEPATH NOT FOUND");
+			ContinueSave = 0;
+		}
+	}
+
+	if(ContinueSave)
+	{
+		SaveToFile(State, WindowHandle, SavePath);
+
+		if(SaveAs)
+		{ // open the file just saved in a new window
+			Win32OpenGeometerWindow(SavePath);
+			free(SavePath); // still needed for normal save
+		}
+		else
+		{ State->Modified = 0; }
+	}
+	END_TIMED_BLOCK;
+}
+/// Confirms with user that they want to close if the file has been modified.
+/// Saves if user wants to.
+/// Returns 1 to continue with close or 0 to not close.
+internal b32
+Win32ConfirmFileClose(state *State, HWND WindowHandle)
+{
+	b32 Result = 1;
+	while(State->Modified)
+	{
+		uint ButtonResponse = MessageBox(WindowHandle, "Your file has been modified since you last saved.\n"
+				"Would you like to save before closing?", "Save Changes?", MB_YESNOCANCEL | MB_ICONWARNING);
+		if(ButtonResponse == IDYES)
+		{ // Save and confirm close
+			Save(State, WindowHandle, 0);
+			// loop back to check Modified has been set to 0
+		}
+		else if(ButtonResponse == IDNO)
+		{ // don't save and confirm close
+			break;
+		}
+		else // cancelled/unknown response
+		{ // don't close, return to program
+			Result = 0;
+			break;
+		}
+	}
+	return Result;
+}
+
+internal void
+FreeStateArenas(state *State)
+{
+#define cSTART_POINTS 32
+	draw_state *Draw = State->Draw;
+	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
+	{
+		Free(Draw[i].maPoints.Base);
+		Free(Draw[i].maPointStatus.Base);
+		Free(Draw[i].maShapes.Base);
+	}
+	Free(State->maActions.Base);
+#undef cSTART_POINTS
+}
+
+internal void
+AllocStateArenas(state *State)
+{
+#define cSTART_POINTS 32
+	draw_state *Draw = State->Draw;
+	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
+	{
+		Draw[i].maPoints	  = ArenaCalloc(sizeof(v2)	 * cSTART_POINTS);
+		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)	 * cSTART_POINTS);
+		Draw[i].maShapes	  = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	}
+	State->maActions		  = ArenaCalloc(sizeof(action) * cSTART_POINTS);
+#undef cSTART_POINTS
+}
+
+internal void
+HardReset(state *State, FILE *OpenFile)
+{
+	if(OpenFile) { fclose(OpenFile); }
+	FreeStateArenas(State);
+	Free(State->FilePath);
+	state NewState = {0};
+	AllocStateArenas(&NewState);
+	ChangeFilePath(&NewState, calloc(1, 1), 1); // 1 byte set to 0 (empty string)
+	
+	Reset(&NewState);
+	*State = NewState;
+	// NOTE: need initial save state to undo to
+	SaveUndoState(State);
+	State->Modified = 0;
 }
 
 int CALLBACK
@@ -367,16 +497,8 @@ WinMain(HINSTANCE Instance,
 	state *State = (state *)Memory.PermanentStorage;
 
 	LOG("OPEN BLANK FILE");
-#define cSTART_POINTS 32
-	draw_state *Draw = State->Draw;
-	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
-	{
-		Draw[i].maPoints      = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
-		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)     * cSTART_POINTS);
-		Draw[i].maShapes      = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
-	}
-	State->maActions          = ArenaCalloc(sizeof(action) * cSTART_POINTS);
-#undef cSTART_POINTS
+	AllocStateArenas(State);
+	Reset(State);
 
 	State->cchFilePath = 1024;
 	State->FilePath = calloc(State->cchFilePath, sizeof(char));
@@ -392,25 +514,10 @@ WinMain(HINSTANCE Instance,
 		char *FilePath = calloc(cchFilePath, 1);
 		strcpy(FilePath, argv[1]);
 		OpenedFile = OpenFileInCurrentWindow(State, FilePath, cchFilePath, Window.Handle);
-		State->OpenFile = 1;
-
-		if(argc > 2)
-		{ // Custom location/size
-			if(argc == 6)
-			{
-				/* u32 x = atoi(argv[2]); */
-				/* u32 y = atoi(argv[3]); */
-				/* u32 w = atoi(argv[4]); */
-				/* u32 h = atoi(argv[5]); */
-			}
-			else
-			{
-				MessageBox(Window.Handle, "Missing argument for window location/size", "Missing Argument", MB_ICONERROR);
-			}
-		}
 	}
 
 	ReallocateArenas(State, Window.Handle);
+
 
 	Win32LoadXInput();
 	// TODO: Pool with bitmap VirtualAlloc and font?
@@ -457,24 +564,20 @@ WinMain(HINSTANCE Instance,
 		/* FrameTimer = Win32StartFrameTimer(FrameTimer); */
 		/* old_new_controller Keyboard = UpdateController(Input, 0); */
 
-		{
-			// NOTE: if the window is moved to a higher resolution monitor, reallocate
+		{ // if the window is moved to a higher resolution monitor, reallocate
 			int NewScreenWidth, NewScreenHeight;
 			Win32ScreenResolution(Window.Handle, &NewScreenWidth, &NewScreenHeight);
 			if(NewScreenWidth > ScreenWidth || NewScreenHeight > ScreenHeight)
-			{
+			{ // width is larger than allocation allows: reallocate
 				ScreenWidth = NewScreenWidth;
 				ScreenHeight = NewScreenHeight;
-				/* char ScreenStr[512]; */
-				/* stbsp_sprintf(ScreenStr, "Changed to larger monitor. New size: %u x %u.", ScreenWidth, ScreenHeight); */
-				/* MessageBox(Window.Handle, ScreenStr, "Monitor Change", 0); */
 				Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 			}
 		}
 
 		// TODO: move to open/save?
 		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
-				State->FilePath[0] ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
+				FileHasName(State) ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
 		SetWindowText(Window.Handle, TitleText);
 
 #if 1
@@ -523,49 +626,53 @@ WinMain(HINSTANCE Instance,
 		if(!UpdateAndRender) { break; }
 #endif // !SINGLE_EXECUTABLE
 
-		UpdateAndRender(&GameImageBuffer, &Memory, Input);
-		if(State->CloseApp)  { GlobalRunning = 0; }
+		file_actions FileActions = UpdateAndRender(&GameImageBuffer, &Memory, Input);
+		// TODO (fix): frame timing
 		State->dt = FrameTimer.SecondsElapsedForFrame;
 
+		// TODO (refactor): switch
+		if(FileActions.CloseApp)  { GlobalRunning = 0; }
 		// SAVE/OPEN
-		if(State->SaveFile)
-		{
-			SaveToFile(State, Window.Handle);
+		if(FileActions.SaveFile)
+		{ // save file, possibly to new name & window
+			Save(State, Window.Handle, FileActions.SaveAs);
 		}
 
-		else if(State->OpenFile)
-		{
+		else if(FileActions.OpenFile)
+		{ // open file in same or new window
 			// TODO: either open in new window or confirm with if(State->Modified) {confirm...}
 			OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
-			char *FilePath = Win32GetOpenFilename(Window.Handle, &File, State->SaveAs ? "Open in new window" : 0);
-			if(FilePath)
+			char *DialogTitle = FileActions.SaveAs ? "Open in new window" : 0;
+			char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
+			if(OpenPath)
+			{
+				if(FileActions.SaveAs)
+				{
+					LOG("OPEN NEW GEOMETER WINDOW");
+					Assert(Win32OpenGeometerWindow(OpenPath));
+					free(OpenPath); // allocc'd above
+				}
+				else if(Win32ConfirmFileClose(State, Window.Handle))
+				{
+					HardReset(State, OpenedFile);
+					OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
+				}
+				// else cancelled
+			}
+		}
+
+		else if(FileActions.NewFile)
+		{ // new file in same or new window
+			if(FileActions.SaveAs)
 			{
 				LOG("OPEN NEW GEOMETER WINDOW");
-				size_t PathLen;
-				char *EXEPath = Win32GetEXEPath(&PathLen);
-				size_t FileLen = strlen(FilePath);
-				// TODO: move to string pool
-				size_t SysLen = sizeof("start") + PathLen + FileLen + 2; // extra space and \0
-				char *SysCall = malloc(SysLen);
-				stbsp_snprintf(SysCall, (int)SysLen, "start %s %s", EXEPath, FilePath);
-
-				system(SysCall);
-
-				free(EXEPath);
-				free(SysCall);
-				free(FilePath);
-
-				if(!State->SaveAs /* || IsBlankFile */)
-				{
-					// NOTE: instead of loading into current file, just open a new one and close this
-					GlobalRunning = 0;
-					// TODO: open 'properly':
-					/* OpenFileInCurrentWindow(State, FilePath, File.nMaxFile, Window.Handle); */
-				}
-				State->SaveAs = 0;
+				Assert(Win32OpenGeometerWindow(""));
 			}
-
-			State->OpenFile = 0;
+			else if(Win32ConfirmFileClose(State, Window.Handle))
+			{
+				HardReset(State, OpenedFile);
+			}
+			// else cancelled
 		}
 		
 		ReallocateArenas(State, Window.Handle);
@@ -575,14 +682,8 @@ WinMain(HINSTANCE Instance,
 		++State->FrameCount;
 
 		// NOTE: while should allow for cancels part way through the save
-		while(!GlobalRunning && State->Modified)
-		{
-			uint ButtonResponse = MessageBox(Window.Handle, "Your file has been modified since you last saved.\n"
-					"Would you like to save before closing?", "Save Changes?", MB_YESNOCANCEL | MB_ICONWARNING);
-			if(ButtonResponse == IDYES)     { SaveToFile(State, Window.Handle); }
-			else if(ButtonResponse == IDNO) { break; } // leave loop and close
-			else                            { GlobalRunning = 1; } // return to program if cancelled/unknown response occurs
-		}
+		if(!GlobalRunning)
+		{ GlobalRunning = ! Win32ConfirmFileClose(State, Window.Handle); }
 	}
 	// TODO:? free timer resolution
 	if(OpenedFile)  { fclose(OpenedFile); }

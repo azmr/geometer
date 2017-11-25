@@ -7,6 +7,7 @@
 #define POINTSTATUS(i) (State->PointStatus[i])
 #define SHAPES(i) (State->Shapes[i])
 #define ACTIONS(i) (*PullEl(State->maActions, i, action))
+#define DEFAULT_LENGTH 20.f
 
 #include <types.h>
 
@@ -36,6 +37,15 @@ static debug_text DebugText;
 #include <misc.h>
 
 #define POINT_EPSILON 0.02f
+
+typedef struct file_actions
+{
+	b32 SaveAs;
+	b32 SaveFile;
+	b32 OpenFile;
+	b32 NewFile;
+	b32 CloseApp;
+} file_actions;
 
 typedef struct basis
 {
@@ -228,16 +238,11 @@ typedef struct state
 
 	font DefaultFont;
 	uint cchFilePath;
-	char *FilePath;
+	char *FilePath; // allocc'd
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
 	b32 ShowHelpInfo;
 	b32 Modified; // TODO: set to 0 when undos reach save level
-	// TODO: move to a return, as only needed for end of frame
-	b32 SaveFile;
-	b32 SaveAs;
-	b32 OpenFile;
-	b32 CloseApp;
 	input_mode InputMode;
 
 	// TODO: Consolidate to 2 points used as determined by flags
@@ -279,8 +284,62 @@ UpdateDrawPointers(state *State, uint iPrevDraw)
 	State->tBasis = 0;
 }
 
+internal void
+Reset(state *State)
+{
+	BEGIN_TIMED_BLOCK;
+	for(uint i = 1; i <= State->iLastPoint; ++i)
+	{ POINTSTATUS(i) = POINT_Free; }
+	// NOTE: Point index 0 is reserved for null points (not defined in lines)
+	DRAW_STATE.maPoints.Used  = sizeof(v2);
+	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
+	DRAW_STATE.maShapes.Used  = sizeof(shape);
+	UpdateDrawPointers(State, 1);
 
-#define UPDATE_AND_RENDER(name) void name(image_buffer *ScreenBuffer, memory *Memory, input Input)
+	State->Basis->XAxis  = V2(1.f, 0.f);
+	State->Basis->Offset = ZeroV2;
+	State->Basis->Zoom   = 0.1f;
+
+	State->cDraws = 0;
+
+	State->tBasis        = 1.f;
+	State->ipoSelect     = 0;
+	State->ipoArcStart   = 0;
+
+	State->Length = DEFAULT_LENGTH;
+
+	PushStruct(&State->maActions, action);
+	action Action;
+	Action.Kind = ACTION_Reset;
+	ACTIONS(++State->iLastAction) = Action;
+
+	END_TIMED_BLOCK;
+}
+
+internal inline void
+SaveUndoState(state *State)
+{
+	BEGIN_TIMED_BLOCK;
+	uint iPrevDraw = State->iCurrentDraw;
+	State->iCurrentDraw = iDrawOffset(State, 1);
+	// NOTE: prevents redos
+	State->iLastDraw = State->iCurrentDraw;
+
+	draw_state *Draw = State->Draw;
+	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
+	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
+	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
+	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
+	
+	UpdateDrawPointers(State, iPrevDraw);
+
+	++State->cDraws;
+	State->Modified = 1;
+	END_TIMED_BLOCK;
+}
+
+
+#define UPDATE_AND_RENDER(name) file_actions name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 
 DECLARE_DEBUG_FUNCTION;
 

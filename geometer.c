@@ -137,66 +137,6 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	return Result;
 }
 
-internal inline void
-SaveUndoState(state *State)
-{
-	BEGIN_TIMED_BLOCK;
-	uint iPrevDraw = State->iCurrentDraw;
-	State->iCurrentDraw = iDrawOffset(State, 1);
-	// NOTE: prevents redos
-	State->iLastDraw = State->iCurrentDraw;
-
-	draw_state *Draw = State->Draw;
-	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
-	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
-	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
-	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
-	
-	UpdateDrawPointers(State, iPrevDraw);
-
-	++State->cDraws;
-	State->Modified = 1;
-	END_TIMED_BLOCK;
-}
-
-internal void
-Reset(state *State)
-{
-	BEGIN_TIMED_BLOCK;
-	for(uint i = 1; i <= State->iLastPoint; ++i)
-	{
-		POINTSTATUS(i) = POINT_Free;
-	}
-	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-	DRAW_STATE.maPoints.Used  = sizeof(v2);
-	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
-	DRAW_STATE.maShapes.Used  = sizeof(shape);
-	UpdateDrawPointers(State, 1);
-
-	/* State->cPoints  = 0; */
-	/* State->cLines   = 0; */
-	/* State->cCircles = 0; */
-	/* State->cArcs    = 0; */
-	/* State->cShapes  = 0; */
-
-	State->Basis->XAxis  = V2(1.f, 0.f);
-	State->Basis->Offset = ZeroV2;
-	State->Basis->Zoom   = 0.1f;
-
-	State->tBasis        = 1.f;
-	State->ipoSelect     = 0;
-	State->ipoArcStart   = 0;
-
-	State->Length = 20.f;
-
-	PushStruct(&State->maActions, action);
-	action Action;
-	Action.Kind = ACTION_Reset;
-	ACTIONS(++State->iLastAction) = Action;
-
-	END_TIMED_BLOCK;
-}
-
 // NOTE: less than numlinepoints if any points are reused
 internal uint
 NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
@@ -208,9 +148,7 @@ NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
 	{
 		// TODO: Do I want inclusive as well as exclusive?
 		if(Statuses[i] == PointTypes)
-		{
-			++Result;
-		}
+		{ ++Result; }
 	}
 	END_TIMED_BLOCK;
 	return Result;
@@ -852,7 +790,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	ScreenSize.X = (f32)ScreenBuffer->Width;
 	ScreenSize.Y = (f32)ScreenBuffer->Height;
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
-	ScreenCentre;
+	file_actions FileActions = {0};
 
 	// REMOVE
 	static int testcharindex = 0;
@@ -862,16 +800,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	if(!Memory->IsInitialized)
 	{
-		if(!State->OpenFile)
-		{
-			Reset(State);
-		}
-		else
-		{
-			State->tBasis = 1.f;
-			State->OpenFile = 0;
-		}
-		State->cDraws = 0;
+		/* Reset(State); */
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
 
 		// NOTE: need initial save state to undo to
@@ -1221,17 +1150,21 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				{
 					if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.S))
 					{ // SAVE (AS)
-						State->SaveFile = 1;
-						if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
+						FileActions.SaveFile = 1;
+						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
 					}
 					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.O))
 					{ // OPEN (AS)
 						// TODO IMPORTANT: seems to trap the 'o' down,
 						// so it needs to be pressed again before it's registered properly
-						State->OpenFile = 1;
-						if(Keyboard.Shift.EndedDown) { State->SaveAs = 1; }
+						FileActions.OpenFile = 1;
+						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
 					}
-					// TODO (feature): new file
+					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.N))
+					{ // NEW (AS)
+						FileActions.NewFile = 1;
+						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
+					}
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 						// NOTE: making sure that there is a state available to undo into
@@ -1846,7 +1779,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
 				"pBasis: (%.2f, %.2f)"
-				/* "Draw Index: %u" */
+				"Draw Index: %u"
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
@@ -1860,8 +1793,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				BASIS->XAxis.X, BASIS->XAxis.Y,
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
-				State->pBasis.XAxis.X, State->pBasis.XAxis.Y
-				/* State->iCurrentDraw */
+				State->pBasis.XAxis.X, State->pBasis.XAxis.Y,
+				State->iCurrentDraw
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
 				/* State->iLastPoint */
@@ -1899,6 +1832,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	CLOSE_LOG();
 	END_TIMED_BLOCK;
+	return FileActions;
 }
 
 global_variable char DebugTextBuffer[Megabytes(8)];

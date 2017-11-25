@@ -432,23 +432,26 @@ internal uint
 IntersectCircles(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 *Intersection1, v2 *Intersection2)
 {
 	BEGIN_TIMED_BLOCK;
-	v2 Dir = V2Sub(poFocus2, poFocus1);
-	// TODO: optimise out
-	f32 dSq = LenSq(Dir);
-	f32 RadAdd = R1 + R2;
 	uint Result = 0;
-	if(dSq == RadAdd * RadAdd)
+	if( ! V2Equals(poFocus1, poFocus2))
 	{
-		// NOTE: early out for tangents
-		Result = 1;
-		*Intersection1 = V2Add(poFocus1, V2Mult(R1, Norm(Dir)));
-	}
+		v2 Dir = V2Sub(poFocus2, poFocus1);
+		// TODO: optimise out
+		f32 dSq = LenSq(Dir);
+		f32 RadAdd = R1 + R2;
+		if(dSq == RadAdd * RadAdd)
+		{
+			// NOTE: early out for tangents
+			Result = 1;
+			*Intersection1 = V2Add(poFocus1, V2Mult(R1, Norm(Dir)));
+		}
 
-	else
-	{
-		f32 Fraction = 0.5f * ((R1*R1 / dSq) - (R2*R2 / dSq) + 1);
-		v2 ChordCross = V2Add(poFocus1, V2Mult(Fraction, Dir));
-		Result = IntersectLineCircle(ChordCross, Perp(Dir), poFocus1, R1, Intersection1, Intersection2);
+		else
+		{
+			f32 Fraction = 0.5f * ((R1*R1 / dSq) - (R2*R2 / dSq) + 1);
+			v2 ChordCross = V2Add(poFocus1, V2Mult(Fraction, Dir));
+			Result = IntersectLineCircle(ChordCross, Perp(Dir), poFocus1, R1, Intersection1, Intersection2);
+		}
 	}
 	END_TIMED_BLOCK;
 	return Result;
