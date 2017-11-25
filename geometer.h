@@ -97,8 +97,9 @@ typedef enum input_mode
 	MODE_SetLength,
 		MODE_DrawArc,
 			MODE_ExtendArc,
-	MODE_SetPerp,
+	MODE_QuickSeg,
 		MODE_DrawSeg,
+			MODE_SetPerp,
 			MODE_ExtendSeg,
 			MODE_ExtendLinePt,
 } input_mode;
@@ -109,8 +110,9 @@ char *InputModeText[] =
 	"MODE_SetLength",
 		"MODE_DrawArc",
 			"MODE_ExtendArc",
-	"MODE_SetPerp",
+	"MODE_QuickSeg",
 		"MODE_DrawSeg",
+			"MODE_SetPerp",
 			"MODE_ExtendSeg",
 			"MODE_ExtendLinePt",
 };
@@ -171,7 +173,7 @@ global_variable debug Debug;
 #define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
 // TODO: make these as orthogonal as possible?
-typedef enum
+typedef enum point_flags
 {
 	POINT_Free         = 0,
 	POINT_Extant       = (1 << 0),
@@ -247,6 +249,7 @@ typedef struct state
 		uint ipoLength; // Lines at length aways from start
 	};
 	v2 poSaved;
+	v2 PerpDir;
 
 	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:

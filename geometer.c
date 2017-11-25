@@ -1,72 +1,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "geometer.h"
 #include <fonts.c>
- 
-// UI:
-// ===
-//
-// Drawing
-// =======
-// Arcs (compass)
-// --------------
-// LMB-drag - set length/radius
-// LMB      - add point, start drawing arcs
-//     LMB      - circle
-//     LMB-onPt - circle
-//     LMB-drag - arc
-//     RMB      - point at distance/radius
-//     RMB-onPt - leave one point
-//     RMB-drag - N/A
-//
-// Segments/lines (straight-edge)
-// ------------------------------
-// RMB-drag - set perpendicular line
-// RMB      - add point, start drawing lines
-//     LMB      - line
-//     LMB-onPt - line (?)
-//     LMB-drag - extend line
-//     RMB      - another point (?)
-//     RMB-onPt - leave one point
-//     RMB-drag - point along line
-//
-// Modifiers
-// =========
-// Esc      - cancel current shape
-// Ctrl     - snap to shape
-// Shift    - no point snapping
-// Alt      - general modifier (number store...)
-// Space    - canvas modifier (pan, basis?)
-//
-// Canvas/view manipulation
-// ========================
-// MMB-drag       - pan viewport around canvas
-// Space+LMB-drag - pan viewport around canvas
-// Space+RMB-drag - set horizontal axis of viewport (rotate)
-// Scroll   - zoom to cursor
-// PgUp/PgDn- zoom to centre
-// Home     - return to centre
-// Backspace- reset canvas drawing
-// Alt+Enter- fullscreen
-//
-// Length/radius manipulation
-// ==========================
-// 2-0      - divide length by 2-10
-// Alt+2-0  - multiply length by 2-10
-// a-z,A-Z  - get stored length/radius
-// Alt+a-Z  - set stored length/radius
-// Tab      - swap to previously used length/radius
-//
-// File manipulation
-// =================
-// Ctrl+Z   - undo
-// Ctrl+Y   - redo
-// Ctrl+Sh+Z- redo
-// Ctrl+S   - save file
-// Ctrl+Sh+S- save file as...
-// Ctrl+O   - open file
-// Ctrl+Sh+O- open file in new window
-// Ctrl+N   - new file [TODO]
-// Ctrl+Sh+N- new file in new window [TODO]
 
 // TODO:
 // =====
@@ -85,16 +19,24 @@
 // - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
 // - Resizable windo (maintain centre vs maintain absolute position)
 // - New file w/ ctrl-n
+// - Cursor types
 // - Constraint system? Macros? Paid version?
 
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
-#define C_StartShape   Mouse.LMB
-#define C_FullShape    Mouse.LMB
-#define C_PointOnly    Mouse.RMB
-#define C_Arc          Mouse.LMB
-#define C_Line         Mouse.RMB
-#define C_Length       Mouse.LMB
+#define CB_StartShape  LMB
+#define CB_FullShape   LMB
+#define CB_PointOnly   RMB
+#define CB_Arc         LMB
+#define CB_Line        RMB
+#define CB_Length      LMB
+
+#define C_StartShape   Mouse.CB_StartShape
+#define C_FullShape    Mouse.CB_FullShape
+#define C_PointOnly    Mouse.CB_PointOnly
+#define C_Arc          Mouse.CB_Arc
+#define C_Line         Mouse.CB_Line
+#define C_Length       Mouse.CB_Length
 // divide length       1-0
 // mult length         Alt + 1-0
 // get store length    a-z,A-Z
@@ -291,6 +233,23 @@ FindPointAtPos(state *State, v2 po, uint PointStatus)
 	return Result;
 }
 
+/// returns the first free point up to the last point used
+/// returns 0 if none found
+internal inline uint
+FirstFreePoint(state *State)
+{
+	uint Result = 0;
+	for(uint ipo = 1; ipo <= State->iLastPoint; ++ipo)
+	{
+		if(POINTSTATUS(ipo) == POINT_Free)
+		{
+			Result = ipo;
+			break;
+		}
+	}
+	return Result;
+}
+
 /// returns index of point (may be new or existing)
 internal uint
 AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
@@ -298,37 +257,20 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 	BEGIN_TIMED_BLOCK;
 	/* gDebugV2 = po; */
 	uint Result = FindPointAtPos(State, po, ~(uint)POINT_Free);
-	if(Result)
+	if(Result) // point exists already
 	{
 		// NOTE: Use existing point, but add any new status (and confirm Extant)
-		if(PriorStatus) *PriorStatus = POINTSTATUS(Result);
-		if((POINTSTATUS(Result) & (PointTypes | POINT_Extant)))
-		{
-			goto end;
-		}
-		else
-		{
-			POINTSTATUS(Result) |= PointTypes | POINT_Extant;
-		}
+		if(PriorStatus) { *PriorStatus = POINTSTATUS(Result); }
+		if((POINTSTATUS(Result) & (PointTypes | POINT_Extant))) // with full status
+		{ goto end; } // no changes needed; exit
+		else // status needs updating
+		{ POINTSTATUS(Result) |= PointTypes | POINT_Extant; }
 	}
 
 	else 
-	{
-		if(PriorStatus) *PriorStatus = POINT_Free;
-		// TODO: extract into function? ExistingFreePoint
-		for(uint ipo = 1; ipo <= State->iLastPoint; ++ipo)
-		{
-			// NOTE: Use existing point if free
-#if 0
-			// NOTE: this should be disappearing with dynamic allocation
-			// if(State->iLastPoint < ArrayCount(State->Points))
-#endif
-			if(POINTSTATUS(ipo) == POINT_Free)
-			{
-				Result = ipo;
-				break;
-			}
-		}
+	{ // add a new point
+		if(PriorStatus) { *PriorStatus = POINT_Free; }
+		Result = FirstFreePoint(State);
 		// NOTE: Create new point if needed
 		if(!Result)
 		{
@@ -947,7 +889,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	}
 	Assert(State->OverflowTest == 0);
 
-	if(V2Equals(BASIS->XAxis, ZeroV2) || isnan(BASIS->XAxis.X) || isnan(BASIS->XAxis.Y))
+	if(V2InvalidDir(BASIS->XAxis))
 	{
 		LOG("Invalid basis");
 		BASIS->XAxis.X = 1.f;
@@ -970,7 +912,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP, poClosest;
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
-	v2 PerpDir = ZeroV2;
 	uint ipoSnap;
 	uint ipoClosest = 0;
 	{ LOG("INPUT");
@@ -1035,7 +976,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		// SNAPPING
-		if(State->InputMode == MODE_ExtendSeg)
+		if(State->InputMode == MODE_ExtendSeg || State->InputMode == MODE_ExtendLinePt)
 		{ // Temp point added so that lines can be extended to the given length
 			v2 poAtLength = ClosestPtOnCircle(State->poSaved, POINTS(State->ipoSelect), State->Length);
 			State->ipoLength = AddPoint(State, poAtLength, POINT_Arc, 0);
@@ -1238,7 +1179,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			/* } */
 		}
 
-
 		// TODO (UI): if panning, ignore input but still do preview
 		// TODO: fix needed for if started and space released part way?
 		if((C_PanMod.EndedDown && Mouse.LMB.EndedDown) || C_Pan.EndedDown)
@@ -1272,7 +1212,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		else
 		{
-input_mode_switch: // TODO (opt): is this really needed?
+			uint InputButton = LMB;
+
+			// TODO (opt): jump straight to the right mode.
 			switch(State->InputMode)
 			{
 				case MODE_Normal:
@@ -1313,9 +1255,6 @@ input_mode_switch: // TODO (opt): is this really needed?
 						SaveUndoState(State);
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
 						State->InputMode = MODE_SetLength;
-						// TODO (opt): jump straight to the right mode. Are jump pts set up automatically
-						// for switches?
-						goto input_mode_switch;
 					}
 
 					else if(DEBUGClick(C_Line))
@@ -1323,10 +1262,7 @@ input_mode_switch: // TODO (opt): is this really needed?
 						// NOTE: Starting a shape, save the first point
 						SaveUndoState(State);
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
-						State->InputMode = MODE_SetPerp;
-						// TODO (opt): jump straight to the right mode. Are jump pts set up automatically
-						// for switches?
-						goto input_mode_switch;
+						State->InputMode = MODE_QuickSeg;
 					}
 
 					else if(DEBUGPress(C_Reset))
@@ -1402,7 +1338,6 @@ input_mode_switch: // TODO (opt): is this really needed?
 				{
 					if(DEBUGClick(C_Arc))
 					{ // start drawing arc/circle
-						// TODO (go from here): don't allow extension
 						v2 poNew;
 						b32 IsCentre = CircumferencePosition(SnapMouseP, POINTS(State->ipoSelect), State->Length, &poNew); 
 						// TODO (opt): there is a 1 frame lag even if pressed and released within 1...
@@ -1477,106 +1412,111 @@ input_mode_switch: // TODO (opt): is this really needed?
 				case MODE_SetPerp:
 				{
 					v2 poSelect = POINTS(State->ipoSelect);
-					if( ! V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON) )
-					{
-						PerpDir = Perp(V2Sub(SnapMouseP, poSelect));
-						State->poSaved = PerpDir;
-					}
-					else
-					{
-						State->poSaved = ZeroV2;
-					}
+					if(V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON)) // mouse on seg start
+					{ State->PerpDir = ZeroV2; }
+					else // set perpendicular
+					{ State->PerpDir = Perp(V2Sub(SnapMouseP, poSelect)); }
 
-					if(!C_Line.EndedDown)
+					if( ! C_FullShape.EndedDown)
 					{
 						State->InputMode = MODE_DrawSeg;
 					}
 				} break;
 
 
-				case MODE_DrawSeg:
-				{ // start drawing line
-					// TODO (feature): poSaved != ZeroV2 -> perp
-					if(DEBUGClick(C_FullShape))
-					{
-						if(V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
-						{ // NOTE: don't  want to extend a line with no direction!
-							State->ipoSelect = 0;
-							State->InputMode = MODE_Normal;
+				case MODE_QuickSeg:
+				{
+					if( ! C_Line.EndedDown) // RMB released
+					{ // draw quick segment or move to full segment drawing
+						v2 poSelect = POINTS(State->ipoSelect);
+						if(V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON))
+						{ // mouse not moved, go to full seg drawing
+							State->InputMode = MODE_DrawSeg;
 						}
 						else
-						{ // (expected behaviour)
-							if(V2Equals(State->poSaved, ZeroV2)) // perpendicular not set
-							{ State->poSaved = SnapMouseP; }
-							else
-							{ State->poSaved = V2Add(POINTS(State->ipoSelect), State->poSaved); }
-							State->InputMode = MODE_ExtendSeg;
-						}
-					}
-					else if(DEBUGClick(C_PointOnly))
-					{
-						if(V2WithinEpsilon(POINTS(State->ipoSelect), SnapMouseP, POINT_EPSILON))
-						{ // NOTE: don't  want to extend a line with no direction!
+						{ // draw quick seg
+							AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0));
 							State->ipoSelect = 0;
 							State->InputMode = MODE_Normal;
-						}
-						else
-						{ // (expected behaviour)
-							State->poSaved = SnapMouseP;
-							State->InputMode = MODE_ExtendLinePt;
 						}
 					}
 				} break;
 
 
-				case MODE_ExtendSeg:
-				{
-					v2 poSelect = POINTS(State->ipoSelect);
+#define DRAW_PERP \
+				if(V2Equals(State->PerpDir, ZeroV2)) /* perpendicular not set */ \
+				{ State->poSaved = SnapMouseP; } /* set current mouse as point to extend through */ \
+				else /* extend through the perpendicular */ \
+				{ State->poSaved = V2Add(poSelect, State->PerpDir); } \
+				State->PerpDir = ZeroV2;
 
+				case MODE_DrawSeg:
+				{ // start drawing line
+					v2 poSelect = POINTS(State->ipoSelect);
+					if(DEBUGClick(C_FullShape))
+					{
+						if(V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON))
+						{ // NOTE: don't  want to extend a line with no direction!
+							// leave a point and return to normal mode
+							State->InputMode = MODE_SetPerp;
+						}
+						else
+						{ // extend segment
+							DRAW_PERP
+							State->InputMode = MODE_ExtendSeg;
+						}
+					}
+
+					else if(DEBUGClick(C_PointOnly))
+					{ // continue to extending shape if valid
+						if(V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON))
+						{
+							// TODO (ui): cancel point?
+							State->ipoSelect = 0;
+							State->InputMode = MODE_Normal;
+						}
+						else // ClickPointOnly
+						{ // extend line point
+							DRAW_PERP
+							State->InputMode = MODE_ExtendLinePt;
+						}
+					}
+				} break;
+#undef DRAW_PERP
+
+
+				// TODO (fix): shape snapping not working
+				case MODE_ExtendLinePt: // fallthrough
+				InputButton = CB_PointOnly;
+				case MODE_ExtendSeg:
+				{ // find point on shape closest to mouse along line
 					// remove temp point in case length changes for next frame
 					// NOTE: currently relies on not being overwritten...
 					// may want to move after draw
 					POINTSTATUS(State->ipoLength) = POINT_Free;
 
-					if(!C_FullShape.EndedDown)
-					{ // finish drawing a line
-						v2 poExtend = State->poSaved;
-						v2 poNew = ExtendSegment(poSelect, poExtend, SnapMouseP);
-						AddSegment(State, State->ipoSelect, AddPoint(State, poNew, POINT_Line, 0));
+					// TODO (fix): preview point pulling away from shape
+					v2 TestStart = POINTS(State->ipoSelect); 
+					v2 poExtend = State->poSaved;
+					v2 TestDir = V2Sub(poExtend, TestStart);
+					uint cIntersects = 0;
+					if(C_ShapeLock.EndedDown)
+					{
+						cIntersects =
+							ClosestPtIntersectingLine(State->Points, State->Shapes, State->iLastShape, SnapMouseP,
+									TestStart, TestDir, &poOnLine);
+						if(cIntersects == 0)  { poOnLine = ClosestPtOnLine(SnapMouseP, TestStart, TestDir); }
+					}
+					else
+					{ poOnLine = ClosestPtOnLine(SnapMouseP, TestStart, TestDir); }
+
+					if( ! Mouse.Buttons[InputButton].EndedDown)
+					{ // add point along line (and maybe add segment)
+						SaveUndoState(State);
+						uint ipoNew = AddPoint(State, poOnLine, POINT_Extant, 0);
+						if(State->InputMode == MODE_ExtendSeg)  { AddSegment(State, State->ipoSelect, ipoNew); }
 						State->ipoSelect = 0;
 						State->InputMode = MODE_Normal;
-					}
-				} break;
-
-
-				case MODE_ExtendLinePt:
-				{
-					{ // find point on shape closest to mouse along line
-						// TODO (feature): only do this when C_ShapeLock is applied, otherwise...
-						// ... just create a point anywhere on the line?
-						v2 TestStart = POINTS(State->ipoSelect); 
-						v2 poExtend = State->poSaved;
-						v2 TestDir = V2Sub(poExtend, TestStart);
-						uint cIntersects = 0;
-						if(C_ShapeLock.EndedDown)
-						{
-							cIntersects =
-								ClosestPtIntersectingLine(State->Points, State->Shapes, State->iLastShape, SnapMouseP,
-										TestStart, TestDir, &poOnLine);
-							if(cIntersects == 0)  { poOnLine = ClosestPtOnLine(SnapMouseP, TestStart, TestDir); }
-						}
-						else
-						{ poOnLine = ClosestPtOnLine(SnapMouseP, TestStart, TestDir); }
-
-						if(!C_PointOnly.EndedDown)
-						{ // add point intersecting shape 
-							SaveUndoState(State);
-							if(cIntersects)
-							{ AddPoint(State, poOnLine, POINT_Extant, 0); }
-							else
-							{ AddPoint(State, SnapMouseP, POINT_Extant, 0); }
-							State->InputMode = MODE_Normal;
-						}
 					}
 				} break;
 
@@ -1703,8 +1643,8 @@ input_mode_switch: // TODO (opt): is this really needed?
 		// so that they don't pop too harshly when only seen briefly
 		v2 poSSSelect = ZeroV2;
 		f32 SSLength = State->Length/BASIS->Zoom; 
-		if(State->ipoSelect)  { poSSSelect = V2CanvasToScreen(Basis, Points[State->ipoSelect], ScreenCentre); }
 		v2 poSelect = Points[State->ipoSelect];
+		if(State->ipoSelect)  { poSSSelect = V2CanvasToScreen(Basis, poSelect, ScreenCentre); }
 		switch(State->InputMode)
 		{
 			case MODE_Normal:
@@ -1756,6 +1696,7 @@ input_mode_switch: // TODO (opt): is this really needed?
 
 			case MODE_SetPerp:
 			{
+				v2 PerpDir = State->PerpDir;
 				if( ! V2Equals(PerpDir, ZeroV2))
 				{
 					v2 poSSStart = V2CanvasToScreen(Basis, poSelect, ScreenCentre);
@@ -1767,16 +1708,17 @@ input_mode_switch: // TODO (opt): is this really needed?
 			} break;
 
 
+			case MODE_QuickSeg:
 			case MODE_DrawSeg:
 			{
 				v2 poSSEnd;
-				if(V2Equals(State->poSaved, ZeroV2))
+				if(V2Equals(State->PerpDir, ZeroV2))
 				{
 					poSSEnd = SSSnapMouseP;
 				}
 				else
 				{ // draw perpendicular segment
-					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->poSaved), ScreenCentre);
+					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->PerpDir), ScreenCentre);
 					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				}
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
@@ -1785,26 +1727,14 @@ input_mode_switch: // TODO (opt): is this really needed?
 
 
 			case MODE_ExtendSeg:
+			case MODE_ExtendLinePt:
 			{ // preview extending a line
 				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
-				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
-				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSExtend, BLACK);
-				DrawActivePoint(ScreenBuffer, poSSExtend, RED);
-			} break;
-
-
-			case MODE_ExtendLinePt:
-			{
-				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poSSExtend = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
-#if 0
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poExtend, LIGHT_GREY);
-#endif
-				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
-				DrawActivePoint(ScreenBuffer, poSSExtend, BLUE);
 				v2 poSSOnLine = V2CanvasToScreen(Basis, poOnLine, ScreenCentre);
+				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
+				if(State->InputMode == MODE_ExtendSeg)
+				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
+				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
 		}
@@ -1841,12 +1771,13 @@ input_mode_switch: // TODO (opt): is this really needed?
 			"\n"
 			"Segments/lines (straight-edge)\n"
 			"------------------------------\n"
-			"RMB-drag - set perpendicular line\n"
+			"RMB-drag - quick draw segment\n"
 			"RMB      - add point, start drawing lines\n"
 			" -> LMB      - line\n"
 			" -> LMB-drag - extend line\n"
+			"   -> FromPt - set perpendicular\n"
 			" -> RMB      - another point\n"
-			" -> RMB-onPt - leave one point\n"
+			" -> RMB-onPt - leave first point\n" // TODO (UI): change to cancel?
 			" -> RMB-drag - point along line\n"
 
 			"\n"

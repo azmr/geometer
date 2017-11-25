@@ -51,7 +51,11 @@ internal inline v2
 ClosestPtOnCircle(v2 P, v2 Focus, f32 Radius)
 {
 	BEGIN_TIMED_BLOCK;
-	v2 Dir = V2Sub(P, Focus);
+	v2 Dir;
+	if(V2Equals(P, Focus)) // centre -> right (failing is unhelpful)
+	{ Dir = V2(Radius, 0.f); }
+	else // normal path
+	{ Dir = V2Sub(P, Focus); }
 	v2 poRel = V2WithLength(Dir, Radius);
 	v2 Result = V2Add(Focus, poRel);
 	END_TIMED_BLOCK;
@@ -189,6 +193,7 @@ Signed2DTriAreaDoubled(v2 A, v2 B, v2 C)
 internal b32
 IntersectLinesForT(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t)
 {
+	BEGIN_TIMED_BLOCK;
 	b32 Result = 0;
 	// t = (P2 − P1) × Dir2 / (Dir1 × Dir2)
 	f32 Dir1_X_Dir2 = Cross(Dir1, Dir2);
@@ -198,12 +203,14 @@ IntersectLinesForT(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t)
 		*t = Cross(V2Sub(P2, P1), Dir2)  /  Dir1_X_Dir2;
 		Result = 1;
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal b32
 IntersectLinesForTAndU(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t, f32 *u)
 {
+	BEGIN_TIMED_BLOCK;
 	b32 Result = 0;
 	// t = (P2 − P1) × Dir2 / (Dir1 × Dir2)
 	// u = (P2 − P1) × Dir1 / (Dir1 × Dir2)
@@ -216,15 +223,18 @@ IntersectLinesForTAndU(v2 P1, v2 Dir1, v2 P2, v2 Dir2, f32 *t, f32 *u)
 		*u = Cross(P2_Sub_1, Dir1)  /  Dir1_X_Dir2;
 		Result = 1;
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline b32
 IntersectLines(v2 P1, v2 Dir1, v2 P2, v2 Dir2, v2 *Intersection)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t = 0.f;
 	b32 Result = IntersectLinesForT(P1, Dir1, P2, Dir2, &t);
 	*Intersection = V2Add(P1, V2Mult(t, Dir1));
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -232,6 +242,7 @@ IntersectLines(v2 P1, v2 Dir1, v2 P2, v2 Dir2, v2 *Intersection)
 internal inline b32
 IntersectLineSegmentAndT(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection, f32 *LineT)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t = 0.f;
 	f32 u = 0.f;
 	b32 Result = IntersectLinesForTAndU(SegP, SegDir, LineP, LineDir, &t, &u);
@@ -244,11 +255,13 @@ IntersectLineSegmentAndT(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersect
 	{ Result = 0; }
 	DebugReplace("Intersection: %f, %f", Intersection->X, Intersection->Y);
 
+	END_TIMED_BLOCK;
 	return Result;
 }
 internal inline b32
 IntersectLineSegment(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t = 0.f;
 	b32 Result = IntersectLinesForT(SegP, SegDir, LineP, LineDir, &t);
 	if(Result && t >= 0.f && t <= 1.f)  // intersection within segment
@@ -257,6 +270,7 @@ IntersectLineSegment(v2 LineP, v2 LineDir, v2 SegP, v2 SegDir, v2 *Intersection)
 	{ Result = 0; }
 	DebugReplace("Intersection: %f, %f", Intersection->X, Intersection->Y);
 
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -299,6 +313,7 @@ IntersectSegmentsWinding(v2 A, v2 B, v2 C, v2 D, v2 *Out)
 internal uint
 IntersectLineCircleForT(v2 P, v2 d, v2 poFocus, f32 Radius, f32 *t1, f32 *t2)
 {
+	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
 	// Distance from point on line to circle centre == radius:
 	// 		(P + td - C) DOT (P + td - C) == radius^2
@@ -327,6 +342,7 @@ IntersectLineCircleForT(v2 P, v2 d, v2 poFocus, f32 Radius, f32 *t1, f32 *t2)
 		*t2 = -b + RootDisc;
 	}
 
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -334,6 +350,7 @@ IntersectLineCircleForT(v2 P, v2 d, v2 poFocus, f32 Radius, f32 *t1, f32 *t2)
 internal uint
 IntersectLineCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t1, t2;
 	v2 d = Norm(Dir);
 	uint Result = IntersectLineCircleForT(P, d, poFocus, Radius, &t1, &t2);
@@ -344,6 +361,7 @@ IntersectLineCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 
 		//if(Result == 2)
 			*Intersection2 = V2Add(P, V2Mult(t2, d));
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -351,6 +369,7 @@ IntersectLineCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 
 internal uint
 IntersectRayCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t1, t2;
 	v2 d = Norm(Dir);
 	uint Result = IntersectLineCircleForT(P, d, poFocus, Radius, &t1, &t2);
@@ -370,6 +389,7 @@ IntersectRayCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *
 			*Intersection1 = V2Add(P, V2Mult(t2, d));
 		}
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -377,6 +397,7 @@ IntersectRayCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *
 internal uint
 IntersectSegmentCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	f32 t1, t2;
 	v2 d = Norm(Dir);
 	// If the tangent is a line, how many times would it go intersect the circle?
@@ -402,6 +423,7 @@ IntersectSegmentCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, 
 			*Intersection1 = V2Add(P, V2Mult(t2, d));
 		}
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -409,6 +431,7 @@ IntersectSegmentCircle(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 *Intersection1, 
 internal uint
 IntersectCircles(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	v2 Dir = V2Sub(poFocus2, poFocus1);
 	// TODO: optimise out
 	f32 dSq = LenSq(Dir);
@@ -427,12 +450,14 @@ IntersectCircles(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 *Intersection1, v2
 		v2 ChordCross = V2Add(poFocus1, V2Mult(Fraction, Dir));
 		Result = IntersectLineCircle(ChordCross, Perp(Dir), poFocus1, R1, Intersection1, Intersection2);
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 CheckCircleCollisionsForArc(v2 poArcFocus, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2, uint NumCircleCollisions)
 {
+	BEGIN_TIMED_BLOCK;
 	uint Result = NumCircleCollisions;
 	if(Result)
 	{
@@ -453,47 +478,61 @@ CheckCircleCollisionsForArc(v2 poArcFocus, v2 poArcStart, v2 poArcEnd, v2 *Inter
 		}
 		Result = ArcIntersect1 + ArcIntersect2;
 	}
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 IntersectLineArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
+	Assert( ! V2Equals(Dir, ZeroV2));
 	uint NumCircleCollisions = IntersectLineCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
 	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 IntersectRayArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
+	Assert( ! V2Equals(Dir, ZeroV2));
 	uint NumCircleCollisions = IntersectRayCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
 	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 IntersectSegmentArc(v2 P, v2 Dir, v2 poFocus, f32 Radius, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
+	Assert( ! V2Equals(Dir, ZeroV2));
 	uint NumCircleCollisions = IntersectSegmentCircle(P, Dir, poFocus, Radius, Intersection1, Intersection2);
 	uint Result = CheckCircleCollisionsForArc(poFocus, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 IntersectCircleArc(v2 poFocus1, f32 R1, v2 poFocus2, f32 R2, v2 poArcStart, v2 poArcEnd, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	uint NumCircleCollisions = IntersectCircles(poFocus1, R1, poFocus2, R2, Intersection1, Intersection2);
 	uint Result = CheckCircleCollisionsForArc(poFocus2, poArcStart, poArcEnd, Intersection1, Intersection2, NumCircleCollisions);
+	END_TIMED_BLOCK;
 	return Result;
 }
 
 internal inline uint
 IntersectArcs(v2 poFocus1, f32 R1, v2 poArcStart1, v2 poArcEnd1, v2 poFocus2, f32 R2, v2 poArcStart2, v2 poArcEnd2, v2 *Intersection1, v2 *Intersection2)
 {
+	BEGIN_TIMED_BLOCK;
 	uint NumCircleCollisions = IntersectCircles(poFocus1, R1, poFocus2, R2, Intersection1, Intersection2);
 	uint Result = CheckCircleCollisionsForArc(poFocus1, poArcStart1, poArcEnd1, Intersection1, Intersection2, NumCircleCollisions);
 	     Result = CheckCircleCollisionsForArc(poFocus2, poArcStart2, poArcEnd2, Intersection1, Intersection2, Result);
+	END_TIMED_BLOCK;
 	return Result;
 }
 #define GEOMETRY_H

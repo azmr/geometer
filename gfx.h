@@ -792,6 +792,8 @@ DEBUGDrawLine(image_buffer *Buffer, v2 Point1, v2 Point2, colour Colour)
 internal inline void
 DrawFullScreenLine(image_buffer *Buffer, v2 Point1, v2 Dir, colour Colour)
 {
+	Assert( ! V2Equals(Dir, ZeroV2));
+
 	f32 W = (f32) Buffer->Width;
 	f32 H = (f32) Buffer->Height;
 	v2 FarCorner = V2(W, H);
