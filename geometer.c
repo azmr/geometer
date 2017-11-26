@@ -950,7 +950,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						circle Circle = Shape.Circle;
 						v2 poFocus = POINTS(Circle.ipoFocus);
 						f32 Radius = Dist(poFocus, POINTS(Circle.ipoRadius));
-						TestP = ClosestPtOnCircle(SnapMouseP, poFocus, Radius);
+						TestP = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius);
 					} break;
 
 					case SHAPE_Arc:
@@ -959,7 +959,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						v2 poFocus = POINTS(Arc.ipoFocus);
 						v2 poStart = POINTS(Arc.ipoStart);
 						v2 poEnd = POINTS(Arc.ipoEnd);
-						TestP = ClosestPtOnArc(SnapMouseP, poFocus, poStart, poEnd);
+						TestP = ClosestPtOnArc(CanvasMouseP, poFocus, poStart, poEnd);
 					} break;
 
 					case SHAPE_Segment:
@@ -967,7 +967,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						line Seg = Shape.Line;
 						v2 po1 = POINTS(Seg.P1);
 						v2 Dir = V2Sub(POINTS(Seg.P2), po1);
-						TestP = ClosestPtOnSegment(SnapMouseP, po1, Dir);
+						TestP = ClosestPtOnSegment(CanvasMouseP, po1, Dir);
 					} break;
 
 					default:
@@ -975,7 +975,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						// do nothing
 					}
 				}
-				if(iShape == 1 || DistSq(TestP, SnapMouseP) < DistSq(SnapMouseP, SnapMouseP))
+				if(iShape == 1 || DistSq(TestP, CanvasMouseP) < DistSq(CanvasMouseP, SnapMouseP))
 				{ SnapMouseP = TestP; }
 			}
 		}
@@ -1569,6 +1569,8 @@ case_mode_drawarc:
 			{
 				// TODO (UI): animate when (un)snapping
 				CircleLine(ScreenBuffer, SSSnapMouseP, SSLength, LIGHT_GREY);
+				if(C_ShapeLock.EndedDown)
+				{ CircleLine(ScreenBuffer, SSSnapMouseP, 3.f, LIGHT_GREY); }
 			} break;
 
 
