@@ -25,7 +25,17 @@ global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosit
 
 typedef UPDATE_AND_RENDER(update_and_render);
 
-typedef enum
+typedef enum cursor_types
+{
+	CURSOR_Normal = 0,
+	CURSOR_Basis,
+	CURSOR_Pan,
+	CURSOR_Arc,
+	CURSOR_Seg,
+	CURSOR_Count
+} cursor_types;
+
+typedef enum header_section
 {
 	HEAD_Points_v1,
 	HEAD_PointStatus_v1,
@@ -544,6 +554,12 @@ WinMain(HINSTANCE Instance,
 	State->DefaultFont = Bitstream;
 #endif
 
+	HCURSOR Cursors[CURSOR_Count];
+	Cursors[CURSOR_Normal] = LoadCursor(0, IDC_ARROW);
+	Cursors[CURSOR_Basis]  = LoadCursor(0, IDC_UPARROW);
+	Cursors[CURSOR_Pan]    = LoadCursor(0, IDC_SIZEALL);
+	Cursors[CURSOR_Arc]    = LoadCursor(0, IDC_CROSS);
+	Cursors[CURSOR_Seg]    = LoadCursor(0, IDC_CROSS);
 	//////////
 
 	win32_frame_timing FrameTimer = Win32InitFrameTimer(Window.TargetSecondsPerFrame);
@@ -626,54 +642,95 @@ WinMain(HINSTANCE Instance,
 		if(!UpdateAndRender) { break; }
 #endif // !SINGLE_EXECUTABLE
 
-		file_actions FileActions = UpdateAndRender(&GameImageBuffer, &Memory, Input);
+		platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
 		// TODO (fix): frame timing
 		State->dt = FrameTimer.SecondsElapsedForFrame;
 
-		// TODO (refactor): switch
-		if(FileActions.CloseApp)  { GlobalRunning = 0; }
-		// SAVE/OPEN
-		if(FileActions.SaveFile)
-		{ // save file, possibly to new name & window
-			Save(State, Window.Handle, FileActions.SaveAs);
-		}
-
-		else if(FileActions.OpenFile)
-		{ // open file in same or new window
-			// TODO: either open in new window or confirm with if(State->Modified) {confirm...}
-			OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
-			char *DialogTitle = FileActions.SaveAs ? "Open in new window" : 0;
-			char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
-			if(OpenPath)
+		switch(PlatRequest.Action)
+		{
+			case FILE_Close:
 			{
-				if(FileActions.SaveAs)
+				GlobalRunning = 0;
+			} break;
+
+			case FILE_Save:
+			{ // save file, possibly to new name & window
+				Save(State, Window.Handle, PlatRequest.NewWindow);
+			} break;
+
+			case FILE_Open:
+			{ // open file in same or new window
+				OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
+				char *DialogTitle = PlatRequest.NewWindow ? "Open in new window" : 0;
+				char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
+				if(OpenPath)
+				{
+					if(PlatRequest.NewWindow)
+					{
+						LOG("OPEN NEW GEOMETER WINDOW");
+						Assert(Win32OpenGeometerWindow(OpenPath));
+						free(OpenPath); // allocc'd above
+					}
+					else if(Win32ConfirmFileClose(State, Window.Handle))
+					{
+						HardReset(State, OpenedFile);
+						OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
+					}
+					// else cancelled
+				}
+			} break;
+
+			case FILE_New:
+			{ // new file in same or new window
+				if(PlatRequest.NewWindow)
 				{
 					LOG("OPEN NEW GEOMETER WINDOW");
-					Assert(Win32OpenGeometerWindow(OpenPath));
-					free(OpenPath); // allocc'd above
+					Assert(Win32OpenGeometerWindow(""));
 				}
 				else if(Win32ConfirmFileClose(State, Window.Handle))
 				{
 					HardReset(State, OpenedFile);
-					OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
 				}
 				// else cancelled
+			} break;
+
+			default:
+			{
+				// do nothing
 			}
 		}
 
-		else if(FileActions.NewFile)
-		{ // new file in same or new window
-			if(FileActions.SaveAs)
+		if(PlatRequest.Pan)
+		{ SetCursor(Cursors[CURSOR_Pan]); }
+		else
+		{
+			switch(State->InputMode)
 			{
-				LOG("OPEN NEW GEOMETER WINDOW");
-				Assert(Win32OpenGeometerWindow(""));
+				case MODE_Normal:
+					{
+						SetCursor(Cursors[CURSOR_Normal]);
+					} break;
+				case MODE_SetBasis:
+					{
+						SetCursor(Cursors[CURSOR_Basis]);
+					} break;
+				case MODE_SetLength:
+				case MODE_DrawArc:
+				case MODE_ExtendArc:
+					{
+						SetCursor(Cursors[CURSOR_Arc]);
+					} break;
+				case MODE_QuickSeg:
+				case MODE_DrawSeg:
+				case MODE_SetPerp:
+				case MODE_ExtendSeg:
+				case MODE_ExtendLinePt:
+					{
+						SetCursor(Cursors[CURSOR_Seg]);
+					} break;
 			}
-			else if(Win32ConfirmFileClose(State, Window.Handle))
-			{
-				HardReset(State, OpenedFile);
-			}
-			// else cancelled
 		}
+		
 		
 		ReallocateArenas(State, Window.Handle);
 

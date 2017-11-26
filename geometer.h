@@ -38,14 +38,21 @@ static debug_text DebugText;
 
 #define POINT_EPSILON 0.02f
 
-typedef struct file_actions
+typedef enum file_action
 {
-	b32 SaveAs;
-	b32 SaveFile;
-	b32 OpenFile;
-	b32 NewFile;
-	b32 CloseApp;
-} file_actions;
+	FILE_None = 0,
+	FILE_Save,
+	FILE_Open,
+	FILE_New,
+	FILE_Close
+} file_action;
+
+typedef struct platform_request
+{
+	b32 NewWindow;
+	file_action Action;
+	b32 Pan;
+} platform_request;
 
 typedef struct basis
 {
@@ -339,7 +346,7 @@ SaveUndoState(state *State)
 }
 
 
-#define UPDATE_AND_RENDER(name) file_actions name(image_buffer *ScreenBuffer, memory *Memory, input Input)
+#define UPDATE_AND_RENDER(name) platform_request name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 
 DECLARE_DEBUG_FUNCTION;
 

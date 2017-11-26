@@ -21,6 +21,7 @@
 // - New file w/ ctrl-n
 // - Cursor types
 // - Constraint system? Macros? Paid version?
+// - Make custom cursors
 
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
@@ -795,7 +796,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	ScreenSize.X = (f32)ScreenBuffer->Width;
 	ScreenSize.Y = (f32)ScreenBuffer->Height;
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
-	file_actions FileActions = {0};
+	platform_request File = {0};
 
 	// REMOVE
 	static int testcharindex = 0;
@@ -1117,16 +1118,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// TODO: fix needed for if started and space released part way?
 		if((C_PanMod.EndedDown && Mouse.LMB.EndedDown) || C_Pan.EndedDown)
 		{ // pan canvas with mouse
-			if(DEBUGPress(Mouse.LMB) || DEBUGPress(C_Pan))
-			{
-
-			}
-			// DRAG SCREEN AROUND
 			BASIS->Offset = V2Add(BASIS->Offset,
 				V2Sub(V2ScreenToCanvas(*BASIS, pMouse.P, ScreenCentre),
 					  V2ScreenToCanvas(*BASIS,  Mouse.P, ScreenCentre)));
 			// NOTE: prevents later triggers of clicks, may not be required if input scheme changes.
 			Input.New->Mouse.LMB.EndedDown = 0;
+			File.Pan = 1;
 		}
 
 		else if(DEBUGPress(C_Cancel) && State->InputMode != MODE_Normal)
@@ -1155,20 +1152,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				{
 					if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.S))
 					{ // SAVE (AS)
-						FileActions.SaveFile = 1;
-						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
+						File.Action = FILE_Save;
+						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
 					}
 					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.O))
 					{ // OPEN (AS)
 						// TODO IMPORTANT: seems to trap the 'o' down,
 						// so it needs to be pressed again before it's registered properly
-						FileActions.OpenFile = 1;
-						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
+						File.Action = FILE_Open;
+						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
 					}
 					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.N))
 					{ // NEW (AS)
-						FileActions.NewFile = 1;
-						if(Keyboard.Shift.EndedDown) { FileActions.SaveAs = 1; }
+						File.Action = FILE_New;
+						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
 					}
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
@@ -1266,14 +1263,15 @@ UPDATE_AND_RENDER(UpdateAndRender)
 							State->Length = Length;
 						}
 						// TODO (UI): do I want it automatically continuing to draw here?
-						/* State->ipoSelect = 0; */
 						State->InputMode = MODE_DrawArc;
+						goto case_mode_drawarc;
 					}
 				} break;
 
 
 				case MODE_DrawArc:
 				{
+case_mode_drawarc:
 					// TODO (opt): there is a 1 frame lag even if pressed and released within 1...
 					Assert(State->ipoSelect);
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
@@ -1586,7 +1584,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			case MODE_SetLength:
 			{
-				if(!C_PanMod.EndedDown) { SSLength = Dist(poSSSelect, SSSnapMouseP); }
+				if( ! V2WithinEpsilon(SnapMouseP, poSelect, POINT_EPSILON) && ! C_PanMod.EndedDown)
+				{ SSLength = Dist(poSSSelect, SSSnapMouseP); }
 				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, LIGHT_GREY);
 			} break;
@@ -1829,7 +1828,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	CLOSE_LOG();
 	END_TIMED_BLOCK;
-	return FileActions;
+	return File;
 }
 
 global_variable char DebugTextBuffer[Megabytes(8)];
