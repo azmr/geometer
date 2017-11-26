@@ -51,6 +51,7 @@ internal inline v2
 ClosestPtOnCircle(v2 P, v2 Focus, f32 Radius)
 {
 	BEGIN_TIMED_BLOCK;
+	Assert(Radius);
 	v2 Dir;
 	if(V2Equals(P, Focus)) // centre -> right (failing is unhelpful)
 	{ Dir = V2(Radius, 0.f); }
