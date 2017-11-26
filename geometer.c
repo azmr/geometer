@@ -802,7 +802,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	if(!Memory->IsInitialized)
 	{
-		/* Reset(State); */
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
 
 		// NOTE: need initial save state to undo to
@@ -1272,7 +1271,7 @@ case_mode_drawarc:
 					Assert(State->ipoSelect);
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
 
-					if(DEBUGClick(C_Arc))
+					if(DEBUGClick(C_FullShape))
 					{ // start drawing arc/circle
 						v2 poFocus = POINTS(State->ipoSelect);
 						f32 Radius = State->Length;
@@ -1300,6 +1299,7 @@ case_mode_drawarc:
 
 				case MODE_ExtendArc:
 				{
+					Assert(State->ipoSelect);
 					Assert(State->ipoArcStart);
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
 
@@ -1308,8 +1308,9 @@ case_mode_drawarc:
 					if(!C_Arc.EndedDown)
 					{ // finish drawing arc/circle
 						v2 poFocus = POINTS(State->ipoSelect);
+						v2 poExtend = ClosestPtOnCircle(SnapMouseP, poFocus, State->Length);
 						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON) ||
-						   V2WithinEpsilon(SnapMouseP, POINTS(State->ipoArcStart), POINT_EPSILON))
+						   V2WithinEpsilon(poExtend, POINTS(State->ipoArcStart), POINT_EPSILON))
 						{ // Same angle -> full circle
 							AddCircle(State, State->ipoSelect, State->ipoArcStart);
 						}
