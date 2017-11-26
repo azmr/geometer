@@ -12,14 +12,10 @@
 //  	- undo by absolute and layer order
 // - Change storage of intersections, so they don't all need to be recomputed on changes
 // - Spatially partition(?) shapes
-// - Set lengths on other lines (modulus?)
-//  	- autoset to size just made for easy repeats
 // - Togglable layers (should points be separate from layers, but have status set per layer?)
 // - For fast movements, make sweep effect, rather than ugly multiple line effect 
 // - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
 // - Resizable windo (maintain centre vs maintain absolute position)
-// - New file w/ ctrl-n
-// - Cursor types
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
 
@@ -1684,6 +1680,7 @@ case_mode_drawarc:
 
 	if(State->ShowHelpInfo)
 	{ LOG("PRINT HELP");
+		DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, PreMultiplyColour(WHITE, 0.8f));
 		char LeftHelpBuffer[] =
 			"Drawing\n"
 			"=======\n"
@@ -1704,7 +1701,7 @@ case_mode_drawarc:
 			"RMB      - add point, start drawing lines\n"
 			" -> LMB      - line\n"
 			" -> LMB-drag - extend line\n"
-			"   -> FromPt - set perpendicular\n"
+			"   -> fromPt - set perpendicular\n"
 			" -> RMB      - another point\n"
 			" -> RMB-onPt - leave first point\n" // TODO (UI): change to cancel?
 			" -> RMB-drag - point along line\n"
@@ -1749,8 +1746,8 @@ case_mode_drawarc:
 			"Ctrl+Sh+S - save file as...\n"
 			"Ctrl+O    - open file\n"
 			"Ctrl+Sh+O - open file in new window\n"
-			"Ctrl+N    - new file [TODO]\n"
-			"Ctrl+Sh+N - new file in new window [TODO]"
+			"Ctrl+N    - new file\n"
+			"Ctrl+Sh+N - new file in new window"
 			;
 
 		DrawString(ScreenBuffer, &State->DefaultFont, LeftHelpBuffer,  TextSize, 10.f, ScreenSize.Y-2.f*TextSize, 0, BLACK);
