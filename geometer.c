@@ -19,6 +19,22 @@
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
 
+// UI that allows modification:
+//	- LMB-drag - quick seg
+//	- LMB - start drawing
+//	(Alt + anything for point version)
+// 		- LMB on pt - quick circle (allows double click)
+// 		- LMB drag on pt - set length
+// 		- LMB - circle
+// 		- LMB-drag - arc
+//		- RMB drag on point - set perpendicular
+//		- RMB - seg
+//		- RMB-drag - extend seg
+//	- RMB - select point/shape
+//	- RMB-drag marquee-select points/shapes
+//	- Alt-RMB for +/- selection
+//	...
+
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
 #define CB_StartShape  LMB
@@ -1145,22 +1161,30 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				case MODE_Normal:
 				{
-					if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.S))
-					{ // SAVE (AS)
-						File.Action = FILE_Save;
-						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
-					}
-					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.O))
-					{ // OPEN (AS)
-						// TODO IMPORTANT: seems to trap the 'o' down,
-						// so it needs to be pressed again before it's registered properly
-						File.Action = FILE_Open;
-						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
-					}
-					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.N))
-					{ // NEW (AS)
-						File.Action = FILE_New;
-						if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
+					if(Keyboard.Ctrl.EndedDown)
+					{
+						if(DEBUGPress(Keyboard.S))
+						{ // SAVE (AS)
+							File.Action = FILE_Save;
+							if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
+						}
+						else if(DEBUGPress(Keyboard.O))
+						{ // OPEN (AS)
+							// TODO IMPORTANT: seems to trap the 'o' down,
+							// so it needs to be pressed again before it's registered properly
+							File.Action = FILE_Open;
+							if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
+						}
+						else if(DEBUGPress(Keyboard.N))
+						{ // NEW (AS)
+							File.Action = FILE_New;
+							if(Keyboard.Shift.EndedDown) { File.NewWindow = 1; }
+						}
+						else if(DEBUGPress(Keyboard.E))
+						{
+							if(Keyboard.Shift.EndedDown) { File.Action = FILE_ExportSVG; }
+							// else { File.Action = FILE_ExportPNG; }
+						}
 					}
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
@@ -1768,7 +1792,7 @@ case_mode_drawarc:
 
 		char Message[512];
 		TextSize = 15.f;
-		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
+		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%.2f, %.2f), "
 				/* "Request: {As: %u, Action: %s, Pan: %u}" */
@@ -1801,22 +1825,22 @@ case_mode_drawarc:
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
 		char ShapeInfo[512];
-		stbsp_sprintf(ShapeInfo, "L#  P#\n\n");
+		ssprintf(ShapeInfo, "L#  P#\n\n");
 		for(uint i = 1; i <= State->iLastShape && i <= 32; ++i)
 		{
-			stbsp_sprintf(ShapeInfo, "%s%02u  %04b\n", ShapeInfo, i, SHAPES(i).Kind);
+			ssprintf(ShapeInfo, "%s%02u  %04b\n", ShapeInfo, i, SHAPES(i).Kind);
 		}
 		char PointInfo[512];
-		stbsp_sprintf(PointInfo, " # DARTFILE\n\n");
+		ssprintf(PointInfo, " # DARTFILE\n\n");
 		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
 		{
-			stbsp_sprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, POINTSTATUS(i));
+			ssprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, POINTSTATUS(i));
 		}
 		char BasisInfo[512];
 		BasisInfo[0] = '\0';
 		for(uint i = 0; i <= NUM_UNDO_STATES && i <= 32; ++i)
 		{
-			stbsp_sprintf(BasisInfo, "%s%u) %x (%.2f, %.2f)\n", BasisInfo, i,
+			ssprintf(BasisInfo, "%s%u) %x (%.2f, %.2f)\n", BasisInfo, i,
 					&State->Draw[i].Basis, State->Draw[i].Basis.XAxis.X, State->Draw[i].Basis.XAxis.Y);
 		}
 		TextSize = 13.f;
@@ -1859,7 +1883,7 @@ DECLARE_DEBUG_FUNCTION
 			if(HitCount)
 			{
 				Offset +=
-					stbsp_snprintf(DebugTextBuffer, Megabytes(8)-1,
+					ssnprintf(DebugTextBuffer, Megabytes(8)-1,
 								   /* AltFormat ? AltFormat :*/ "%s%28s%8s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
 								   DebugTextBuffer,
 								   Counter->FunctionName,

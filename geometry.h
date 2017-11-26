@@ -1,6 +1,14 @@
 #ifndef GEOMETRY_H
 #include <maths.h>
 
+typedef struct aabb
+{
+	f32 MinX;
+	f32 MinY;
+	f32 MaxX;
+	f32 MaxY;
+} aabb;
+
 // TODO: Should these be f32?
 internal inline v2
 Proj(v2 V, v2 W)
@@ -15,6 +23,21 @@ ProjN(v2 V, v2 W)
 {
 	// NOTE: assumes normalized(?)
 	v2 Result = V2Mult(Dot(V, W), W);
+	return Result;
+}
+
+/// returns 1 if B is on the anticlockwise half of A
+internal inline b32
+IsCCW(v2 A, v2 B)
+{
+	b32 Result = PerpDot(A, B) >= 0.f;
+	return Result;
+}
+/// returns 1 if B is on the anticlockwise half of A
+internal inline b32
+IsCW(v2 A, v2 B)
+{
+	b32 Result = PerpDot(A, B) < 0.f;
 	return Result;
 }
 

@@ -18,11 +18,13 @@ typedef struct debug_text
 	char Text[DEBUG_TEXT_SIZE];
 } debug_text;
 static debug_text DebugText;
-#define DebugAdd(txt, ...) DebugText.Length += stbsp_snprintf(DebugText.Text, DEBUG_TEXT_SIZE, "%s"txt, DebugText.Text, __VA_ARGS__)
+#define DebugAdd(txt, ...) DebugText.Length += ssnprintf(DebugText.Text, DEBUG_TEXT_SIZE, "%s"txt, DebugText.Text, __VA_ARGS__)
 #define DebugClear() if(DebugText.Length > DEBUG_TEXT_SIZE) DebugText.Length = DEBUG_TEXT_SIZE;\
 					 for(unsigned int i = 0; i < DebugText.Length; ++i)  DebugText.Text[i] = 0
 #define DebugReplace(txt, ...) DebugClear(); DebugAdd(txt, __VA_ARGS__)
 
+// no prefix
+#define STB_SPRINTF_DECORATE(fn) s##fn
 #include <stb_sprintf.h>
 #include <maths.h>
 #include <intrinsics.h>
@@ -44,6 +46,8 @@ typedef enum file_action
 	FILE_Save,
 	FILE_Open,
 	FILE_New,
+	// TODO (feature): FILE_ExportPNG,
+	FILE_ExportSVG,
 	FILE_Close
 } file_action;
 
@@ -303,9 +307,10 @@ Reset(state *State)
 	DRAW_STATE.maShapes.Used  = sizeof(shape);
 	UpdateDrawPointers(State, 1);
 
+#define INITIAL_ZOOM 0.1f
 	State->Basis->XAxis  = V2(1.f, 0.f);
 	State->Basis->Offset = ZeroV2;
-	State->Basis->Zoom   = 0.1f;
+	State->Basis->Zoom   = INITIAL_ZOOM;
 
 	State->cDraws = 0;
 

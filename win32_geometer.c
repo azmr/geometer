@@ -12,8 +12,7 @@
 #include <fonts.c>
 #include <win32.h>
 #include <live_edit.h>
-/* #include <stb_sprintf.h> */
-/* #include <loop_edit.h> */
+#include "svg.h"
 
 global_variable b32 GlobalRunning;
 global_variable b32 GlobalPause;
@@ -70,7 +69,7 @@ internal inline void
 FileErrorOnFail_(HWND WindowHandle, FILE *File, char *FilePath, char *FuncName, uint Line)
 {
 	char Buf[1024];
-	stbsp_snprintf(Buf, 1024, "%s(%u): Unable to open file at %s", FuncName, Line, FilePath);
+	ssnprintf(Buf, 1024, "%s(%u): Unable to open file at %s", FuncName, Line, FilePath);
 	if(!File) MessageBox(WindowHandle, Buf, "File Opening Error", MB_ICONERROR);
 }
 
@@ -344,7 +343,7 @@ Win32OpenGeometerWindow(char *FilePath)
 	// TODO (opt): move to string pool / better string system
 	size_t SysLen = sizeof("start") + PathLen + FileLen + 2; // extra space and \0
 	char *SysCall = malloc(SysLen);
-	stbsp_snprintf(SysCall, (int)SysLen, "start %s %s", EXEPath, FilePath);
+	ssnprintf(SysCall, (int)SysLen, "start %s %s", EXEPath, FilePath);
 
 	// start call returns 0 on success
 	b32 Result = ! system(SysCall);
@@ -392,6 +391,7 @@ Save(state *State, HWND WindowHandle, b32 SaveAs)
 	}
 	END_TIMED_BLOCK;
 }
+
 /// Confirms with user that they want to close if the file has been modified.
 /// Saves if user wants to.
 /// Returns 1 to continue with close or 0 to not close.
@@ -419,6 +419,198 @@ Win32ConfirmFileClose(state *State, HWND WindowHandle)
 		}
 	}
 	return Result;
+}
+
+internal aabb
+AABBFromShape(v2 *Points, shape Shape)
+{
+	aabb Result = {0};
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			v2 po1 = Points[Shape.Line.P1];
+			v2 po2 = Points[Shape.Line.P2];
+			minmaxf32 x = MinMaxF32(po1.X, po2.X);
+			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
+			Result.MinX = x.Min;
+			Result.MaxX = x.Max;
+			Result.MinY = y.Min;
+			Result.MaxY = y.Max;
+		} break;
+
+		// TODO (optimize): arc AABB may be smaller than circle
+		case SHAPE_Arc:
+		case SHAPE_Circle:
+		{
+			v2 Focus = Points[Shape.Circle.ipoFocus];
+			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
+			Result.MinX = Focus.X - Radius;
+			Result.MaxX = Focus.X + Radius;
+			Result.MinY = Focus.Y - Radius;
+			Result.MaxY = Focus.Y + Radius;
+		} break;
+
+		default:
+		{
+			Assert(0);
+		}
+	}
+	return Result;
+}
+
+internal aabb
+AABBExpand(aabb Expandee, aabb Expander)
+{
+	aabb Result = Expandee;
+	if(Expander.MinX < Result.MinX) { Result.MinX = Expander.MinX; }
+	if(Expander.MaxX > Result.MaxX) { Result.MaxX = Expander.MaxX; }
+	if(Expander.MinY < Result.MinY) { Result.MinY = Expander.MinY; }
+	if(Expander.MaxY > Result.MaxY) { Result.MaxY = Expander.MaxY; }
+	return Result;
+}
+
+internal b32
+ArcMoreThanSemiCircle(v2 poFocus, v2 poStart, v2 poEnd)
+{
+	v2 DirStart = V2Sub(poStart, poFocus);
+	v2 DirEnd   = V2Sub(poEnd, poFocus);
+	b32 Result = IsCCW(DirStart, DirEnd) ? 0 : 1;
+	return Result;
+}
+
+internal v2
+CanvasToSVG(v2 P, aabb AABB)
+{
+	v2 Result;
+	f32 Border = 10.f;
+	AABB.MinX -= Border;
+	AABB.MinY -= Border;
+	AABB.MaxX += Border;
+	AABB.MaxY += Border;
+	/* f32 Height = AABB.MaxY - AABB.MinY; */
+	// TODO (feature): scale to apparent zoom level? start at INITIAL_ZOOM of 1?
+	Result.X = P.X - AABB.MinX; // * invINITIAL_ZOOM;
+	Result.Y = AABB.MaxY - P.Y; // * invINITIAL_ZOOM;
+	return Result;
+}
+
+internal uint
+FirstValidShape(state *State)
+{
+	uint iFirstValidShape = 0;
+	for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
+	{
+		shape Shape = State->Shapes[iShape];
+		if(Shape.Kind != SHAPE_Free)
+		{
+			iFirstValidShape = iShape;
+			break;
+		}
+	}
+	return iFirstValidShape;
+}
+
+internal aabb
+AABBOfAllShapes(v2 *Points, shape *Shapes, uint iFirstValidShape, uint iLastShape)
+{
+	Assert(iFirstValidShape);
+	shape Shape = Shapes[iFirstValidShape];
+	aabb Result = AABBFromShape(Points, Shape);
+	for(uint iShape = iFirstValidShape + 1; iShape <= iLastShape; ++iShape)
+	{
+		Shape = Shapes[iShape];
+		aabb AABB = AABBFromShape(Points, Shape);
+		Result = AABBExpand(Result, AABB);
+	}
+	return Result;
+}
+
+internal void
+ExportSVGToFile(state *State, char *FilePath)
+{
+	v2 *Points = State->Points;
+	shape *Shapes = State->Shapes;
+	uint iLastShape = State->iLastShape;
+	uint iFirstValidShape = FirstValidShape(State);
+
+	if(iFirstValidShape)
+	{
+		FILE *SVGFile = NewSVG(FilePath);
+		aabb TotalAABB = AABBOfAllShapes(Points, Shapes, iFirstValidShape, iLastShape);
+		f64 StrokeWidth = 2.f;
+		for(uint iShape = iFirstValidShape; iShape <= iLastShape; ++iShape)
+		{
+			shape Shape = Shapes[iShape];
+			if(Shape.Kind != SHAPE_Free)
+			{
+				/* SVGRect(SVGFile, StrokeWidth, AABB.MinX, AABB.MinY, AABB.MaxX-AABB.MinX, AABB.MaxY-AABB.MinY); */
+				switch(Shape.Kind)
+				{
+					case SHAPE_Circle:
+					{
+						circle Circle = Shape.Circle;
+						v2 poFocus  = CanvasToSVG(Points[Circle.ipoFocus],  TotalAABB);
+						v2 poRadius = CanvasToSVG(Points[Circle.ipoRadius], TotalAABB);
+						f32 Radius = Dist(poFocus, poRadius);
+						SVGCircle(SVGFile, StrokeWidth, poFocus.X, poFocus.Y, Radius);
+					} break;
+
+					case SHAPE_Arc:
+					{
+						arc Arc = Shape.Arc;
+						v2 poFocus = Points[Arc.ipoFocus];
+						v2 poStart = Points[Arc.ipoStart];
+						v2 poEnd   = Points[Arc.ipoEnd];
+						f32 Radius = Dist(poFocus, poStart);
+						b32 LargeArc = ArcMoreThanSemiCircle(poFocus, poStart, poEnd);
+						poFocus = CanvasToSVG(poFocus, TotalAABB);
+						poStart = CanvasToSVG(poStart, TotalAABB);
+						poEnd   = CanvasToSVG(poEnd,   TotalAABB);
+						SVGArc(SVGFile, StrokeWidth, Radius, poStart.X, poStart.Y, poEnd.X, poEnd.Y, LargeArc);
+					} break;
+
+					case SHAPE_Segment:
+					{
+						line Line = Shape.Line;
+						v2 po1 = CanvasToSVG(Points[Line.P1], TotalAABB);
+						v2 po2 = CanvasToSVG(Points[Line.P2], TotalAABB);
+						SVGLine(SVGFile, StrokeWidth, po1.X, po1.Y, po2.X, po2.Y);
+					} break;
+
+					default:
+					{
+						Assert(0 && "not sure what shape is at index " && iShape);
+					}
+				}
+			}
+		}
+	/* SVGRect( AABB.xMin, AABB.yMin, AABB.xMax-AABB.xMin, AABB.yMax-AABB.yMin ); */
+	int CloseStatus = EndSVG(SVGFile);
+	Assert(CloseStatus == 0);
+	}
+}
+
+internal void
+ExportSVG(state *State, HWND WindowHandle)
+{
+	BEGIN_TIMED_BLOCK;
+	// TODO (fix): seems to set the title of the window
+	OPENFILENAME File = OpenFilenameDefault(WindowHandle, State->cchFilePath);
+	File.lpstrFilter = "Vector graphics (*.svg)\0*.svg\0" "All Files\0*.*\0";
+	char *DialogTitle = "Export SVG";
+	// malloc'd:
+	char *ExportPath = Win32GetSaveFilename(WindowHandle, &File, DialogTitle);
+	if(ExportPath)
+	{
+		ExportSVGToFile(State, ExportPath);
+		free(ExportPath);
+	}
+	else
+	{
+		MessageBox(WindowHandle, "Unable to export SVG, could not find file name.", "Export failed", MB_ICONERROR);
+	}
+	END_TIMED_BLOCK;
 }
 
 internal void
@@ -593,7 +785,7 @@ WinMain(HINSTANCE Instance,
 		}
 
 		// TODO: move to open/save?
-		stbsp_snprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
+		ssnprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
 				FileHasName(State) ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
 		SetWindowText(Window.Handle, TitleText);
 
@@ -653,6 +845,11 @@ WinMain(HINSTANCE Instance,
 			case FILE_Save:
 			{ // save file, possibly to new name & window
 				Save(State, Window.Handle, PlatRequest.NewWindow);
+			} break;
+
+			case FILE_ExportSVG:
+			{
+				ExportSVG(State, Window.Handle);
 			} break;
 
 			case FILE_Open:
