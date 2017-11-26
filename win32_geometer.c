@@ -25,7 +25,7 @@ global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosit
 
 typedef UPDATE_AND_RENDER(update_and_render);
 
-typedef enum cursor_types
+typedef enum cursor_type
 {
 	CURSOR_Normal = 0,
 	CURSOR_Basis,
@@ -33,7 +33,7 @@ typedef enum cursor_types
 	CURSOR_Arc,
 	CURSOR_Seg,
 	CURSOR_Count
-} cursor_types;
+} cursor_type;
 
 typedef enum header_section
 {
@@ -574,6 +574,7 @@ WinMain(HINSTANCE Instance,
 
 	b32 Fullscreen = 0;
 	char TitleText[2048] = {0};
+
 	while(GlobalRunning)
 	{
 		FrameTimer.Start = Win32GetWallClock();
@@ -596,7 +597,6 @@ WinMain(HINSTANCE Instance,
 				FileHasName(State) ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
 		SetWindowText(Window.Handle, TitleText);
 
-#if 1
 		// TODO: only fill buffer inside client
 		RECT ClientRect;
 		GetClientRect(Window.Handle, &ClientRect);
@@ -607,9 +607,6 @@ WinMain(HINSTANCE Instance,
 		Win32Buffer.Info.bmiHeader.biWidth = ClientWidth;
 		Win32Buffer.Info.bmiHeader.biHeight = ClientHeight;
 		Win32Buffer.Pitch = ClientWidth * BytesPerPixel;
-
-	// TODO: Probably clear to black
-#endif
 
 		UpdateKeyboard(Input);
 
@@ -695,39 +692,42 @@ WinMain(HINSTANCE Instance,
 			} break;
 
 			default:
-			{
-				// do nothing
+			{ // do nothing
 			}
 		}
 
-		if(PlatRequest.Pan)
-		{ SetCursor(Cursors[CURSOR_Pan]); }
-		else
-		{
-			switch(State->InputMode)
+
+		// TODO (ui fix): cursor is set to normal if moving on the help screen
+		f32 MX = Input.New->Mouse.P.X;
+		f32 MY = Input.New->Mouse.P.Y;
+		if(0.f <= MX && MX <= ClientWidth && // mouse is inside client area
+		   0.f <= MY && MY <= ClientHeight)  // otherwise resize arrows act up
+		{ // change the cursor based on the input mode
+			if(PlatRequest.Pan)
 			{
-				case MODE_Normal:
-					{
-						SetCursor(Cursors[CURSOR_Normal]);
-					} break;
-				case MODE_SetBasis:
-					{
-						SetCursor(Cursors[CURSOR_Basis]);
-					} break;
-				case MODE_SetLength:
-				case MODE_DrawArc:
-				case MODE_ExtendArc:
-					{
-						SetCursor(Cursors[CURSOR_Arc]);
-					} break;
-				case MODE_QuickSeg:
-				case MODE_DrawSeg:
-				case MODE_SetPerp:
-				case MODE_ExtendSeg:
-				case MODE_ExtendLinePt:
-					{
-						SetCursor(Cursors[CURSOR_Seg]);
-					} break;
+				SetCursor(Cursors[CURSOR_Pan]);
+			}
+			else
+			{
+				switch(State->InputMode)
+				{
+					case MODE_Normal:
+					{ SetCursor(Cursors[CURSOR_Normal]); } break;
+					case MODE_SetBasis:
+					{ SetCursor(Cursors[CURSOR_Basis]); } break;
+					case MODE_SetLength:
+					case MODE_DrawArc:
+					case MODE_ExtendArc:
+					{ SetCursor(Cursors[CURSOR_Arc]); } break;
+					case MODE_QuickSeg:
+					case MODE_DrawSeg:
+					case MODE_SetPerp:
+					case MODE_ExtendSeg:
+					case MODE_ExtendLinePt:
+					{ SetCursor(Cursors[CURSOR_Seg]); } break;
+					default:
+					{ Assert(0); }
+				}
 			}
 		}
 		

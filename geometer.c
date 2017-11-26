@@ -1768,11 +1768,12 @@ case_mode_drawarc:
 		stbsp_sprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%.2f, %.2f), "
-				"Basis: (%.2f, %.2f), "
+				/* "Request: {As: %u, Action: %s, Pan: %u}" */
+				/* "Basis: (%.2f, %.2f), " */
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
-				"pBasis: (%.2f, %.2f)"
-				"Draw Index: %u"
+				/* "pBasis: (%.2f, %.2f)" */
+				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
 				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
@@ -1783,10 +1784,11 @@ case_mode_drawarc:
 				/* C_Cancel.EndedDown, */
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
-				BASIS->XAxis.X, BASIS->XAxis.Y,
+				/* File.NewWindow, FileActionText[File.Action], File.Pan, */
+				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
-				State->pBasis.XAxis.X, State->pBasis.XAxis.Y,
+				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
 				State->iCurrentDraw
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* BASIS->Zoom */
