@@ -584,8 +584,8 @@ OffsetDraw(state *State, int Offset)
 {
 	uint iPrevDraw = State->iCurrentDraw;
 	State->iCurrentDraw = iDrawOffset(State, Offset);
+	State->cDraws += Offset;
 	UpdateDrawPointers(State, iPrevDraw);
-
 }
 
 internal inline v2
@@ -822,7 +822,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// NOTE: need initial save state to undo to
 		SaveUndoState(State);
-		State->Modified = 0;
+		State->iSaveDraw = State->iCurrentDraw;
 
 		Memory->IsInitialized = 1;
 	}
@@ -1799,12 +1799,11 @@ case_mode_drawarc:
 				/* "Basis: (%.2f, %.2f), " */
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
+				"draw (iC/c/iL/iS): %u/%u/%u/%u, "
 				/* "pBasis: (%.2f, %.2f)" */
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
-				/* "Zoom: %.2f" */
 				/* "iLastPoint: %u" */
-				/* "S: %u, SA: %u, O: %u" */
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
@@ -1816,11 +1815,9 @@ case_mode_drawarc:
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
 				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
-				State->iCurrentDraw
+				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
-				/* BASIS->Zoom */
 				/* State->iLastPoint */
-				/* State->SaveFile, State->SaveAs, State->OpenFile */
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 

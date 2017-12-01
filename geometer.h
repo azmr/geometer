@@ -227,7 +227,8 @@ typedef struct state
 	draw_state Draw[NUM_UNDO_STATES];
 	uint iLastDraw;
 	uint iCurrentDraw;
-	// NOTE: only for when only < NUM_UNDO_STATES are used
+	uint iSaveDraw;
+	// NOTE: for when only < NUM_UNDO_STATES are used and checking against 'modified'
 	uint cDraws;
 
 	basis *Basis;
@@ -244,7 +245,7 @@ typedef struct state
 	f32 tBasis;
 	f32 Length;
 	f32 pLength;
-	// TODO (feature): include these in save
+	// TODO IMPORTANT (feature): include these in save
 	f32 LengthStores[52];
 
 	font DefaultFont;
@@ -253,7 +254,6 @@ typedef struct state
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
 	b32 ShowHelpInfo;
-	b32 Modified; // TODO: set to 0 when undos reach save level
 	input_mode InputMode;
 
 	// TODO: Consolidate to 2 points used as determined by flags
@@ -346,7 +346,6 @@ SaveUndoState(state *State)
 	UpdateDrawPointers(State, iPrevDraw);
 
 	++State->cDraws;
-	State->Modified = 1;
 	END_TIMED_BLOCK;
 }
 

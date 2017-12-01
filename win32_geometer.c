@@ -88,6 +88,13 @@ FileHasName(state *State)
 	return Result;
 }
 
+internal inline b32
+IsModified(state *State)
+{
+	b32 Result = State->iCurrentDraw != State->iSaveDraw;
+	return Result;
+}
+
 internal OPENFILENAME
 OpenFilenameDefault(HWND OwnerWindow, uint cchFilePath)
 {
@@ -384,10 +391,13 @@ Save(state *State, HWND WindowHandle, b32 SaveAs)
 		if(SaveAs)
 		{ // open the file just saved in a new window
 			Win32OpenGeometerWindow(SavePath);
-			free(SavePath); // still needed for normal save
+			free(SavePath); // only needed temporarily,
+			// ...as that file is no longer relevant after save
 		}
 		else
-		{ State->Modified = 0; }
+		{
+			State->iSaveDraw = State->iCurrentDraw;
+		}
 	}
 	END_TIMED_BLOCK;
 }
@@ -399,7 +409,7 @@ internal b32
 Win32ConfirmFileClose(state *State, HWND WindowHandle)
 {
 	b32 Result = 1;
-	while(State->Modified)
+	while(IsModified(State))
 	{
 		uint ButtonResponse = MessageBox(WindowHandle, "Your file has been modified since you last saved.\n"
 				"Would you like to save before closing?", "Save Changes?", MB_YESNOCANCEL | MB_ICONWARNING);
@@ -536,9 +546,8 @@ ExportSVGToFile(state *State, char *FilePath)
 
 	if(iFirstValidShape)
 	{
-		FILE *SVGFile = NewSVG(FilePath);
 		aabb TotalAABB = AABBOfAllShapes(Points, Shapes, iFirstValidShape, iLastShape);
-		f64 StrokeWidth = 2.f;
+		FILE *SVGFile = NewSVG(FilePath, "fill='none' stroke-width='2' stroke='black' stroke-linecap='round'");
 		for(uint iShape = iFirstValidShape; iShape <= iLastShape; ++iShape)
 		{
 			shape Shape = Shapes[iShape];
@@ -553,7 +562,7 @@ ExportSVGToFile(state *State, char *FilePath)
 						v2 poFocus  = CanvasToSVG(Points[Circle.ipoFocus],  TotalAABB);
 						v2 poRadius = CanvasToSVG(Points[Circle.ipoRadius], TotalAABB);
 						f32 Radius = Dist(poFocus, poRadius);
-						SVGCircle(SVGFile, StrokeWidth, poFocus.X, poFocus.Y, Radius);
+						SVGCircle(SVGFile, poFocus.X, poFocus.Y, Radius);
 					} break;
 
 					case SHAPE_Arc:
@@ -567,7 +576,7 @@ ExportSVGToFile(state *State, char *FilePath)
 						poFocus = CanvasToSVG(poFocus, TotalAABB);
 						poStart = CanvasToSVG(poStart, TotalAABB);
 						poEnd   = CanvasToSVG(poEnd,   TotalAABB);
-						SVGArc(SVGFile, StrokeWidth, Radius, poStart.X, poStart.Y, poEnd.X, poEnd.Y, LargeArc);
+						SVGArc(SVGFile, Radius, poStart.X, poStart.Y, poEnd.X, poEnd.Y, LargeArc);
 					} break;
 
 					case SHAPE_Segment:
@@ -575,7 +584,7 @@ ExportSVGToFile(state *State, char *FilePath)
 						line Line = Shape.Line;
 						v2 po1 = CanvasToSVG(Points[Line.P1], TotalAABB);
 						v2 po2 = CanvasToSVG(Points[Line.P2], TotalAABB);
-						SVGLine(SVGFile, StrokeWidth, po1.X, po1.Y, po2.X, po2.Y);
+						SVGLine(SVGFile, po1.X, po1.Y, po2.X, po2.Y);
 					} break;
 
 					default:
@@ -657,14 +666,10 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 	// NOTE: need initial save state to undo to
 	SaveUndoState(State);
-	State->Modified = 0;
 }
 
 int CALLBACK
-WinMain(HINSTANCE Instance,
-		HINSTANCE PrevInstance,
-		LPSTR CommandLine,
-		int ShowCode)
+WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
 	OPEN_LOG("win32_geometer_log", ".txt");
 	// UNUSED:
@@ -673,9 +678,7 @@ WinMain(HINSTANCE Instance,
 	win32_window Window;
 	GlobalRunning = 1;
 	if(!Win32BasicWindow(Instance, &Window, 960, 540, "Geometer"))
-	{
-		GlobalRunning = 0;
-	}
+	{ GlobalRunning = 0; }
 
 	Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16);
 
@@ -737,9 +740,7 @@ WinMain(HINSTANCE Instance,
 	// ASSETS
 #if 1
 	if(!InitLoadedFont(&State->DefaultFont, BitstreamBinary))
-	{
-		MessageBox(Window.Handle, "Unable to load font.", "Font error", MB_ICONERROR);
-	}
+	{ MessageBox(Window.Handle, "Unable to load font.", "Font error", MB_ICONERROR); }
 #else
 	void *FontBuffer = VirtualAlloc(0, 1<<25, MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	INIT_FONT(Bitstream, "Bitstream.ttf", FontBuffer, 1<<25);
@@ -786,7 +787,8 @@ WinMain(HINSTANCE Instance,
 
 		// TODO: move to open/save?
 		ssnprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
-				FileHasName(State) ? State->FilePath : "[New File]", State->Modified ? "[Modified]" : "");
+				FileHasName(State) ? State->FilePath : "[New File]",
+				IsModified(State) ? "[Modified]" : "");
 		SetWindowText(Window.Handle, TitleText);
 
 		// TODO: only fill buffer inside client
