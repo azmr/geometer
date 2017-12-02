@@ -1,10 +1,13 @@
 @echo off
 
 set SingleExecutable=0
-set CommonCompilerFlags=-nologo -MTd -fp:fast -Gm- -GR- -EHa -WX -Oi -W4 -FC -wd4010 -wd4201 -wd4204 -wd4146 -IE:\Documents\Coding\C\h -DINTERNAL=1 -DDEBUG_PREFIX=Main -DSINGLE_EXECUTABLE=%SingleExecutable%
-set DebugCompilerFlags=-Od -Z7
+set Warnings=-WX -W4 -wd4010 -wd4201 -wd4204 -wd4146
+set CommonOptimisations=-fp:fast -Oi -Gm- -GR- -EHa
+set Defines=-DINTERNAL=1 -DDEBUG_PREFIX=Main -DSINGLE_EXECUTABLE=%SingleExecutable%
+set Includes=-IE:\Documents\Coding\C\h
+set CommonCompilerFlags=-nologo -MTd -FC %Warnings% %CommonOptimisations% %Defines% %Includes%
+set DebugCompilerFlags=%1 -Z7
 set CommonLinkerFlags=-incremental:no -opt:ref user32.lib gdi32.lib winmm.lib Comdlg32.lib
-REM user32.lib gdi32.lib
 
 IF NOT EXIST E:\Documents\Coding\C\build mkdir E:\Documents\Coding\C\build
 pushd E:\Documents\Coding\C\build
@@ -31,6 +34,8 @@ REM ==============
 REM
 REM -nologo	- no Microsoft logo at the beginning of compilation
 REM -Od		- no optimisation of code at all
+REM -O2		- optimisation for speed
+REM -O3		- optimisation for space
 REM -Oi		- use intrinsic version of function if exists
 REM -Z7		- compatible debug info for debugger (replaced -Zi)
 REM -GR-	- turn off runtime type info (C++)
@@ -42,6 +47,7 @@ REM -D#####	- #define #### (=1)
 REM -Gm-	- turn off 'minimal rebuild' - no incremental build
 REM -Fm####	- provides location for compiler to put a .map file
 REM -I####	- search for include files at ####
+REM -FC		- display full path of source code
 REM
 REM -MTd	- use (d => debug version of) static CRT library - needed for running on XP
 REM /link -subsystem:windows,5.1 - ONLY FOR 32-BIT BUILDS!!! - needed for running on XP
