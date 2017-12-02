@@ -20,8 +20,6 @@ global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosit
 #include <win32_gfx.h>
 #include <win32_input.h>
 
-#include "GIcons.h"
-
 typedef UPDATE_AND_RENDER(update_and_render);
 
 typedef enum cursor_type
@@ -677,10 +675,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 	win32_window Window;
 	GlobalRunning = 1;
-	if(!Win32BasicWindow(Instance, &Window, 960, 540, "Geometer"))
+	if(!Win32BasicWindow(Instance, &Window, 960, 540, "Geometer", "Icon", "IconSmall"))
 	{ GlobalRunning = 0; }
 
-	Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16);
+	/* Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16); */
 
 	LOG("ALLOC MEMORY");
 #define MemSize (Kilobytes(64))
@@ -806,12 +804,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 		// TODO: keep position of canvas static during resizing
 		// TODO: continue updating client while resizing
-		/* Win32ProcessPendingMessages(Keyboard.New); */
 		Input.New->Mouse.ScrollV = 0;
 		Input.New->Mouse.ScrollH = 0;
 		Win32ProcessKeyboardAndScrollMessages(&Input.New->Keyboard, &Input.New->Mouse);
-		// TODO: zero controllers
-		Win32ProcessXInputControllers(&Input);
 		Win32GetWindowDimensionAndOffset(&Window, Win32Buffer.Width, Win32Buffer.Height);
 		Win32UpdateMouse(Window.Handle, Input.New, Window.OffsetX, Window.OffsetY, Win32Buffer.Height);
 		if(Fullscreen)
@@ -896,6 +891,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		}
 
 
+#if 0
 		// TODO (ui fix): cursor is set to normal if moving on the help screen
 		f32 MX = Input.New->Mouse.P.X;
 		f32 MY = Input.New->Mouse.P.Y;
@@ -929,6 +925,34 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				}
 			}
 		}
+#else
+			if(PlatRequest.Pan)
+			{
+				gCursorHandle = (Cursors[CURSOR_Pan]);
+			}
+			else
+			{
+				switch(State->InputMode)
+				{
+					case MODE_Normal:
+					{ gCursorHandle = (Cursors[CURSOR_Normal]); } break;
+					case MODE_SetBasis:
+					{ gCursorHandle = (Cursors[CURSOR_Basis]); } break;
+					case MODE_SetLength:
+					case MODE_DrawArc:
+					case MODE_ExtendArc:
+					{ gCursorHandle = (Cursors[CURSOR_Arc]); } break;
+					case MODE_QuickSeg:
+					case MODE_DrawSeg:
+					case MODE_SetPerp:
+					case MODE_ExtendSeg:
+					case MODE_ExtendLinePt:
+					{ gCursorHandle = (Cursors[CURSOR_Seg]); } break;
+					default:
+					{ Assert(0); }
+				}
+			}
+#endif
 		
 		
 		ReallocateArenas(State, Window.Handle);

@@ -9,12 +9,14 @@ set CommonCompilerFlags=-nologo -MTd -FC %Warnings% %CommonOptimisations% %Defin
 set DebugCompilerFlags=%1 -Z7
 set CommonLinkerFlags=-incremental:no -opt:ref user32.lib gdi32.lib winmm.lib Comdlg32.lib
 
+call E:\Documents\Coding\C\shell64.bat
+
+REM IF NOT EXIST E:\Documents\Coding\C\geometer\geometer.res
+rc -nologo E:\Documents\Coding\C\geometer\geometer.rc
 IF NOT EXIST E:\Documents\Coding\C\build mkdir E:\Documents\Coding\C\build
 pushd E:\Documents\Coding\C\build
 
 @del *geometer*.pdb > nul 2>&1
-
-call E:\Documents\Coding\C\shell64.bat
 
 echo WAITING FOR PDB > lock.tmp
 
@@ -22,7 +24,7 @@ IF %SingleExecutable%==0 timethis cl %CommonCompilerFlags% %DebugCompilerFlags% 
 del lock.tmp
 
 set CommonCompilerFlags=%CommonCompilerFlags% 
-timethis cl %CommonCompilerFlags% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\win32_geometer.c -Fmwin32_geometer.map /link %CommonLinkerFlags%
+timethis cl %CommonCompilerFlags% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\win32_geometer.c -Fmwin32_geometer.map /link %CommonLinkerFlags% E:\Documents\Coding\C\geometer\geometer.res
 
 echo Finished at %time%
 REM ./win32_geometer.exe

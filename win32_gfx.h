@@ -262,23 +262,25 @@ Win32SetWindowSize(HWND Handle, int W, int H, u32 Style)
 
 // TODO: WindowClass might be useful at later date?
 internal b32
-Win32BasicWindow(HINSTANCE Instance, win32_window *Window, int W, int H, char *WindowName)
+Win32BasicWindow(HINSTANCE Instance, win32_window *Window, int W, int H,
+		char *WindowName, char *Icon, char *IconSm)
 {
 	*Window = ZeroWin32Window;
-	WNDCLASSA WindowClass = {0};
+	WNDCLASSEX WindowClass = {0};
+	WindowClass.cbSize = sizeof(WNDCLASSEX);
     WindowClass.style = CS_HREDRAW|CS_VREDRAW;
 	WindowClass.lpfnWndProc = Win32MainWindowCallback;
 	WindowClass.hInstance = Instance;
 	WindowClass.hCursor = LoadCursor(0, IDC_ARROW);
-//	WindowClass.hIcon;
+	WindowClass.hIcon   = LoadIcon(Instance, Icon);
+	WindowClass.hIconSm = LoadIcon(Instance, IconSm);
 	WindowClass.lpszClassName = "BasicWindowClass";
-	if(!RegisterClassA(&WindowClass))
-	{
-		return 0;
-	}
+	if(!RegisterClassEx(&WindowClass))
+	{ return 0; }
 	u32 WindowStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
 	Window->Handle =
-		CreateWindowExA(
+		//CreateWindowExA(
+		CreateWindowEx(
 			0, //WS_EX_TOPMOST|WS_EX_LAYERED,
 			WindowClass.lpszClassName,
 			WindowName,
