@@ -151,6 +151,33 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	return Result;
 }
 
+internal uint
+ClosestIntersectIndex(state *State, v2 Comp, f32 *ClosestDistSq)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 *Intersects = (v2 *)State->maIntersects.Base;
+	uint iLast = (uint)ArenaCount(State->maIntersects, v2) - 1;
+	uint Result = 0;
+	f32 Closest = 0;
+	if(iLast)
+	{
+		Result = 1;
+		Closest = DistSq(Intersects[1], Comp);
+		for(uint i = 2; i <= iLast; ++i)
+		{
+			f32 Test = DistSq(Intersects[i], Comp);
+			if(Test < Closest)
+			{
+				Closest = Test;
+				Result = i;
+			}
+		}
+	}
+	*ClosestDistSq = Closest;
+	END_TIMED_BLOCK;
+	return Result;
+}
+
 // NOTE: less than numlinepoints if any points are reused
 internal uint
 NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
@@ -251,8 +278,32 @@ end:
 }
 
 // TODO: don't auto-add intersections - only suggest when mouse is near
+
+internal inline void
+AddIntersection(state *State, v2 po)
+{
+	v2 *New = PushStruct(&State->maIntersects, v2);
+	*New = po;
+}
+
 internal inline void
 AddIntersections(state *State, v2 po1, v2 po2, uint cIntersections)
+{
+	BEGIN_TIMED_BLOCK;
+	if(cIntersections == 1)
+	{
+		AddIntersection(State, po1);
+	}
+	else if(cIntersections == 2)
+	{
+		AddIntersection(State, po1);
+		AddIntersection(State, po2);
+	}
+	END_TIMED_BLOCK;
+}
+
+internal inline void
+AddIntersectionsAsPoints(state *State, v2 po1, v2 po2, uint cIntersections)
 {
 	BEGIN_TIMED_BLOCK;
 	if(cIntersections == 1)
@@ -859,8 +910,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP, poClosest;
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
-	uint ipoSnap;
+	b32 isSnapped;
 	uint ipoClosest = 0;
+	uint ipoClosestIntersect = 0;
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -930,14 +982,34 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		f32 ClosestDistSq;
+		f32 ClosestIntersectDistSq;
 		v2 CanvasMouseP = V2ScreenToCanvas(*BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
 		poClosest = CanvasMouseP;
 		ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
-		ipoSnap = 0;
-		if(ipoClosest)
+		ipoClosestIntersect = ClosestIntersectIndex(State, CanvasMouseP, &ClosestIntersectDistSq);
+		isSnapped = 0;
+		if(ipoClosest || ipoClosestIntersect)
 		{
-			poClosest = POINTS(ipoClosest);
+			// decide whether to use point or intersect
+			if(ipoClosest && ipoClosestIntersect)
+			{
+				if(ClosestDistSq <= ClosestIntersectDistSq)
+				{ poClosest = POINTS(ipoClosest); }
+				else
+				{
+					poClosest = *PullEl(State->maIntersects, ipoClosestIntersect, v2);
+					ClosestDistSq = ClosestIntersectDistSq;
+				}
+			}
+			else if(ipoClosest)
+			{ poClosest = POINTS(ipoClosest); }
+			else // ipoClosestIntersect
+			{
+				poClosest = *PullEl(State->maIntersects, ipoClosestIntersect, v2);
+				ClosestDistSq = ClosestIntersectDistSq;
+			}
+
 #define POINT_SNAP_DIST 5000.f
 			// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
 			if(ClosestDistSq/(BASIS->Zoom * BASIS->Zoom) < POINT_SNAP_DIST)
@@ -945,13 +1017,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if( ! C_NoSnap.EndedDown)
 				{ // point snapping still on
 					SnapMouseP = poClosest;
-					ipoSnap = ipoClosest;
+					isSnapped = 1;
 				}
 			}
 
 			else
 			{ // closest point outside range
 				ipoClosest = 0;
+				ipoClosestIntersect = 0;
 			}
 		}
 		if(C_ShapeLock.EndedDown)
@@ -1254,12 +1327,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 				case MODE_SetBasis:
 				{ // rotate canvas basis
-					// TODO: if RMB held, set zoom as well - box aligned to new axis showing where screen will end up
-					// TODO (fix): don't move if same axis is set again (starting from a fixed pBasis?)
+					// TODO (UI): if MMB(?) held, set zoom as well - box aligned to new axis showing where screen will end up
 					if(!C_BasisSet.EndedDown)
 					{ // set basis on release
-						// SetAnimatedBasis
-						{
+						if( ! V2Equals(SnapMouseP, State->poSaved)) // prevents XAxis with no length
+						{ // set new basis and start animation
 							State->tBasis = 0.f;
 							pBASIS = *BASIS;
 							BASIS->XAxis = Norm(V2Sub(SnapMouseP, State->poSaved));
@@ -1574,9 +1646,10 @@ case_mode_drawarc:
 
 		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
 		if(State->iLastPoint)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
-		if(ipoClosest)  { DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); }
-		if(ipoSnap)
+		if(isSnapped)
 		{ // draw snapped point
+		/* if(ipoClosest) */
+		{ DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); }
 			// NOTE: Overdraws...
 			DrawActivePoint(ScreenBuffer, poSSClosest, BLUE);
 		}
@@ -1585,6 +1658,7 @@ case_mode_drawarc:
 		LOG("\tDRAW PREVIEW");
 		// TODO (UI): animate previews in and out by smoothstepping alpha over a few frames
 		// so that they don't pop too harshly when only seen briefly
+		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
 		v2 poSSSelect = ZeroV2;
 		f32 SSLength = State->Length/BASIS->Zoom; 
 		v2 poSelect = Points[State->ipoSelect];
@@ -1691,6 +1765,13 @@ case_mode_drawarc:
 				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
+		}
+
+		uint LastIntersect = (uint)ArenaCount(State->maIntersects, v2) - 1;
+		for(uint i = 1; i <= LastIntersect; ++i)
+		{
+			v2 poSS = V2CanvasToScreen(Basis, *PullEl(State->maIntersects, i, v2), ScreenCentre);
+			DrawActivePoint(ScreenBuffer, poSS, ORANGE);
 		}
 
 

@@ -221,6 +221,7 @@ typedef struct state
 	v2 *Points;
 	shape *Shapes;
 	u8 *PointStatus;
+	memory_arena maIntersects;
 	memory_arena maActions; 
 
 #define NUM_UNDO_STATES 16
@@ -305,6 +306,7 @@ Reset(state *State)
 	DRAW_STATE.maPoints.Used  = sizeof(v2);
 	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
 	DRAW_STATE.maShapes.Used  = sizeof(shape);
+	State->maIntersects.Used  = sizeof(v2);
 	UpdateDrawPointers(State, 1);
 
 #define INITIAL_ZOOM 0.1f

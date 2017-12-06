@@ -321,17 +321,22 @@ ReallocateArenas(state *State, HWND WindowHandle)
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maPointStatus, NextDraw->maPointStatus.Size * 2));
 	}
 
+	Assert(State->maIntersects.Used <= State->maIntersects.Size);
 	// NOTE: Can only create 1 shape per frame
 	Assert(DRAW_STATE.maShapes.Used <= DRAW_STATE.maShapes.Size);
 	if(DRAW_STATE.maShapes.Used >= NextDraw->maShapes.Size)
 	{ LOG("Adding to shapes arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maShapes, NextDraw->maShapes.Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maIntersects, State->maIntersects.Size * 2));
 	}
 	Assert(State->maActions.Used <= State->maActions.Size);
 	// TODO: this will change once action = user action
 	if(State->maActions.Used >= State->maActions.Size/2 - sizeof(action))
 	{ LOG("Adding to actions arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maActions, State->maActions.Size * 2));
+	}
+	if(State->maIntersects.Used >= State->maIntersects.Size/2 - sizeof(action))
+	{ LOG("Adding to actions arena");
 	}
 }
 
@@ -632,6 +637,7 @@ FreeStateArenas(state *State)
 		Free(Draw[i].maShapes.Base);
 	}
 	Free(State->maActions.Base);
+	Free(State->maIntersects.Base);
 #undef cSTART_POINTS
 }
 
@@ -642,11 +648,12 @@ AllocStateArenas(state *State)
 	draw_state *Draw = State->Draw;
 	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
 	{
-		Draw[i].maPoints	  = ArenaCalloc(sizeof(v2)	 * cSTART_POINTS);
-		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)	 * cSTART_POINTS);
+		Draw[i].maPoints	  = ArenaCalloc(sizeof(v2)	   * cSTART_POINTS);
+		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)	   * cSTART_POINTS);
 		Draw[i].maShapes	  = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
 	}
 	State->maActions		  = ArenaCalloc(sizeof(action) * cSTART_POINTS);
+	State->maIntersects		  = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
 #undef cSTART_POINTS
 }
 
