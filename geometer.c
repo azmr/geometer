@@ -33,6 +33,7 @@
 //	- RMB - select point/shape
 //	- RMB-drag marquee-select points/shapes
 //	- Alt-RMB for +/- selection
+//	- ??? - move to background layer/another layer...
 //	...
 
 // CONTROLS: ////////////////////////////
@@ -996,6 +997,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			}
 		}
 
+		// TODO IMPORTANT (fix): stop unwanted clicks from registering. e.g. on open/save
 		// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
 #define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) && DEBUGPress(button))
 #define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)

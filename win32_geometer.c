@@ -807,6 +807,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		Input.New->Mouse.ScrollV = 0;
 		Input.New->Mouse.ScrollH = 0;
 		Win32ProcessKeyboardAndScrollMessages(&Input.New->Keyboard, &Input.New->Mouse);
+		// TODO: things break when this is removed... extract the important bits
+		Win32ProcessXInputControllers(&Input);
 		Win32GetWindowDimensionAndOffset(&Window, Win32Buffer.Width, Win32Buffer.Height);
 		Win32UpdateMouse(Window.Handle, Input.New, Window.OffsetX, Window.OffsetY, Win32Buffer.Height);
 		if(Fullscreen)
@@ -891,7 +893,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		}
 
 
-#if 0
+#if 1
 		// TODO (ui fix): cursor is set to normal if moving on the help screen
 		f32 MX = Input.New->Mouse.P.X;
 		f32 MY = Input.New->Mouse.P.Y;
