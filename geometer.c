@@ -282,8 +282,11 @@ end:
 internal inline void
 AddIntersection(state *State, v2 po)
 {
-	v2 *New = PushStruct(&State->maIntersects, v2);
-	*New = po;
+	if( ! FindPointAtPos(State, po, ~(uint)POINT_Free))
+	{ // given that there isn't a point already, add an intersection
+		v2 *New = PushStruct(&State->maIntersects, v2);
+		*New = po;
+	}
 }
 
 internal inline void
