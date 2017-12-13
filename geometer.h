@@ -140,10 +140,11 @@ char *InputModeText[] =
 
 typedef union shape_union
 {
+#define NUM_SHAPE_POINTS 3
 	line Line;
 	circle Circle;
 	arc Arc;
-	uint P[3];
+	uint P[NUM_SHAPE_POINTS];
 } shape_union;
 
 typedef struct shape
@@ -350,6 +351,82 @@ SaveUndoState(state *State)
 	++State->cDraws;
 	END_TIMED_BLOCK;
 }
+
+// TODO (internal): for some reason these aren't found by the compiler
+// when they're in `geometry.h`, but that's where they should live!
+internal aabb
+AABBExpand(aabb Expandee, aabb Expander)
+{
+	aabb Result = Expandee;
+	if(Expander.MinX < Result.MinX) { Result.MinX = Expander.MinX; }
+	if(Expander.MaxX > Result.MaxX) { Result.MaxX = Expander.MaxX; }
+	if(Expander.MinY < Result.MinY) { Result.MinY = Expander.MinY; }
+	if(Expander.MaxY > Result.MaxY) { Result.MaxY = Expander.MaxY; }
+	return Result;
+}
+
+internal b32
+PointInAABB(v2 P, aabb AABB)
+{
+	b32 InsideHorz = P.X >= AABB.MinX && P.X <= AABB.MaxX; 
+	b32 InsideVert = P.Y >= AABB.MinY && P.Y <= AABB.MaxY;
+	b32 Result = InsideHorz && InsideVert;
+	return Result;
+}
+
+internal b32
+AABBOverlaps(aabb A, aabb B)
+{
+	b32 HorizontOverlap = (A.MinX >= B.MinX && A.MinX <= B.MaxX) ||
+	                      (A.MaxX >= B.MinX && A.MaxX <= B.MaxX) ||
+	                      (B.MinX >= A.MinX && B.MinX <= A.MaxX) ||
+	                      (B.MinX >= A.MinX && B.MinX <= A.MaxX);
+	b32 VerticalOverlap = (A.MinY >= B.MinY && A.MinY <= B.MaxY) ||
+	                      (A.MaxY >= B.MinY && A.MaxY <= B.MaxY) ||
+	                      (B.MaxY >= A.MinY && B.MaxY <= A.MaxY) ||
+	                      (B.MaxY >= A.MinY && B.MaxY <= A.MaxY);
+	b32 Result = HorizontOverlap && VerticalOverlap;
+	return Result;
+}
+
+internal aabb
+AABBFromShape(v2 *Points, shape Shape)
+{
+	aabb Result = {0};
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			v2 po1 = Points[Shape.Line.P1];
+			v2 po2 = Points[Shape.Line.P2];
+			minmaxf32 x = MinMaxF32(po1.X, po2.X);
+			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
+			Result.MinX = x.Min;
+			Result.MaxX = x.Max;
+			Result.MinY = y.Min;
+			Result.MaxY = y.Max;
+		} break;
+
+		// TODO (optimize): arc AABB may be smaller than circle
+		case SHAPE_Arc:
+		case SHAPE_Circle:
+		{
+			v2 Focus = Points[Shape.Circle.ipoFocus];
+			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
+			Result.MinX = Focus.X - Radius;
+			Result.MaxX = Focus.X + Radius;
+			Result.MinY = Focus.Y - Radius;
+			Result.MaxY = Focus.Y + Radius;
+		} break;
+
+		default:
+		{
+			Assert(0);
+		}
+	}
+	return Result;
+}
+
 
 
 #define UPDATE_AND_RENDER(name) platform_request name(image_buffer *ScreenBuffer, memory *Memory, input Input)
