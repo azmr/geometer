@@ -562,5 +562,27 @@ IntersectArcs(v2 poFocus1, f32 R1, v2 poArcStart1, v2 poArcEnd1, v2 poFocus2, f3
 	END_TIMED_BLOCK;
 	return Result;
 }
+
+internal aabb
+AABBExpand(aabb Expandee, aabb Expander)
+{
+	aabb Result = Expandee;
+	if(Expander.MinX < Result.MinX) { Result.MinX = Expander.MinX; }
+	if(Expander.MaxX > Result.MaxX) { Result.MaxX = Expander.MaxX; }
+	if(Expander.MinY < Result.MinY) { Result.MinY = Expander.MinY; }
+	if(Expander.MaxY > Result.MaxY) { Result.MaxY = Expander.MaxY; }
+	return Result;
+}
+
+internal b32
+AABBOverlaps(aabb A, aabb B)
+{
+	b32 HorizontOverlap = (A.MinX >= B.MinX && A.MinX <= B.MaxX) ||
+	                        (A.MaxX >= B.MinX && A.MaxX <= B.MaxX);
+	b32 VerticalOverlap = (A.MinY >= B.MinY && A.MinY <= B.MaxY) ||
+	                        (A.MaxY >= B.MinY && A.MaxY <= B.MaxY);
+	b32 Result = HorizontOverlap && VerticalOverlap;
+	return Result;
+}
 #define GEOMETRY_H
 #endif

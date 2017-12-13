@@ -282,6 +282,7 @@ end:
 internal inline void
 AddIntersection(state *State, v2 po)
 {
+	// TODO (opt): only add if on screen
 	if( ! FindPointAtPos(State, po, ~(uint)POINT_Free))
 	{ // given that there isn't a point already, add an intersection
 		v2 *New = PushStruct(&State->maIntersects, v2);
@@ -848,6 +849,20 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 		Result = ClosestPtOnCircle(SnapMouseP, poFocus, Radius);
 	}
 	return Result;
+}
+
+internal void
+DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
+{
+	v2 TopLeft     = V2(AABB.MinX, AABB.MaxY);
+	v2 TopRight    = V2(AABB.MaxX, AABB.MaxY);
+	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
+	v2 BottomRight = V2(AABB.MaxX, AABB.MinY);
+
+	DEBUGDrawLine(ScreenBuffer, TopLeft,    TopRight,    Col);
+	DEBUGDrawLine(ScreenBuffer, TopLeft,    BottomLeft,  Col);
+	DEBUGDrawLine(ScreenBuffer, TopRight,   BottomRight, Col);
+	DEBUGDrawLine(ScreenBuffer, BottomLeft, BottomRight, Col);
 }
 
 UPDATE_AND_RENDER(UpdateAndRender)
@@ -1548,9 +1563,8 @@ case_mode_drawarc:
 		}
 	}
 
-	{ LOG("RENDER");
-		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
-
+	basis Basis;
+	{ LOG("CALCULATE ANIMATED BASIS")
 		basis EndBasis = *BASIS;
 		/* pBASIS = &pDRAW_STATE.Basis; */
 		basis StartBasis = pBASIS;
@@ -1581,12 +1595,96 @@ case_mode_drawarc:
 			// NOTE: fine for one transition, not 2
 			tBasis = SmoothStep(tBasis);
 		}
+#if 1
+		tBasis = Clamp01(tBasis);
+#else
+		// TODO: investigate why tBasis goes wildly out of bounds
+		// e.g. -174660.406 (is it only during debug?)
+		Assert(tBasis >= 0.f);
+		Assert(tBasis <= 1.f);
+#endif
 
 #if 1
-		basis Basis = BasisLerp(StartBasis, tBasis, EndBasis);
+		Basis = BasisLerp(StartBasis, tBasis, EndBasis);
 #else
-		basis Basis = BasisLerp(pBASIS, State->tBasis, BASIS);
+		Basis = BasisLerp(pBASIS, State->tBasis, BASIS);
 #endif
+	}
+
+	v2 *Points = State->Points;
+	shape *Shapes = State->Shapes;
+
+	// TODO: do properly with arenas
+	memory_arena *maShapesNearScreen = &State->maShapesNearScreen;
+	memory_arena *maPointsOnScreen   = &State->maPointsOnScreen;
+	maShapesNearScreen->Used = 0;
+	maPointsOnScreen->Used = 0;
+	uint cShapesNearScreen = 0;
+	uint cPointsOnScreen = 0;
+	{ LOG("CULL");
+	/////////////////////
+		uint iLastShape = State->iLastShape;
+		uint iLastPoint = State->iLastPoint;
+		aabb ScreenBB;
+#if 1
+		ScreenBB.MinX = 0.f;
+		ScreenBB.MinY = 0.f;
+		ScreenBB.MaxX = ScreenSize.X;
+		ScreenBB.MaxY = ScreenSize.Y;
+#else // use a smaller screen
+		v2 FakeScreenMin = V2Mult(0.2f, ScreenSize);
+		v2 FakeScreenMax = V2Mult(0.8f, ScreenSize);
+		ScreenBB.MinX = FakeScreenMin.X;
+		ScreenBB.MinY = FakeScreenMin.Y;
+		ScreenBB.MaxX = FakeScreenMax.X;
+		ScreenBB.MaxY = FakeScreenMax.Y;
+		DrawAABB(ScreenBuffer, ScreenBB, GREEN);
+#endif
+
+		DebugClear();
+		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
+		{
+			shape Shape = Shapes[iShape];
+			// create local copy of shape with basis applied
+			shape LocalShape = Shape;
+			v2 ShapePoints[NUM_SHAPE_POINTS];
+			for(uint i = 0; i < NUM_SHAPE_POINTS; ++i)
+			{
+				// TODO (opt): init all shape points to 0 so I don't need to check
+				// that point is inside mem bounds?
+				uint ipo = Shape.P[i];
+				v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
+				ShapePoints[i] = V2CanvasToScreen(Basis, P, ScreenCentre);
+				LocalShape.P[i] = i;
+			}
+			aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
+			/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
+			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
+			{ // add shape to array of shapes on screen
+				DebugAdd("Shape %u is on screen\n", iShape);
+				shape *NearScreenShape = PushStruct(maShapesNearScreen, shape);
+				*NearScreenShape = Shape;
+				++cShapesNearScreen;
+			}
+		}
+		Assert(cShapesNearScreen == State->maShapesNearScreen.Used/sizeof(shape));
+
+		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
+		{
+			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
+			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
+			{
+				v2 *OnScreenPoint = PushStruct(maPointsOnScreen, v2);
+				*OnScreenPoint = P;
+				++cPointsOnScreen;
+			}
+		}
+		Assert(cPointsOnScreen == State->maPointsOnScreen.Used/sizeof(v2));
+	}
+
+	{ LOG("RENDER");
+	////////////////
+		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
 		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
 
 #if 0
@@ -1596,14 +1694,13 @@ case_mode_drawarc:
 #endif
 
 		// NOTE: should be unchanged after this point in the frame
-		uint iLastShape = State->iLastShape;
-		shape *Shapes = State->Shapes;
-		v2 *Points = State->Points;
+		shape *ShapesNearScreen = (shape *)maShapesNearScreen->Base;
+		v2    *PointsOnScreen   = (v2    *)maPointsOnScreen->Base;
 
 		LOG("\tDRAW SHAPES");
-		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
+		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)
 		{
-			shape Shape = Shapes[iShape];
+			shape Shape = ShapesNearScreen[iShape];
 			switch(Shape.Kind)
 			{
 				case SHAPE_Segment:
@@ -1638,13 +1735,10 @@ case_mode_drawarc:
 		}
 
 		LOG("\tDRAW POINTS");
-		for(uint i = 1; i <= State->iLastPoint; ++i)
+		for(uint i = 0; i < cPointsOnScreen; ++i)
 		{
-			if(POINTSTATUS(i) != POINT_Free)
-			{
-				v2 po = V2CanvasToScreen(Basis, Points[i], ScreenCentre);
-				DrawCircleFill(ScreenBuffer, po, 3.f, LIGHT_GREY);
-			}
+			// NOTE: basis already applied
+			DrawCircleFill(ScreenBuffer, PointsOnScreen[i], 3.f, LIGHT_GREY);
 		}
 
 		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
@@ -1784,7 +1878,7 @@ case_mode_drawarc:
 		}
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
-			DrawActivePoint(ScreenBuffer, V2CanvasToScreen(*BASIS, gDebugV2, ScreenCentre), ORANGE);
+			DrawActivePoint(ScreenBuffer, V2CanvasToScreen(Basis, gDebugV2, ScreenCentre), ORANGE);
 		}
 	}
 
@@ -1886,6 +1980,7 @@ case_mode_drawarc:
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
 				"draw (iC/c/iL/iS): %u/%u/%u/%u, "
+				"cShapesNearScreen: %u"
 				/* "pBasis: (%.2f, %.2f)" */
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
@@ -1901,7 +1996,8 @@ case_mode_drawarc:
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
 				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
-				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw
+				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw,
+				cShapesNearScreen
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* State->iLastPoint */
 				);
