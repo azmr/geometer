@@ -224,6 +224,8 @@ typedef struct state
 	u8 *PointStatus;
 	memory_arena maIntersects;
 	memory_arena maActions; 
+	memory_arena maShapesNearScreen;
+	memory_arena maPointsOnScreen;
 
 #define NUM_UNDO_STATES 16
 	draw_state Draw[NUM_UNDO_STATES];
@@ -304,10 +306,13 @@ Reset(state *State)
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{ POINTSTATUS(i) = POINT_Free; }
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-	DRAW_STATE.maPoints.Used  = sizeof(v2);
+
+	DRAW_STATE.maPoints.Used       = sizeof(v2);
 	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
-	DRAW_STATE.maShapes.Used  = sizeof(shape);
-	State->maIntersects.Used  = sizeof(v2);
+	DRAW_STATE.maShapes.Used       = sizeof(shape);
+	State->maIntersects.Used       = sizeof(v2);
+	State->maShapesNearScreen.Used = 0;
+	State->maPointsOnScreen.Used   = 0;
 	UpdateDrawPointers(State, 1);
 
 #define INITIAL_ZOOM 0.1f

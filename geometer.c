@@ -1595,6 +1595,14 @@ case_mode_drawarc:
 			// NOTE: fine for one transition, not 2
 			tBasis = SmoothStep(tBasis);
 		}
+#if 1
+		tBasis = Clamp01(tBasis);
+#else
+		// TODO: investigate why tBasis goes wildly out of bounds
+		// e.g. -174660.406 (is it only during debug?)
+		Assert(tBasis >= 0.f);
+		Assert(tBasis <= 1.f);
+#endif
 
 #if 1
 		Basis = BasisLerp(StartBasis, tBasis, EndBasis);
@@ -1607,21 +1615,23 @@ case_mode_drawarc:
 	shape *Shapes = State->Shapes;
 
 	// TODO: do properly with arenas
-	shape TmpShapesNearScreen[128];
+	memory_arena *maShapesNearScreen = &State->maShapesNearScreen;
+	memory_arena *maPointsOnScreen   = &State->maPointsOnScreen;
+	maShapesNearScreen->Used = 0;
+	maPointsOnScreen->Used = 0;
 	uint cShapesNearScreen = 0;
-	v2 TmpPointsOnScreen[128];
 	uint cPointsOnScreen = 0;
 	{ LOG("CULL");
 	/////////////////////
 		uint iLastShape = State->iLastShape;
 		uint iLastPoint = State->iLastPoint;
 		aabb ScreenBB;
-# if 1
+#if 1
 		ScreenBB.MinX = 0.f;
 		ScreenBB.MinY = 0.f;
 		ScreenBB.MaxX = ScreenSize.X;
 		ScreenBB.MaxY = ScreenSize.Y;
-# else // use a smaller screen
+#else // use a smaller screen
 		v2 FakeScreenMin = V2Mult(0.2f, ScreenSize);
 		v2 FakeScreenMax = V2Mult(0.8f, ScreenSize);
 		ScreenBB.MinX = FakeScreenMin.X;
@@ -1652,20 +1662,24 @@ case_mode_drawarc:
 			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
 			{ // add shape to array of shapes on screen
 				DebugAdd("Shape %u is on screen\n", iShape);
-				TmpShapesNearScreen[cShapesNearScreen] = Shape;
+				shape *NearScreenShape = PushStruct(maShapesNearScreen, shape);
+				*NearScreenShape = Shape;
 				++cShapesNearScreen;
 			}
 		}
+		Assert(cShapesNearScreen == State->maShapesNearScreen.Used/sizeof(shape));
 
 		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
 		{
 			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
 			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
 			{
-				TmpPointsOnScreen[cPointsOnScreen] = P;
+				v2 *OnScreenPoint = PushStruct(maPointsOnScreen, v2);
+				*OnScreenPoint = P;
 				++cPointsOnScreen;
 			}
 		}
+		Assert(cPointsOnScreen == State->maPointsOnScreen.Used/sizeof(v2));
 	}
 
 	{ LOG("RENDER");
@@ -1680,8 +1694,8 @@ case_mode_drawarc:
 #endif
 
 		// NOTE: should be unchanged after this point in the frame
-		shape *ShapesNearScreen = TmpShapesNearScreen;
-		v2    *PointsOnScreen   = TmpPointsOnScreen;
+		shape *ShapesNearScreen = (shape *)maShapesNearScreen->Base;
+		v2    *PointsOnScreen   = (v2    *)maPointsOnScreen->Base;
 
 		LOG("\tDRAW SHAPES");
 		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)

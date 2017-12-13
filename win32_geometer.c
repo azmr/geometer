@@ -127,15 +127,15 @@ OpenFilenameDefault(HWND OwnerWindow, uint cchFilePath)
 }
 
 internal inline u64
-ReadFileArrayToArena(FILE *File, memory_arena *maPoints, u32 cElements, u32 ElementSize, u32 Factor, u32 Add, HWND Window)
+ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 ElementSize, u32 Factor, u32 Add, HWND Window)
 {
 	u64 cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
-	MemErrorOnFail(Window, ArenaRealloc(maPoints, CeilPow2U64(Factor * cBytesEl + Add * ElementSize)));
-	maPoints->Used = cBytesEl;
+	MemErrorOnFail(Window, ArenaRealloc(Arena, CeilPow2U64(Factor * cBytesEl + Add * ElementSize)));
+	Arena->Used = cBytesEl;
 	// TODO: check individual array size is right
 	// NOTE: add ElementSize to avoid writing valid elements to index 0
-	Assert(maPoints->Base);
-	u64 cElCheck = fread(maPoints->Base + ElementSize, ElementSize, cElements, File);
+	Assert(Arena->Base);
+	u64 cElCheck = fread(Arena->Base + ElementSize, ElementSize, cElements, File);
 	Assert(cElements == cElCheck);
 	return cBytesEl;
 }
@@ -307,37 +307,40 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 internal void
 ReallocateArenas(state *State, HWND WindowHandle)
 { LOG("REALLOCATION")
+#define ArenaAssert(arena) Assert(arena.Used <= arena.Size)
 	draw_state *NextDraw = &State->Draw[iDrawOffset(State, 1)];
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
 	// NOTE: Can add multiple points per frame (intersections), but can't double
 	// NOTE: Realloc the next undo state if needed
-	Assert(DRAW_STATE.maPoints.Used <= DRAW_STATE.maPoints.Size);
-	Assert(DRAW_STATE.maPointStatus.Used <= DRAW_STATE.maPointStatus.Size);
+	ArenaAssert(DRAW_STATE.maPoints);
+	ArenaAssert(DRAW_STATE.maPointStatus);
+	ArenaAssert(State->maPointsOnScreen);
 	if(DRAW_STATE.maPoints.Used >= NextDraw->maPoints.Size / 2)
 	{ LOG("Adding to points arena");
 		// NOTE: points and pointstatus should have exactly the same number of members
 		Assert(DRAW_STATE.maPointStatus.Used/sizeof(u8) == DRAW_STATE.maPoints.Used/sizeof(v2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maPoints, NextDraw->maPoints.Size * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maPointStatus, NextDraw->maPointStatus.Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maPointsOnScreen, State->maPointsOnScreen.Size * 2));
 	}
 
-	Assert(State->maIntersects.Used <= State->maIntersects.Size);
 	// NOTE: Can only create 1 shape per frame
-	Assert(DRAW_STATE.maShapes.Used <= DRAW_STATE.maShapes.Size);
+	ArenaAssert(DRAW_STATE.maShapes);
+	ArenaAssert(State->maShapesNearScreen);
+	ArenaAssert(State->maIntersects);
 	if(DRAW_STATE.maShapes.Used >= NextDraw->maShapes.Size)
 	{ LOG("Adding to shapes arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maShapes, NextDraw->maShapes.Size * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maIntersects, State->maIntersects.Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maShapesNearScreen, State->maShapesNearScreen.Size * 2));
 	}
-	Assert(State->maActions.Used <= State->maActions.Size);
+	ArenaAssert(State->maActions);
 	// TODO: this will change once action = user action
 	if(State->maActions.Used >= State->maActions.Size/2 - sizeof(action))
 	{ LOG("Adding to actions arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maActions, State->maActions.Size * 2));
 	}
-	if(State->maIntersects.Used >= State->maIntersects.Size/2 - sizeof(action))
-	{ LOG("Adding to actions arena");
-	}
+#undef ArenaAssert
 }
 
 /// Open a new geometer window.
@@ -589,6 +592,8 @@ FreeStateArenas(state *State)
 	}
 	Free(State->maActions.Base);
 	Free(State->maIntersects.Base);
+	Free(State->maPointsOnScreen.Base);
+	Free(State->maShapesNearScreen.Base);
 #undef cSTART_POINTS
 }
 
@@ -605,6 +610,8 @@ AllocStateArenas(state *State)
 	}
 	State->maActions		  = ArenaCalloc(sizeof(action) * cSTART_POINTS);
 	State->maIntersects		  = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+	State->maPointsOnScreen	  = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+	State->maShapesNearScreen = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
 #undef cSTART_POINTS
 }
 
