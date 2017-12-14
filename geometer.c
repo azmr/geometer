@@ -1225,8 +1225,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			BASIS->Offset = V2Add(BASIS->Offset,
 				V2Sub(V2ScreenToCanvas(*BASIS, pMouse.P, ScreenCentre),
 					  V2ScreenToCanvas(*BASIS,  Mouse.P, ScreenCentre)));
-			// NOTE: prevents later triggers of clicks, may not be required if input scheme changes.
-			Input.New->Mouse.LMB.EndedDown = 0;
 			File.Pan = 1;
 		}
 
