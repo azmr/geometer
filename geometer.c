@@ -941,7 +941,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		b32 Up    = C_PanUp.EndedDown;
 		b32 Left  = C_PanLeft.EndedDown;
 		b32 Right = C_PanRight.EndedDown;
-		f32 PanSpeed = 5.f;
+		f32 PanSpeed = 8.f * BASIS->Zoom;
 		if(Down != Up)
 		{
 			if(Down)      { BASIS->Offset = V2Add(BASIS->Offset, V2Mult(-PanSpeed, Perp(BASIS->XAxis))); }
