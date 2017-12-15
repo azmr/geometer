@@ -303,6 +303,7 @@ AddIntersections(state *State, v2 po1, v2 po2, uint cIntersections)
 		AddIntersection(State, po1);
 		AddIntersection(State, po2);
 	}
+	else { Assert(!cIntersections); }
 	END_TIMED_BLOCK;
 }
 
@@ -319,6 +320,7 @@ AddIntersectionsAsPoints(state *State, v2 po1, v2 po2, uint cIntersections)
 		AddPoint(State, po1, POINT_Intersection, 0);
 		AddPoint(State, po2, POINT_Intersection, 0);
 	}
+	else { Assert(!cIntersections); }
 	END_TIMED_BLOCK;
 }
 
@@ -395,17 +397,18 @@ end:
 
 /// returns number of intersections
 internal uint
-AddShapeIntersections(state *State, uint iShape)
+AddShapeIntersections(state *State, shape *Shapes, uint cShapes, uint iShape)
 {
+	// NOTE: iShape is there to prevent checking intersects against itself
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0, cIntersections;
-	shape Shape = SHAPES(iShape);
-	shape *Shapes = State->Shapes;
+	shape Shape = Shapes[iShape];
+	Assert(Shape.Kind != SHAPE_Free);
 	v2 po1, po2;
 
 	// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
 	// IMPORTANT TODO: spatially separate, maybe hierarchically
-	for(uint i = 1; i <= State->iLastShape; ++i)
+	for(uint i = 0; i < cShapes; ++i)
 	{
 		if(i == iShape) continue;
 
@@ -417,6 +420,47 @@ AddShapeIntersections(state *State, uint iShape)
 	return Result;
 }
 
+internal inline uint
+AddNearScreenShapeIntersects(state *State, uint iShape)
+{
+	memory_arena Arena = State->maShapesNearScreen;
+	uint Result = AddShapeIntersections(State, (shape *)Arena.Base, (uint)Arena.Used/sizeof(shape), iShape);
+	return Result;
+}
+internal inline uint
+AddAllShapeIntersects(state *State, uint iShape)
+{
+	uint Result = AddShapeIntersections(State, State->Shapes + 1, State->iLastShape, iShape - 1);
+	return Result;
+}
+
+internal uint
+RecalcIntersects(state *State, shape *Shapes, uint cShapes)
+{
+	State->maIntersects.Used = sizeof(v2);
+	uint Result = 0;
+	for(uint iShape = 0; iShape < cShapes; ++iShape)
+	{
+		Result += AddShapeIntersections(State, Shapes, cShapes, iShape);
+	}
+	return Result;
+}
+
+internal inline uint
+RecalcAllIntersects(state *State)
+{
+	uint Result = RecalcIntersects(State, State->Shapes + 1, State->iLastShape);
+	return Result;
+}
+internal inline uint
+RecalcNearScreenIntersects(state *State)
+{
+	memory_arena Arena = State->maShapesNearScreen;
+	uint Result = RecalcIntersects(State, (shape *)Arena.Base, (uint)ArenaCount(Arena, shape));
+	return Result;
+}
+
+
 /// returns position in Shapes array
 internal uint
 AddShape(state *State, shape Shape)
@@ -427,6 +471,7 @@ AddShape(state *State, shape Shape)
 	shape *Shapes = State->Shapes;
 	uint iShape;
 	// NOTE: check if exists already
+	// TODO (opt): any reason why you can't only check onscreen shapes?
 	for(iShape = 1; iShape <= State->iLastShape; ++iShape)
 	{
 		if(ShapeEq(Shape, Shapes[iShape]))
@@ -452,26 +497,27 @@ AddShape(state *State, shape Shape)
 		if(iEmptyShape)
 		{ // NOTE: fill empty shape
 			Shapes[iEmptyShape] = Shape;
-			AddShapeIntersections(State, iEmptyShape);
+			AddAllShapeIntersects(State, iEmptyShape);
 			Result = iEmptyShape;
 		}
 		else
 		{ // NOTE: new shape
-			PushStruct(&DRAW_STATE.maShapes, shape);
-			Shapes[++State->iLastShape] = Shape;
-			Result = State->iLastShape;
-			AddShapeIntersections(State, Result);
+			shape *NewShape = PushStruct(&DRAW_STATE.maShapes, shape);
+			*NewShape = Shape;
+			Result = ++State->iLastShape;
+			AddAllShapeIntersects(State, Result);
 			/* ++State->cShapes; */
 		}
 
-		PushStruct(&State->maActions, action);
+		action *NewAction = PushStruct(&State->maActions, action);
 		action Action;
 		Action.Kind = Shape.Kind;
 		Action.i = Result;
 		Action.P[0] = Shape.P[0];
 		Action.P[1] = Shape.P[1];
 		Action.P[2] = Shape.P[2];
-		ACTIONS(++State->iLastAction) = Action;
+		*NewAction = Action;
+		++State->iLastAction;
 	}
 	END_TIMED_BLOCK;
 	return Result;
@@ -642,6 +688,13 @@ OffsetDraw(state *State, int Offset)
 	State->iCurrentDraw = iDrawOffset(State, Offset);
 	State->cDraws += Offset;
 	UpdateDrawPointers(State, iPrevDraw);
+#if 1
+	// NOTE: shapes on screen need to be updated before this is called
+	// (or you can accept an occasional frame of lag)
+	RecalcNearScreenIntersects(State);
+#else
+	RecalcAllIntersects(State);
+#endif
 }
 
 internal inline v2
@@ -928,7 +981,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP, poClosest;
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
-	b32 isSnapped;
+	b32 IsSnapped;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
 	{ LOG("INPUT");
@@ -1006,7 +1059,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		poClosest = CanvasMouseP;
 		ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
 		ipoClosestIntersect = ClosestIntersectIndex(State, CanvasMouseP, &ClosestIntersectDistSq);
-		isSnapped = 0;
+		IsSnapped = 0;
 		if(ipoClosest || ipoClosestIntersect)
 		{
 			// decide whether to use point or intersect
@@ -1035,7 +1088,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if( ! C_NoSnap.EndedDown)
 				{ // point snapping still on
 					SnapMouseP = poClosest;
-					isSnapped = 1;
+					IsSnapped = 1;
 				}
 			}
 
@@ -1741,7 +1794,7 @@ case_mode_drawarc:
 
 		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
 		if(State->iLastPoint)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
-		if(isSnapped)
+		if(IsSnapped)
 		{ // draw snapped point
 		/* if(ipoClosest) */
 		{ DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); }
@@ -1865,8 +1918,8 @@ case_mode_drawarc:
 		uint LastIntersect = (uint)ArenaCount(State->maIntersects, v2) - 1;
 		for(uint i = 1; i <= LastIntersect; ++i)
 		{
-			v2 poSS = V2CanvasToScreen(Basis, *PullEl(State->maIntersects, i, v2), ScreenCentre);
-			DrawActivePoint(ScreenBuffer, poSS, ORANGE);
+			/* v2 poSS = V2CanvasToScreen(Basis, *PullEl(State->maIntersects, i, v2), ScreenCentre); */
+			/* DrawActivePoint(ScreenBuffer, poSS, ORANGE); */
 		}
 
 
@@ -1978,7 +2031,6 @@ case_mode_drawarc:
 				/* "Char: %d (%c), " */
 				"Mode: %s, "
 				"draw (iC/c/iL/iS): %u/%u/%u/%u, "
-				"cShapesNearScreen: %u"
 				/* "pBasis: (%.2f, %.2f)" */
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
@@ -1994,8 +2046,7 @@ case_mode_drawarc:
 				/* testcharindex + 65, testcharindex + 65, */
 				InputModeText[State->InputMode],
 				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
-				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw,
-				cShapesNearScreen
+				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* State->iLastPoint */
 				);

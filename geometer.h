@@ -217,6 +217,7 @@ typedef struct draw_state
 	basis Basis;
 } draw_state;
 
+// TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
 {
 	v2 *Points;
