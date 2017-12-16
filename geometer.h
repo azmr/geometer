@@ -329,10 +329,10 @@ Reset(state *State)
 
 	State->Length = DEFAULT_LENGTH;
 
-	PushStruct(&State->maActions, action);
 	action Action;
 	Action.Kind = ACTION_Reset;
-	ACTIONS(++State->iLastAction) = Action;
+	AppendStruct(&State->maActions, action, Action);
+	++State->iLastAction;
 
 	END_TIMED_BLOCK;
 }

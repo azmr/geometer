@@ -264,13 +264,13 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 
 	DebugReplace("AddPoint => %u\n", Result);
 
-	PushStruct(&State->maActions, action);
 	action Action;
 	Action.Kind = ACTION_Point;
 	Action.i = Result;
 	Action.po = po;
 	Action.PointStatus = POINTSTATUS(Result);
-	ACTIONS(++State->iLastAction) = Action;
+	AppendStruct(&State->maActions, action, Action);
+	++State->iLastAction;
 
 end:
 	END_TIMED_BLOCK;
@@ -285,8 +285,7 @@ AddIntersection(state *State, v2 po)
 	// TODO (opt): only add if on screen
 	if( ! FindPointAtPos(State, po, ~(uint)POINT_Free))
 	{ // given that there isn't a point already, add an intersection
-		v2 *New = PushStruct(&State->maIntersects, v2);
-		*New = po;
+		AppendStruct(&State->maIntersects, v2, po);
 	}
 }
 
@@ -502,21 +501,19 @@ AddShape(state *State, shape Shape)
 		}
 		else
 		{ // NOTE: new shape
-			shape *NewShape = PushStruct(&DRAW_STATE.maShapes, shape);
-			*NewShape = Shape;
+			AppendStruct(&DRAW_STATE.maShapes, shape, Shape);
 			Result = ++State->iLastShape;
 			AddAllShapeIntersects(State, Result);
 			/* ++State->cShapes; */
 		}
 
-		action *NewAction = PushStruct(&State->maActions, action);
 		action Action;
 		Action.Kind = Shape.Kind;
 		Action.i = Result;
 		Action.P[0] = Shape.P[0];
 		Action.P[1] = Shape.P[1];
 		Action.P[2] = Shape.P[2];
-		*NewAction = Action;
+		AppendStruct(&State->maActions, action, Action);
 		++State->iLastAction;
 	}
 	END_TIMED_BLOCK;
@@ -579,11 +576,11 @@ InvalidatePoint(state *State, uint ipo)
 	BEGIN_TIMED_BLOCK;
 	InvalidateShapesAtPoint(State, ipo);
 	POINTSTATUS(ipo) = POINT_Free;
-	PushStruct(&State->maActions, action);
 	action Action;
-	Action.Kind =  ACTION_Remove;
+	Action.Kind = ACTION_Remove;
 	Action.i = ipo;
-	ACTIONS(++State->iLastAction) = Action;
+	AppendStruct(&State->maActions, action, Action);
+	++State->iLastAction;
 	END_TIMED_BLOCK;
 }
 
@@ -1706,8 +1703,7 @@ case_mode_drawarc:
 			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
 			{ // add shape to array of shapes on screen
 				DebugAdd("Shape %u is on screen\n", iShape);
-				shape *NearScreenShape = PushStruct(maShapesNearScreen, shape);
-				*NearScreenShape = Shape;
+				AppendStruct(maShapesNearScreen, shape, Shape);
 				++cShapesNearScreen;
 			}
 		}
@@ -1718,8 +1714,7 @@ case_mode_drawarc:
 			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
 			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
 			{
-				v2 *OnScreenPoint = PushStruct(maPointsOnScreen, v2);
-				*OnScreenPoint = P;
+				AppendStruct(maPointsOnScreen, v2, P);
 				++cPointsOnScreen;
 			}
 		}
