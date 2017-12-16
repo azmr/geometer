@@ -1028,21 +1028,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{ // Zooming out
 				C_Zoom = -C_Zoom;
 				ScrollFactor = invScrollFactor;
-#define ROTATED_OFFSET() V2RotateToAxis(BASIS->XAxis, V2Mult((1.f-ScrollFactor) * BASIS->Zoom, dMouseP))
-				// NOTE: keep canvas under pointer in same screen location
-				BASIS->Offset = V2Add(BASIS->Offset, ROTATED_OFFSET());
 			}
-			else
-			{ // Zooming in
-				// NOTE: keep canvas under pointer in same screen location
-				BASIS->Offset = V2Add(BASIS->Offset, ROTATED_OFFSET());
-#undef ROTATED_OFFSET
-			}
+			// NOTE: keep canvas under pointer in same screen location
+			v2 RotatedOffset = V2RotateToAxis(BASIS->XAxis, V2Mult((1.f-ScrollFactor) * BASIS->Zoom, dMouseP));
+			BASIS->Offset = V2Add(BASIS->Offset, RotatedOffset);
+
 			// NOTE: wheel delta is in multiples of 120
 			for(int i = 0; i < C_Zoom/120; ++i)
-			{
-				BASIS->Zoom *= ScrollFactor;
-			}
+			{ BASIS->Zoom *= ScrollFactor; }
 		}
 
 		// SNAPPING
