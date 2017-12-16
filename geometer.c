@@ -577,7 +577,7 @@ InvalidatePoint(state *State, uint ipo)
 	InvalidateShapesAtPoint(State, ipo);
 	POINTSTATUS(ipo) = POINT_Free;
 	action Action;
-	Action.Kind = ACTION_Remove;
+	Action.Kind = ACTION_RemovePt;
 	Action.i = ipo;
 	AppendStruct(&State->maActions, action, Action);
 	++State->iLastAction;

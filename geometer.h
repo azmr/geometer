@@ -98,18 +98,31 @@ typedef enum shape_types
 	SHAPE_Arc,
 } shape_types;
 
+#define ACTION_TYPES \
+	ACTION_TYPE(ACTION_Reset   = -2,            "Reset"  ) \
+	ACTION_TYPE(ACTION_RemovePt= -1,            "Remove Pt" ) \
+	ACTION_TYPE(ACTION_Basis   = 0,             "Change Basis"  ) \
+	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add Line"   ) \
+	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add Ray"    ) \
+	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add Segment") \
+	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add Circle" ) \
+	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add Arc"    ) \
+	ACTION_TYPE(ACTION_Point,                   "Add Point"  )
+
 typedef enum action_types
 {
-	ACTION_Reset   = -2,
-	ACTION_Remove  = -1,
-	ACTION_Basis   = 0,
-	ACTION_Line    = SHAPE_Line,
-	ACTION_Ray     = SHAPE_Ray,
-	ACTION_Segment = SHAPE_Segment,
-	ACTION_Circle  = SHAPE_Circle,
-	ACTION_Arc     = SHAPE_Arc,
-	ACTION_Point,
+#define ACTION_TYPE(a, b) a,
+	ACTION_TYPES
+#undef ACTION_TYPE
 } action_types;
+
+char *ActionTypesStrings[] =
+{
+#define ACTION_TYPE(a, b) b,
+	ACTION_TYPES
+#undef ACTION_TYPE
+};
+#undef ACTION_TYPES
 
 typedef enum input_mode
 {
