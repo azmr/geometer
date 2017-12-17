@@ -254,6 +254,8 @@ typedef struct state
 	// if you want bases to create a new undo state
 	basis pBasis;
 
+	uint iSaveAction;
+	uint iCurrentAction;
 	uint iLastAction;
 	uint iLastPoint;
 	uint iLastShape;

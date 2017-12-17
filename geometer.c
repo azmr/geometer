@@ -229,6 +229,14 @@ FirstFreePoint(state *State)
 	return Result;
 }
 
+internal void
+AddAction(state *State, action Action)
+{
+	AppendStruct(&State->maActions, action, Action);
+	++State->iCurrentAction;
+	State->iLastAction = State->iCurrentAction;
+}
+
 /// returns index of point (may be new or existing)
 internal uint
 AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
@@ -269,8 +277,7 @@ AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 	Action.i = Result;
 	Action.po = po;
 	Action.PointStatus = POINTSTATUS(Result);
-	AppendStruct(&State->maActions, action, Action);
-	++State->iLastAction;
+	AddAction(State, Action);
 
 end:
 	END_TIMED_BLOCK;
@@ -459,7 +466,6 @@ RecalcNearScreenIntersects(state *State)
 	return Result;
 }
 
-
 /// returns position in Shapes array
 internal uint
 AddShape(state *State, shape Shape)
@@ -513,8 +519,7 @@ AddShape(state *State, shape Shape)
 		Action.P[0] = Shape.P[0];
 		Action.P[1] = Shape.P[1];
 		Action.P[2] = Shape.P[2];
-		AppendStruct(&State->maActions, action, Action);
-		++State->iLastAction;
+		AddAction(State, Action);
 	}
 	END_TIMED_BLOCK;
 	return Result;
@@ -579,8 +584,7 @@ InvalidatePoint(state *State, uint ipo)
 	action Action;
 	Action.Kind = ACTION_RemovePt;
 	Action.i = ipo;
-	AppendStruct(&State->maActions, action, Action);
-	++State->iLastAction;
+	AddAction(State, Action);
 	END_TIMED_BLOCK;
 }
 
@@ -684,6 +688,7 @@ OffsetDraw(state *State, int Offset)
 	uint iPrevDraw = State->iCurrentDraw;
 	State->iCurrentDraw = iDrawOffset(State, Offset);
 	State->cDraws += Offset;
+	State->iCurrentAction += Offset;
 	UpdateDrawPointers(State, iPrevDraw);
 #if 1
 	// NOTE: shapes on screen need to be updated before this is called
@@ -943,6 +948,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		// NOTE: need initial save state to undo to
 		SaveUndoState(State);
 		State->iSaveDraw = State->iCurrentDraw;
+		State->iSaveAction = State->iCurrentAction;
 
 		Memory->IsInitialized = 1;
 	}
@@ -2005,7 +2011,7 @@ case_mode_drawarc:
 		DebugPrint();
 		/* DrawSuperSlowCircleLine(ScreenBuffer, ScreenCentre, 50.f, RED); */
 
-		CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
+		/* CycleCountersInfo(ScreenBuffer, &State->DefaultFont); */
 
 		// TODO: Highlight status for currently selected/hovered points
 
@@ -2017,8 +2023,9 @@ case_mode_drawarc:
 				/* "Request: {As: %u, Action: %s, Pan: %u}" */
 				/* "Basis: (%.2f, %.2f), " */
 				/* "Char: %d (%c), " */
-				"Mode: %s, "
-				"draw (iC/c/iL/iS): %u/%u/%u/%u, "
+				/* "Mode: %s, " */
+				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
+				"actions (iC/iL/iS): %u/%u/%u, "
 				/* "pBasis: (%.2f, %.2f)" */
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
@@ -2032,14 +2039,16 @@ case_mode_drawarc:
 				/* File.NewWindow, FileActionText[File.Action], File.Pan, */
 				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
 				/* testcharindex + 65, testcharindex + 65, */
-				InputModeText[State->InputMode],
+				/* InputModeText[State->InputMode], */
 				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
-				State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw
+				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
+				State->iCurrentAction, State->iLastAction, State->iSaveAction
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				/* State->iLastPoint */
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
+#if 0
 		char ShapeInfo[512];
 		ssprintf(ShapeInfo, "L#  P#\n\n");
 		for(uint i = 1; i <= State->iLastShape && i <= 32; ++i)
@@ -2066,6 +2075,7 @@ case_mode_drawarc:
 				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
 		DrawString(ScreenBuffer, &State->DefaultFont, BasisInfo, TextSize,
 				ScreenSize.X - 420.f, ScreenSize.Y - 30.f, 0, BLACK);
+#endif
 	}
 
 	CLOSE_LOG();

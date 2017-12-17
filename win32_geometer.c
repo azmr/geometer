@@ -93,7 +93,7 @@ FileHasName(state *State)
 internal inline b32
 IsModified(state *State)
 {
-	b32 Result = State->iCurrentDraw != State->iSaveDraw;
+	b32 Result = State->iCurrentAction != State->iSaveAction;
 	return Result;
 }
 
@@ -406,6 +406,7 @@ Save(state *State, HWND WindowHandle, b32 SaveAs)
 		}
 		else
 		{
+			State->iSaveAction = State->iCurrentAction;
 			State->iSaveDraw = State->iCurrentDraw;
 		}
 	}
@@ -505,10 +506,11 @@ LogActionsToFile(state *State, char *FilePath)
 
 	memory_arena maActions = State->maActions;
 	// NOTE: account for initial offset
-	action *Actions = ((action *)maActions.Base) + 1;
-	uint cActions = (uint)maActions.Used/sizeof(action) - 1;
+	action *Actions = (action *)maActions.Base;
+	uint iLastAction = State->iLastAction;
+	uint iCurrentAction = State->iCurrentAction;
 
-	for(uint iAction = 0; iAction < cActions; ++iAction)
+	for(uint iAction = 1; iAction <= iLastAction; ++iAction)
 	{
 		action Action = Actions[iAction];
 
@@ -518,7 +520,13 @@ LogActionsToFile(state *State, char *FilePath)
 				ActionTypesStrings[Action.Kind+2]);
 
 		if(Action.i)
-		{ fprintf(ActionFile, " -> [%u]\n", Action.i); }
+		{ fprintf(ActionFile, " -> [%u]", Action.i); }
+
+		if(iAction == iCurrentAction)
+		{ fprintf(ActionFile, "\t\t<-- CURRENT"); }
+
+		fprintf(ActionFile, "\n");
+
 
 		uint ipo1 = Action.P[0];
 		uint ipo2 = Action.P[1];
