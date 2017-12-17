@@ -1042,12 +1042,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		// SNAPPING
-		if(State->InputMode == MODE_ExtendSeg || State->InputMode == MODE_ExtendLinePt)
-		{ // Temp point added so that lines can be extended to the given length
-			v2 poAtLength = ClosestPtOnCircle(State->poSaved, POINTS(State->ipoSelect), State->Length);
-			State->ipoLength = AddPoint(State, poAtLength, POINT_Arc, 0);
-		}
-
 		f32 ClosestDistSq;
 		f32 ClosestIntersectDistSq;
 		v2 CanvasMouseP = V2ScreenToCanvas(*BASIS, Mouse.P, ScreenCentre);
@@ -1543,6 +1537,9 @@ case_mode_drawarc:
 						}
 						else
 						{ // extend segment
+							// TODO (UI): should this be based on shape snapping?
+							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, POINTS(State->ipoSelect), State->Length);
+							AddIntersection(State, poAtLength);
 							DRAW_PERP_OR_NORMAL
 							State->InputMode = MODE_ExtendSeg;
 						}
@@ -1558,6 +1555,9 @@ case_mode_drawarc:
 						}
 						else // ClickPointOnly
 						{ // extend line point
+							// TODO (UI): should this be based on shape snapping?
+							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, POINTS(State->ipoSelect), State->Length);
+							AddIntersection(State, poAtLength);
 							DRAW_PERP_OR_NORMAL
 							State->InputMode = MODE_ExtendLinePt;
 						}
@@ -1571,10 +1571,9 @@ case_mode_drawarc:
 				InputButton = CB_PointOnly;
 				case MODE_ExtendSeg:
 				{ // find point on shape closest to mouse along line
-					// remove temp point in case length changes for next frame
+					// remove temp intersection in case length changes for next frame
 					// NOTE: currently relies on not being overwritten...
 					// may want to move after draw
-					POINTSTATUS(State->ipoLength) = POINT_Free;
 
 					// TODO (fix): preview point pulling away from shape
 					v2 TestStart = POINTS(State->ipoSelect); 
@@ -1593,6 +1592,7 @@ case_mode_drawarc:
 
 					if( ! Mouse.Buttons[InputButton].EndedDown)
 					{ // add point along line (and maybe add segment)
+						PopStruct(State->maIntersects, v2);
 						SaveUndoState(State);
 						uint ipoNew = AddPoint(State, poOnLine, POINT_Extant, 0);
 						if(State->InputMode == MODE_ExtendSeg)  { AddSegment(State, State->ipoSelect, ipoNew); }

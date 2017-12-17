@@ -583,8 +583,16 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Point:
 			{
+				char Types[] = "DARTFILE";
+				char Status[sizeof(Types)];
+				ssprintf(Status, "%08b", Action.PointStatus);
 				v2 po1 = Action.po;
-				fprintf(ActionFile, "\t(%.3f, %.3f)\n", po1.X, po1.Y);
+				fprintf(ActionFile,
+						"\t(%f, %f)\n"
+						"\t        %s\n"
+						"\tStatus: %s\n",
+						po1.X, po1.Y,
+						Types, Status);
 			} break;
 
 			default: {}
