@@ -232,8 +232,9 @@ FirstFreePoint(state *State)
 internal void
 AddAction(state *State, action Action)
 {
-	AppendStruct(&State->maActions, action, Action);
 	++State->iCurrentAction;
+	State->maActions.Used = State->iCurrentAction * sizeof(action);
+	AppendStruct(&State->maActions, action, Action);
 	State->iLastAction = State->iCurrentAction;
 }
 
@@ -521,6 +522,10 @@ AddShape(state *State, shape Shape)
 		Action.P[2] = Shape.P[2];
 		AddAction(State, Action);
 	}
+	else
+	{
+		Result = iShape;
+	}
 	END_TIMED_BLOCK;
 	return Result;
 }
@@ -682,13 +687,147 @@ V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 	return Result;
 }
 
+internal void
+SetBasis(state *State, basis NewBasis)
+{
+	State->tBasis = 0.f;
+	NewBasis.XAxis = Norm(NewBasis.XAxis);
+	pBASIS = *BASIS;
+	*BASIS = NewBasis;
+}
+
+internal inline void
+ApplyAction(state *State, action Action)
+{
+	switch(Action.Kind)
+	{
+		case ACTION_Reset:
+		{ Reset(State); } break;
+
+		case ACTION_RemovePt:
+		{ Assert(!"TODO: RemovePt"); } break;
+
+		case ACTION_Basis:
+		{ SetBasis(State, Action.Basis); } break;
+
+		case ACTION_Segment:
+		case ACTION_Circle:
+		case ACTION_Arc:
+		{
+			// TODO (opt): consider if this would be simpler if action
+			// just stored a normal shape... (it would take more memory...)
+			shape Shape;
+			Shape.Kind = Action.Kind;
+			Shape.Arc = Action.Arc; // NOTE: arc has all 3 points
+			uint iShape = AddShape(State, Shape);
+			Assert(Action.i == iShape);
+		} break;
+
+		case ACTION_Point:
+		{
+			uint ipo = AddPoint(State, Action.po, Action.PointStatus, 0);
+			Assert(Action.i == ipo);
+		} break;
+
+		default:
+		{ Assert(!"Unknown action type"); }
+	}
+}
+
+internal inline void
+OffsetActions(state *State, int Offset)
+{
+	BEGIN_TIMED_BLOCK;
+	uint iCurrentAction = State->iCurrentAction;
+	Assert(Offset >= 0 || iCurrentAction > (uint)(-Offset) && "Offset won't underflow uint");
+	uint iNewLastAction = iCurrentAction + Offset;
+	action *Actions = (action *)State->maActions.Base;
+	if(Offset >= 0) // REDO
+	{
+		for(uint iAction = iCurrentAction + 1; iAction <= iNewLastAction; ++iAction)
+		{ ApplyAction(State, Actions[iAction]); }
+	}
+	else // UNDO
+	{ // unapply each action
+		for(uint iAction = iCurrentAction; iAction > iNewLastAction; --iAction)
+		{
+			action Action = Actions[iAction];
+			switch(Action.Kind)
+			{
+				case ACTION_Reset:
+				{ // reapply all actions from scratch
+					// TODO: add checkpoints so it doesn't have to start right from beginning
+					/* Assert(!"TODO: undo reset"); */
+					// NOTE: not thread-safe
+					// PROBLEM: not redoable afterwards:
+#if 0
+					State->maActions.Used = sizeof(action);
+#else
+					uint iLastAction = State->iLastAction;
+#endif
+					for(uint i = 1; i < iAction; ++i)
+					{ ApplyAction(State, Actions[i]); }
+					// could apply all actions then reduce action length back to current iLast..
+					State->iLastAction = iLastAction;
+					State->iCurrentAction = iCurrentAction;
+				} break;
+
+				case ACTION_RemovePt:
+				{ Assert(Action.i == AddPoint(State, Action.po, Action.PointStatus, 0)); } break;
+
+				case ACTION_Basis:
+				{ // find the previous basis and apply that
+					basis PrevBasis = DefaultBasis; // in case no previous basis found
+					for(uint i = iAction; i > 0; --i)
+					{
+						if(Actions[i].Kind == ACTION_Basis)
+						{
+							PrevBasis = Actions[i].Basis;
+							break;
+						}
+					}
+					SetBasis(State, PrevBasis);
+				} break;
+
+				case ACTION_Segment:
+				case ACTION_Circle:
+				case ACTION_Arc:
+				{
+					State->Shapes[Action.i].Kind = SHAPE_Free;
+					if(Action.i == State->iLastShape)
+					{
+						--State->iLastShape;
+					}
+					else
+					{ Assert(!"TODO: undo shape additions mid-array"); }
+						// does anything actually need to be done?
+				} break;
+
+				case ACTION_Point:
+				{
+					State->PointStatus[Action.i] = POINT_Free;
+					if(Action.i == State->iLastPoint)
+					{
+						--State->iLastPoint;
+					}
+					else
+					{ Assert(!"TODO: undo point additions mid-array"); }
+						// does anything actually need to be done?
+				} break;
+			}
+		}
+	}
+
+	State->iCurrentAction += Offset;
+	END_TIMED_BLOCK;
+}
+
 internal inline void
 OffsetDraw(state *State, int Offset)
 {
 	uint iPrevDraw = State->iCurrentDraw;
 	State->iCurrentDraw = iDrawOffset(State, Offset);
 	State->cDraws += Offset;
-	State->iCurrentAction += Offset;
 	UpdateDrawPointers(State, iPrevDraw);
 #if 1
 	// NOTE: shapes on screen need to be updated before this is called
@@ -1275,6 +1414,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{ // cancel selection, point returns to saved location
 			POINTSTATUS(State->ipoSelect) = State->SavedStatus[0];
 			POINTSTATUS(State->ipoArcStart) = State->SavedStatus[1];
+			// TODO (fix): not sure if I like this any more... kind of hacky,
+			// the point adding overwrites future history, so if user starts
+			// adding a point, then realizes they actually want to redo, they
+			// no longer can.
+			OffsetActions(State, -1);
 			OffsetDraw(State, -1);
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
@@ -1325,11 +1469,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						// NOTE: making sure that there is a state available to undo into
 						((State->cDraws >= NUM_UNDO_STATES && State->iLastDraw != iDrawOffset(State, -1)) ||
 							(State->cDraws <  NUM_UNDO_STATES && State->iCurrentDraw > 1)))
-					{ OffsetDraw(State, -1); } // UNDO
+					{ OffsetActions(State, -1); OffsetDraw(State, -1); } // UNDO
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
 						(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
 						(State->iCurrentDraw < State->iLastDraw))
-					{ OffsetDraw(State, 1); } // REDO
+					{ OffsetActions(State, 1); OffsetDraw(State, 1); } // REDO
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
@@ -1391,9 +1535,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{ // set basis on release
 						if( ! V2Equals(SnapMouseP, State->poSaved)) // prevents XAxis with no length
 						{ // set new basis and start animation
-							State->tBasis = 0.f;
-							pBASIS = *BASIS;
-							BASIS->XAxis = Norm(V2Sub(SnapMouseP, State->poSaved));
+							basis NewBasis = *State->Basis;
+							NewBasis.XAxis = V2Sub(SnapMouseP, State->poSaved);
+							SetBasis(State, NewBasis);
 						}
 
 						State->ipoSelect = 0;

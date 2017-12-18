@@ -65,6 +65,8 @@ typedef struct basis
 	// TODO: include in XAxis
 	f32 Zoom;
 } basis;
+#define INITIAL_ZOOM 0.1f
+#define DefaultBasis (basis){ (v2){1.f, 0.f}, (v2){0.f, 0.f}, INITIAL_ZOOM }
 
 typedef struct line
 {
@@ -98,6 +100,7 @@ typedef enum shape_types
 	SHAPE_Arc,
 } shape_types;
 
+// TODO (opt): define the statements to redo each action here?
 #define ACTION_TYPES \
 	ACTION_TYPE(ACTION_Reset   = -2,            "Reset"  ) \
 	ACTION_TYPE(ACTION_RemovePt= -1,            "Remove Pt" ) \
@@ -331,10 +334,7 @@ Reset(state *State)
 	State->maPointsOnScreen.Used   = 0;
 	UpdateDrawPointers(State, 1);
 
-#define INITIAL_ZOOM 0.1f
-	State->Basis->XAxis  = V2(1.f, 0.f);
-	State->Basis->Offset = ZeroV2;
-	State->Basis->Zoom   = INITIAL_ZOOM;
+	*State->Basis = DefaultBasis;
 
 	State->cDraws = 0;
 
