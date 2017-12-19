@@ -236,57 +236,71 @@ AddAction(state *State, action Action)
 	State->maActions.Used = State->iCurrentAction * sizeof(action);
 	AppendStruct(&State->maActions, action, Action);
 	State->iLastAction = State->iCurrentAction;
+#if INTERNAL
+	LogActionsToFile(State, "ActionLog.txt");
+#endif
+}
+
+/// returns true if a point is added/updated (i.e. an action is needed)
+internal b32
+AddPointNoAction(state *State, v2 po, uint PointTypes, u8 *PriorStatus, uint *ipoOut)
+{
+	BEGIN_TIMED_BLOCK;
+	/* gDebugV2 = po; */
+	b32 Result = 0;
+	uint ipo = FindPointAtPos(State, po, ~(uint)POINT_Free);
+	if(ipo) // point exists already
+	{
+		// NOTE: Use existing point, but add any new status (and confirm Extant)
+		if(PriorStatus) { *PriorStatus = POINTSTATUS(ipo); }
+		if((POINTSTATUS(ipo) & (PointTypes | POINT_Extant))) // with full status
+		{ goto end; } // no changes needed; exit
+		else // status needs updating
+		{ POINTSTATUS(ipo) |= PointTypes | POINT_Extant; }
+	}
+
+	else 
+	{ // add a new point
+		if(PriorStatus) { *PriorStatus = POINT_Free; }
+		ipo = FirstFreePoint(State);
+		// NOTE: Create new point if needed
+		if(!ipo)
+		{
+			PushStruct(&DRAW_STATE.maPoints, v2);
+			PushStruct(&DRAW_STATE.maPointStatus, u8);
+			ipo = ++State->iLastPoint;
+			/* ++State->cPoints; */
+		}
+		POINTS(ipo) = po;
+		POINTSTATUS(ipo) |= PointTypes | POINT_Extant;
+	}
+
+	Result = 1;
+end:
+	*ipoOut = ipo;
+	END_TIMED_BLOCK;
+	return Result;
 }
 
 /// returns index of point (may be new or existing)
 internal uint
 AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
 {
-	BEGIN_TIMED_BLOCK;
-	/* gDebugV2 = po; */
-	uint Result = FindPointAtPos(State, po, ~(uint)POINT_Free);
-	if(Result) // point exists already
+	uint Result = 0;
+	if(AddPointNoAction(State, po, PointTypes, PriorStatus, &Result))
 	{
-		// NOTE: Use existing point, but add any new status (and confirm Extant)
-		if(PriorStatus) { *PriorStatus = POINTSTATUS(Result); }
-		if((POINTSTATUS(Result) & (PointTypes | POINT_Extant))) // with full status
-		{ goto end; } // no changes needed; exit
-		else // status needs updating
-		{ POINTSTATUS(Result) |= PointTypes | POINT_Extant; }
+		action Action;
+		Action.Kind = ACTION_Point;
+		Action.i = Result;
+		Action.po = po;
+		Action.PointStatus = POINTSTATUS(Result);
+		AddAction(State, Action);
 	}
-
-	else 
-	{ // add a new point
-		if(PriorStatus) { *PriorStatus = POINT_Free; }
-		Result = FirstFreePoint(State);
-		// NOTE: Create new point if needed
-		if(!Result)
-		{
-			PushStruct(&DRAW_STATE.maPoints, v2);
-			PushStruct(&DRAW_STATE.maPointStatus, u8);
-			Result = ++State->iLastPoint;
-			/* ++State->cPoints; */
-		}
-		POINTS(Result) = po;
-		POINTSTATUS(Result) |= PointTypes | POINT_Extant;
-	}
-
 	DebugReplace("AddPoint => %u\n", Result);
-
-	action Action;
-	Action.Kind = ACTION_Point;
-	Action.i = Result;
-	Action.po = po;
-	Action.PointStatus = POINTSTATUS(Result);
-	AddAction(State, Action);
-
-end:
-	END_TIMED_BLOCK;
 	return Result;
 }
 
 // TODO: don't auto-add intersections - only suggest when mouse is near
-
 internal inline void
 AddIntersection(state *State, v2 po)
 {
@@ -467,12 +481,12 @@ RecalcNearScreenIntersects(state *State)
 	return Result;
 }
 
-/// returns position in Shapes array
-internal uint
-AddShape(state *State, shape Shape)
+// returns if new shape (i.e. action to be added)
+internal b32
+AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 {
 	BEGIN_TIMED_BLOCK;
-	uint Result = 0;
+	b32 Result = 0;
 	b32 ExistingShape = 0;
 	shape *Shapes = State->Shapes;
 	uint iShape;
@@ -504,16 +518,29 @@ AddShape(state *State, shape Shape)
 		{ // NOTE: fill empty shape
 			Shapes[iEmptyShape] = Shape;
 			AddAllShapeIntersects(State, iEmptyShape);
-			Result = iEmptyShape;
 		}
 		else
 		{ // NOTE: new shape
 			AppendStruct(&DRAW_STATE.maShapes, shape, Shape);
-			Result = ++State->iLastShape;
-			AddAllShapeIntersects(State, Result);
-			/* ++State->cShapes; */
+			iShape = ++State->iLastShape;
+			AddAllShapeIntersects(State, iShape);
 		}
 
+		Result = 1;
+	}
+
+	*iShapeOut = iShape;
+	END_TIMED_BLOCK;
+	return Result;
+}
+
+/// returns position in Shapes array
+internal uint
+AddShape(state *State, shape Shape)
+{
+	uint Result = 0;
+	if(AddShapeNoAction(State, Shape, &Result))
+	{
 		action Action;
 		Action.Kind = Shape.Kind;
 		Action.i = Result;
@@ -522,14 +549,8 @@ AddShape(state *State, shape Shape)
 		Action.P[2] = Shape.P[2];
 		AddAction(State, Action);
 	}
-	else
-	{
-		Result = iShape;
-	}
-	END_TIMED_BLOCK;
 	return Result;
 }
-
 /// returns position in Shapes array
 internal inline uint
 AddSegment(state *State, uint P1, uint P2)
