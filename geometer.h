@@ -173,6 +173,8 @@ shape gZeroShape;
 
 // TODO: will be more meaningful when intersections are separate
 // should map to user actions -> better undo facility
+// TODO: store if action was 'user-activated' (change after input)
+// for better undo/redo... could probs store in Kind (negatives/offset?)
 typedef struct action
 {
 	action_types Kind;
@@ -295,6 +297,115 @@ typedef struct state
 	u64 OverflowTest;
 } state;
 
+#if INTERNAL
+internal void
+LogActionsToFile(state *State, char *FilePath)
+{
+	FILE *ActionFile = fopen(FilePath, "w");
+
+	memory_arena maActions = State->maActions;
+	// TODO (refactor): ignores initial Reset, make consistent
+	Assert(State->iLastAction == maActions.Used/sizeof(action) - 1);
+	// NOTE: account for initial offset
+	action *Actions = (action *)maActions.Base;
+	uint iLastAction = State->iLastAction;
+	uint iCurrentAction = State->iCurrentAction;
+
+	for(uint iAction = 1; iAction <= iLastAction; ++iAction)
+	{
+		action Action = Actions[iAction];
+
+		fprintf(ActionFile,
+				"Action %2u: %s",
+				iAction,
+				ActionTypesStrings[Action.Kind+2]);
+
+		if(Action.i)
+		{ fprintf(ActionFile, " -> [%u]", Action.i); }
+
+		if(iAction == iCurrentAction)
+		{ fprintf(ActionFile, "\t\t<-- CURRENT"); }
+
+		fprintf(ActionFile, "\n");
+
+
+		uint ipo1 = Action.P[0];
+		uint ipo2 = Action.P[1];
+		uint ipo3 = Action.P[2];
+		switch(Action.Kind)
+		{
+			case ACTION_Basis:
+			{
+				basis B = Action.Basis;
+				fprintf(ActionFile,
+						"\tx-axis: (%.3f, %.3f)\n"
+						"\toffset: (%.3f, %.3f)\n"
+						"\tzoom: %.3f\n",
+						B.XAxis.X, B.XAxis.Y,
+						B.Offset.X, B.Offset.Y,
+						B.Zoom);
+			} break;
+
+			case ACTION_Segment:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				fprintf(ActionFile,
+						"\tPoint 1: %u (%.3f, %.3f)\n"
+						"\tPoint 2: %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y);
+			} break;
+
+			case ACTION_Circle:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				fprintf(ActionFile,
+						"\tFocus:  %u (%.3f, %.3f)\n"
+						"\tRadius: %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y);
+			} break;
+
+			case ACTION_Arc:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				v2 po3 = POINTS(ipo3);
+				fprintf(ActionFile,
+						"\tFocus:  %u (%.3f, %.3f)\n"
+						"\tStart:  %u (%.3f, %.3f)\n"
+						"\tEnd:    %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y,
+						ipo3, po3.X, po3.Y);
+			} break;
+
+			case ACTION_Point:
+			{
+				char Types[] = "DARTFILE";
+				char Status[sizeof(Types)];
+				ssprintf(Status, "%08b", Action.PointStatus);
+				v2 po1 = Action.po;
+				fprintf(ActionFile,
+						"\t(%f, %f)\n"
+						"\t        %s\n"
+						"\tStatus: %s\n",
+						po1.X, po1.Y,
+						Types, Status);
+			} break;
+
+			default: {}
+		}
+
+		fprintf(ActionFile, "\n");
+	}
+
+	fclose(ActionFile);
+}
+#endif // INTERNAL
+
 internal inline uint
 iDrawOffset(state *State, int Offset)
 {
@@ -319,7 +430,7 @@ UpdateDrawPointers(state *State, uint iPrevDraw)
 }
 
 internal void
-Reset(state *State)
+ResetNoAction(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	for(uint i = 1; i <= State->iLastPoint; ++i)
@@ -344,12 +455,17 @@ Reset(state *State)
 
 	State->Length = DEFAULT_LENGTH;
 
+	END_TIMED_BLOCK;
+}
+
+internal void
+Reset(state *State)
+{
+	ResetNoAction(State);
 	action Action;
 	Action.Kind = ACTION_Reset;
 	AppendStruct(&State->maActions, action, Action);
 	++State->iLastAction;
-
-	END_TIMED_BLOCK;
 }
 
 internal inline void

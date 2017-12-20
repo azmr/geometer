@@ -233,6 +233,7 @@ internal void
 AddAction(state *State, action Action)
 {
 	++State->iCurrentAction;
+	// NOTE: prevent redoing to future history
 	State->maActions.Used = State->iCurrentAction * sizeof(action);
 	AppendStruct(&State->maActions, action, Action);
 	State->iLastAction = State->iCurrentAction;
@@ -723,7 +724,7 @@ ApplyAction(state *State, action Action)
 	switch(Action.Kind)
 	{
 		case ACTION_Reset:
-		{ Reset(State); } break;
+		{ ResetNoAction(State); } break;
 
 		case ACTION_RemovePt:
 		{ Assert(!"TODO: RemovePt"); } break;
@@ -740,13 +741,15 @@ ApplyAction(state *State, action Action)
 			shape Shape;
 			Shape.Kind = Action.Kind;
 			Shape.Arc = Action.Arc; // NOTE: arc has all 3 points
-			uint iShape = AddShape(State, Shape);
+			uint iShape = 0;
+			AddShapeNoAction(State, Shape, &iShape);
 			Assert(Action.i == iShape);
 		} break;
 
 		case ACTION_Point:
 		{
-			uint ipo = AddPoint(State, Action.po, Action.PointStatus, 0);
+			uint ipo = 0;
+			AddPointNoAction(State, Action.po, Action.PointStatus, 0, &ipo);
 			Assert(Action.i == ipo);
 		} break;
 
@@ -818,6 +821,7 @@ OffsetActions(state *State, int Offset)
 					if(Action.i == State->iLastShape)
 					{
 						--State->iLastShape;
+						PopStruct(DRAW_STATE.maShapes, shape);
 					}
 					else
 					{ Assert(!"TODO: undo shape additions mid-array"); }
@@ -830,19 +834,33 @@ OffsetActions(state *State, int Offset)
 					if(Action.i == State->iLastPoint)
 					{
 						--State->iLastPoint;
+						PopStruct(DRAW_STATE.maShapes, shape);
 					}
 					else
 					{ Assert(!"TODO: undo point additions mid-array"); }
 						// does anything actually need to be done?
 				} break;
+
+				default:
+				{
+					Assert(!"Unknown/invalid action type");
+				}
 			}
 		}
 	}
 
 	State->iCurrentAction += Offset;
+	Assert(State->iCurrentAction <= State->iLastAction);
+	// NOTE: shapes on screen need to be updated before this is called
+	// (or you can accept an occasional frame of lag for points near the edge)
+	RecalcNearScreenIntersects(State);
+#if INTERNAL
+	LogActionsToFile(State, "ActionLog.txt");
+#endif
 	END_TIMED_BLOCK;
 }
 
+#if 0
 internal inline void
 OffsetDraw(state *State, int Offset)
 {
@@ -858,6 +876,7 @@ OffsetDraw(state *State, int Offset)
 	RecalcAllIntersects(State);
 #endif
 }
+#endif
 
 internal inline v2
 ExtendSegment(v2 poStart, v2 poDir, v2 poLength)
@@ -1105,8 +1124,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	{
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
 
+		// TODO: reconsider any inconsistencies in actions...
+		State->iLastAction = 0;
+
 		// NOTE: need initial save state to undo to
-		SaveUndoState(State);
+		/* SaveUndoState(State); */
 		State->iSaveDraw = State->iCurrentDraw;
 		State->iSaveAction = State->iCurrentAction;
 
@@ -1302,7 +1324,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		if(DEBUGPress(C_CanvasHome))
 		{ // reset canvas position
-			SaveUndoState(State);
+			/* SaveUndoState(State); */
 			BASIS->Offset = ZeroV2;
 			// TODO: do I want zoom to reset?
 			// BASIS->Zoom   = 1.f;
@@ -1440,7 +1462,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			// adding a point, then realizes they actually want to redo, they
 			// no longer can.
 			OffsetActions(State, -1);
-			OffsetDraw(State, -1);
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
 			State->InputMode = MODE_Normal;
@@ -1487,14 +1508,20 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
+							(State->iCurrentAction > 0))
+#if 0
 						// NOTE: making sure that there is a state available to undo into
-						((State->cDraws >= NUM_UNDO_STATES && State->iLastDraw != iDrawOffset(State, -1)) ||
-							(State->cDraws <  NUM_UNDO_STATES && State->iCurrentDraw > 1)))
-					{ OffsetActions(State, -1); OffsetDraw(State, -1); } // UNDO
+							((State->cDraws >= NUM_UNDO_STATES && State->iLastDraw != iDrawOffset(State, -1)) ||
+							 (State->cDraws <  NUM_UNDO_STATES && State->iCurrentDraw > 1)))
+#endif
+					{ OffsetActions(State, -1); } // UNDO
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
 						(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
-						(State->iCurrentDraw < State->iLastDraw))
-					{ OffsetActions(State, 1); OffsetDraw(State, 1); } // REDO
+						(State->iCurrentAction < State->iLastAction))
+#if 0
+							(State->iCurrentDraw < State->iLastDraw))
+#endif
+					{ OffsetActions(State, 1); } // REDO
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
@@ -1505,7 +1532,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Arc))
 					{ // start drawing arc
 						// NOTE: Starting a shape, save the first point
-						SaveUndoState(State);
+						/* SaveUndoState(State); */
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
 						State->InputMode = MODE_SetLength;
 					}
@@ -1513,14 +1540,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Line))
 					{ // start drawing line
 						// NOTE: Starting a shape, save the first point
-						SaveUndoState(State);
+						/* SaveUndoState(State); */
 						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
 						State->InputMode = MODE_QuickSeg;
 					}
 
 					else if(DEBUGPress(C_Reset))
 					{ // reset canvas
-						SaveUndoState(State);
+						/* SaveUndoState(State); */
 						Reset(State);
 						DebugClear();
 					}
@@ -1611,7 +1638,7 @@ case_mode_drawarc:
 
 					else if(DEBUGClick(C_PointOnly))
 					{ // add point intersecting shape 
-						SaveUndoState(State);
+						/* SaveUndoState(State); */
 						// TODO IMPORTANT (fix): don't add when no shape intersected
 						AddPoint(State, poAtDist, POINT_Extant, 0);
 						State->InputMode = MODE_Normal;
@@ -1757,8 +1784,9 @@ case_mode_drawarc:
 
 					if( ! Mouse.Buttons[InputButton].EndedDown)
 					{ // add point along line (and maybe add segment)
+						// NOTE: remove temporary intersection at user length
 						PopStruct(State->maIntersects, v2);
-						SaveUndoState(State);
+						/* SaveUndoState(State); */
 						uint ipoNew = AddPoint(State, poOnLine, POINT_Extant, 0);
 						if(State->InputMode == MODE_ExtendSeg)  { AddSegment(State, State->ipoSelect, ipoNew); }
 						State->ipoSelect = 0;
@@ -2194,7 +2222,8 @@ case_mode_drawarc:
 				/* "pBasis: (%.2f, %.2f)" */
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
-				/* "iLastPoint: %u" */
+				"iLastPoint: %u"
+				"iLastShape: %u"
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
@@ -2207,9 +2236,10 @@ case_mode_drawarc:
 				/* InputModeText[State->InputMode], */
 				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
-				State->iCurrentAction, State->iLastAction, State->iSaveAction
+				State->iCurrentAction, State->iLastAction, State->iSaveAction,
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
-				/* State->iLastPoint */
+				State->iLastPoint,
+				State->iLastShape
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
