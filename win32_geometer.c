@@ -163,11 +163,9 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 
 		// all in from now?
 		ChangeFilePath(State, FilePath, cchFilePath);
-		State->iCurrentDraw = 0;
-		State->cDraws = 0;
-		State->iLastDraw = 0;
+		State->iCurrentAction = 0;
+		State->iLastAction    = 0;
 
-		uint iCurrentDraw = State->iCurrentDraw;
 		switch(FH.FormatVersion)
 		{
 			case 1:
@@ -181,22 +179,21 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 					Assert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
 					switch(ElType)
 					{
-#define DRAW_LVL iCurrentDraw
 						case HEAD_Points_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->Draw[DRAW_LVL].maPoints,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints,
 									cElements, sizeof(v2), 2, 0, WindowHandle);
 						} break;
 
 						case HEAD_PointStatus_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->Draw[DRAW_LVL].maPointStatus,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maPointStatus,
 									cElements, sizeof(u8), 2, 0, WindowHandle);
 						} break;
 
 						case HEAD_Shapes_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->Draw[DRAW_LVL].maShapes,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes,
 									cElements, sizeof(shape), 1, 2, WindowHandle);
 						} break;
 
@@ -208,7 +205,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 
 						case HEAD_Basis_v1:
 						{
-							u64 cElCheck = fread(&State->Draw[DRAW_LVL].Basis, sizeof(basis), cElements, Result);
+							u64 cElCheck = fread(&State->Basis, sizeof(basis), cElements, Result);
 							cBytesCheck += cElCheck * sizeof(basis);
 							Assert(cElCheck == 1);
 						} break;
@@ -234,7 +231,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 
 		// TODO IMPORTANT: CRC32
 		// fclose?
-		UpdateDrawPointers(State, DRAW_LVL);
+		UpdateDrawPointers(State);
 	}
 
 open_end:
@@ -273,7 +270,7 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->PointStatus + 1);\
 	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->Shapes + 1);\
 	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, (action *)State->maActions.Base + 1); \
-	DATA_PROCESS(HEAD_Basis_v1,       One,                State->Basis)
+	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
 	//           elementType          cElements           arraybase
 
 	// NOTE: needed to fix size of enum
@@ -311,38 +308,45 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 internal void
 ReallocateArenas(state *State, HWND WindowHandle)
 { LOG("REALLOCATION")
-#define ArenaAssert(arena) Assert(arena.Used <= arena.Size)
-	draw_state *NextDraw = &State->Draw[iDrawOffset(State, 1)];
+#define ArenaAssert(arena) Assert(arena->Used <= arena->Size)
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
+	memory_arena *maPoints           = &State->maPoints;
+	memory_arena *maPointStatus      = &State->maPointStatus;
+	memory_arena *maShapes           = &State->maShapes;
+	memory_arena *maPointsOnScreen   = &State->maPointsOnScreen;
+	memory_arena *maShapesNearScreen = &State->maShapesNearScreen;
+	memory_arena *maIntersects       = &State->maIntersects;
+	memory_arena *maActions          = &State->maActions;
+
 	// NOTE: Can add multiple points per frame (intersections), but can't double
 	// NOTE: Realloc the next undo state if needed
-	ArenaAssert(DRAW_STATE.maPoints);
-	ArenaAssert(DRAW_STATE.maPointStatus);
-	ArenaAssert(State->maPointsOnScreen);
-	if(DRAW_STATE.maPoints.Used >= NextDraw->maPoints.Size / 2)
+	ArenaAssert(maPoints);
+	ArenaAssert(maPointStatus);
+	ArenaAssert(maPointsOnScreen);
+	if(maPoints->Used >= maPoints->Size / 2)
 	{ LOG("Adding to points arena");
 		// NOTE: points and pointstatus should have exactly the same number of members
-		Assert(DRAW_STATE.maPointStatus.Used/sizeof(u8) == DRAW_STATE.maPoints.Used/sizeof(v2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maPoints, NextDraw->maPoints.Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maPointStatus, NextDraw->maPointStatus.Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maPointsOnScreen, State->maPointsOnScreen.Size * 2));
+		Assert(maPointStatus->Used/sizeof(u8) == maPoints->Used/sizeof(v2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maPoints,         maPoints->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maPointStatus,    maPointStatus->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maPointsOnScreen, maPointsOnScreen->Size * 2));
 	}
 
 	// NOTE: Can only create 1 shape per frame
-	ArenaAssert(DRAW_STATE.maShapes);
-	ArenaAssert(State->maShapesNearScreen);
-	ArenaAssert(State->maIntersects);
-	if(DRAW_STATE.maShapes.Used >= NextDraw->maShapes.Size)
+	ArenaAssert(maShapes);
+	ArenaAssert(maShapesNearScreen);
+	ArenaAssert(maIntersects);
+	if(maShapes->Used >= maShapes->Size)
 	{ LOG("Adding to shapes arena");
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&NextDraw->maShapes, NextDraw->maShapes.Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maIntersects, State->maIntersects.Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maShapesNearScreen, State->maShapesNearScreen.Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapes,           maShapes->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maIntersects,       maIntersects->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapesNearScreen, maShapesNearScreen->Size * 2));
 	}
-	ArenaAssert(State->maActions);
+	ArenaAssert(maActions);
 	// TODO: this will change once action = user action
-	if(State->maActions.Used >= State->maActions.Size/2 - sizeof(action))
+	if(maActions->Used >= maActions->Size/2 - sizeof(action))
 	{ LOG("Adding to actions arena");
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&State->maActions, State->maActions.Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(maActions, maActions->Size * 2));
 	}
 #undef ArenaAssert
 }
@@ -407,7 +411,6 @@ Save(state *State, HWND WindowHandle, b32 SaveAs)
 		else
 		{
 			State->iSaveAction = State->iCurrentAction;
-			State->iSaveDraw = State->iCurrentDraw;
 		}
 	}
 	END_TIMED_BLOCK;
@@ -587,35 +590,25 @@ ExportSVG(state *State, HWND WindowHandle)
 internal void
 FreeStateArenas(state *State)
 {
-#define cSTART_POINTS 32
-	draw_state *Draw = State->Draw;
-	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
-	{
-		Free(Draw[i].maPoints.Base);
-		Free(Draw[i].maPointStatus.Base);
-		Free(Draw[i].maShapes.Base);
-	}
+	Free(State->maPoints.Base);
+	Free(State->maPointStatus.Base);
+	Free(State->maShapes.Base);
 	Free(State->maActions.Base);
 	Free(State->maIntersects.Base);
 	Free(State->maPointsOnScreen.Base);
 	Free(State->maShapesNearScreen.Base);
-#undef cSTART_POINTS
 }
 
 internal void
 AllocStateArenas(state *State)
 {
 #define cSTART_POINTS 32
-	draw_state *Draw = State->Draw;
-	for(uint i = 0; i < NUM_UNDO_STATES; ++i)
-	{
-		Draw[i].maPoints	  = ArenaCalloc(sizeof(v2)	   * cSTART_POINTS);
-		Draw[i].maPointStatus = ArenaCalloc(sizeof(u8)	   * cSTART_POINTS);
-		Draw[i].maShapes	  = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
-	}
-	State->maActions		  = ArenaCalloc(sizeof(action) * cSTART_POINTS);
-	State->maIntersects		  = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
-	State->maPointsOnScreen	  = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+	State->maPoints           = ArenaCalloc(sizeof(v2)	   * cSTART_POINTS);
+	State->maPointStatus      = ArenaCalloc(sizeof(u8)	   * cSTART_POINTS);
+	State->maShapes           = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	State->maActions          = ArenaCalloc(sizeof(action) * cSTART_POINTS);
+	State->maIntersects       = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
+	State->maPointsOnScreen   = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
 	State->maShapesNearScreen = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
 #undef cSTART_POINTS
 }
@@ -632,8 +625,6 @@ HardReset(state *State, FILE *OpenFile)
 	
 	Reset(&NewState);
 	*State = NewState;
-	// NOTE: need initial save state to undo to
-	SaveUndoState(State);
 }
 
 int CALLBACK

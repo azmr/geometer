@@ -1,6 +1,5 @@
 #ifndef GEOMETER_H
-#define DRAW_STATE State->Draw[State->iCurrentDraw]
-#define pDRAW_STATE State->Draw[iDrawOffset(State, -1)]
+#define DRAW_STATE State->Draw
 #define BASIS State->Basis
 #define pBASIS State->pBasis
 #define POINTS(i) (State->Points[i])
@@ -227,36 +226,21 @@ typedef enum point_flags
 	POINT_Dist         = (1 << 7), 
 } point_flags;
 
-typedef struct draw_state
-{
-	memory_arena maPoints;
-	memory_arena maPointStatus;
-	memory_arena maShapes;
-	basis Basis;
-} draw_state;
-
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
 {
 	v2 *Points;
 	shape *Shapes;
 	u8 *PointStatus;
+	memory_arena maPoints;
+	memory_arena maPointStatus;
+	memory_arena maShapes;
 	memory_arena maIntersects;
 	memory_arena maActions; 
 	memory_arena maShapesNearScreen;
 	memory_arena maPointsOnScreen;
 
-#define NUM_UNDO_STATES 16
-	draw_state Draw[NUM_UNDO_STATES];
-	uint iLastDraw;
-	uint iCurrentDraw;
-	uint iSaveDraw;
-	// NOTE: for when only < NUM_UNDO_STATES are used and checking against 'modified'
-	uint cDraws;
-
-	basis *Basis;
-	// NOTE: probably has to be a pointer to a draw state's basis
-	// if you want bases to create a new undo state
+	basis Basis;
 	basis pBasis;
 
 	uint iSaveAction;
@@ -406,27 +390,15 @@ LogActionsToFile(state *State, char *FilePath)
 }
 #endif // INTERNAL
 
-internal inline uint
-iDrawOffset(state *State, int Offset)
-{
-	uint Result = (State->iCurrentDraw + Offset) % NUM_UNDO_STATES;
-	return Result;
-}
-
 internal inline void
-UpdateDrawPointers(state *State, uint iPrevDraw)
+UpdateDrawPointers(state *State)
 {
-	draw_state *Draw = State->Draw;
-	uint iCurrentDraw = State->iCurrentDraw;
-	State->Points      = (v2 *)Draw[iCurrentDraw].maPoints.Base;
-	State->PointStatus = (u8 *)Draw[iCurrentDraw].maPointStatus.Base;
-	State->Shapes      = (shape *)Draw[iCurrentDraw].maShapes.Base;
+	State->Points      = (v2 *)State->maPoints.Base;
+	State->PointStatus = (u8 *)State->maPointStatus.Base;
+	State->Shapes      = (shape *)State->maShapes.Base;
 	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint = (uint)Draw[iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape = (uint)Draw[iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
-	State->pBasis = Draw[iPrevDraw].Basis;
-	State->Basis  = &Draw[iCurrentDraw].Basis;
-	State->tBasis = 0;
+	State->iLastPoint = (uint)State->maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape = (uint)State->maShapes.Used / sizeof(shape) - 1;
 }
 
 internal void
@@ -437,17 +409,15 @@ ResetNoAction(state *State)
 	{ POINTSTATUS(i) = POINT_Free; }
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
 
-	DRAW_STATE.maPoints.Used       = sizeof(v2);
-	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
-	DRAW_STATE.maShapes.Used       = sizeof(shape);
+	State->maPoints.Used           = sizeof(v2);
+	State->maPointStatus.Used      = sizeof(u8);
+	State->maShapes.Used           = sizeof(shape);
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
-	UpdateDrawPointers(State, 1);
+	UpdateDrawPointers(State);
 
-	*State->Basis = DefaultBasis;
-
-	State->cDraws = 0;
+	State->Basis = DefaultBasis;
 
 	State->tBasis        = 1.f;
 	State->ipoSelect     = 0;
@@ -466,27 +436,6 @@ Reset(state *State)
 	Action.Kind = ACTION_Reset;
 	AppendStruct(&State->maActions, action, Action);
 	++State->iLastAction;
-}
-
-internal inline void
-SaveUndoState(state *State)
-{
-	BEGIN_TIMED_BLOCK;
-	uint iPrevDraw = State->iCurrentDraw;
-	State->iCurrentDraw = iDrawOffset(State, 1);
-	// NOTE: prevents redos
-	State->iLastDraw = State->iCurrentDraw;
-
-	draw_state *Draw = State->Draw;
-	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
-	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
-	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
-	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
-	
-	UpdateDrawPointers(State, iPrevDraw);
-
-	++State->cDraws;
-	END_TIMED_BLOCK;
 }
 
 // TODO (internal): for some reason these aren't found by the compiler
