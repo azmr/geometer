@@ -244,7 +244,7 @@ AddAction(state *State, action Action)
 
 /// returns true if a point is added/updated (i.e. an action is needed)
 internal b32
-AddPointNoAction(state *State, v2 po, uint PointTypes, u8 *PriorStatus, uint *ipoOut)
+AddPointNoAction(state *State, v2 po, uint PointStatus, u8 *PriorStatus, uint *ipoOut)
 {
 	BEGIN_TIMED_BLOCK;
 	/* gDebugV2 = po; */
@@ -254,10 +254,10 @@ AddPointNoAction(state *State, v2 po, uint PointTypes, u8 *PriorStatus, uint *ip
 	{
 		// NOTE: Use existing point, but add any new status (and confirm Extant)
 		if(PriorStatus) { *PriorStatus = POINTSTATUS(ipo); }
-		if((POINTSTATUS(ipo) & (PointTypes | POINT_Extant))) // with full status
+		if((POINTSTATUS(ipo) & (PointStatus | POINT_Extant))) // with full status
 		{ goto end; } // no changes needed; exit
 		else // status needs updating
-		{ POINTSTATUS(ipo) |= PointTypes | POINT_Extant; }
+		{ POINTSTATUS(ipo) |= PointStatus | POINT_Extant; }
 	}
 
 	else 
@@ -270,10 +270,9 @@ AddPointNoAction(state *State, v2 po, uint PointTypes, u8 *PriorStatus, uint *ip
 			PushStruct(&State->maPoints, v2);
 			PushStruct(&State->maPointStatus, u8);
 			ipo = ++State->iLastPoint;
-			/* ++State->cPoints; */
 		}
 		POINTS(ipo) = po;
-		POINTSTATUS(ipo) |= PointTypes | POINT_Extant;
+		POINTSTATUS(ipo) |= PointStatus | POINT_Extant;
 	}
 
 	Result = 1;
@@ -285,13 +284,13 @@ end:
 
 /// returns index of point (may be new or existing)
 internal uint
-AddPoint(state *State, v2 po, uint PointTypes, u8 *PriorStatus)
+AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types PointType)
 {
 	uint Result = 0;
-	if(AddPointNoAction(State, po, PointTypes, PriorStatus, &Result))
+	if(AddPointNoAction(State, po, PointStatus, PriorStatus, &Result))
 	{
 		action Action;
-		Action.Kind = ACTION_Point;
+		Action.Kind = PointType;
 		Action.i = Result;
 		Action.po = po;
 		Action.PointStatus = POINTSTATUS(Result);
@@ -335,12 +334,12 @@ AddIntersectionsAsPoints(state *State, v2 po1, v2 po2, uint cIntersections)
 	BEGIN_TIMED_BLOCK;
 	if(cIntersections == 1)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0);
+		AddPoint(State, po1, POINT_Intersection, 0, ACTION_NonUserPoint);
 	}
 	else if(cIntersections == 2)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0);
-		AddPoint(State, po2, POINT_Intersection, 0);
+		AddPoint(State, po1, POINT_Intersection, 0, ACTION_NonUserPoint);
+		AddPoint(State, po2, POINT_Intersection, 0, ACTION_NonUserPoint);
 	}
 	else { Assert(!cIntersections); }
 	END_TIMED_BLOCK;
@@ -721,7 +720,7 @@ SetBasis(state *State, basis NewBasis)
 internal inline void
 ApplyAction(state *State, action Action)
 {
-	switch(Action.Kind)
+	switch(USERIFY_ACTION(Action.Kind))
 	{
 		case ACTION_Reset:
 		{ ResetNoAction(State); } break;
@@ -757,99 +756,98 @@ ApplyAction(state *State, action Action)
 		{ Assert(!"Unknown action type"); }
 	}
 }
-
 internal inline void
-OffsetActions(state *State, int Offset)
+SimpleRedo(state *State)
 {
 	BEGIN_TIMED_BLOCK;
-	uint iCurrentAction = State->iCurrentAction;
-	Assert(Offset >= 0 || iCurrentAction > (uint)(-Offset) && "Offset won't underflow uint");
-	uint iNewLastAction = iCurrentAction + Offset;
+	Assert(State->iCurrentAction < State->iLastAction);
 	action *Actions = (action *)State->maActions.Base;
-	if(Offset >= 0) // REDO
+	ApplyAction(State, Actions[++State->iCurrentAction]);
+	Assert(State->iCurrentAction <= State->iLastAction);
+	END_TIMED_BLOCK;
+}
+
+internal void
+SimpleUndo(state *State)
+{
+	BEGIN_TIMED_BLOCK;
+	Assert(State->iCurrentAction > 0);
+	action *Actions = (action *)State->maActions.Base;
+	action Action = Actions[State->iCurrentAction];
+	switch(USERIFY_ACTION(Action.Kind))
 	{
-		for(uint iAction = iCurrentAction + 1; iAction <= iNewLastAction; ++iAction)
-		{ ApplyAction(State, Actions[iAction]); }
-	}
-	else // UNDO
-	{ // unapply each action
-		for(uint iAction = iCurrentAction; iAction > iNewLastAction; --iAction)
-		{
-			action Action = Actions[iAction];
-			switch(Action.Kind)
-			{
-				case ACTION_Reset:
-				{ // reapply all actions from scratch
-					// TODO: add checkpoints so it doesn't have to start right from beginning
-					/* Assert(!"TODO: undo reset"); */
-					// NOTE: not thread-safe
-					// PROBLEM: not redoable afterwards:
+		case ACTION_Reset:
+		{ // reapply all actions from scratch
+			// TODO: add checkpoints so it doesn't have to start right from beginning
+			/* Assert(!"TODO: undo reset"); */
+			// NOTE: not thread-safe
+			// PROBLEM: not redoable afterwards:
 #if 0
-					State->maActions.Used = sizeof(action);
+			State->maActions.Used = sizeof(action);
 #else
-					uint iLastAction = State->iLastAction;
+			uint iCurrentAction = State->iCurrentAction;
+			uint iLastAction = State->iLastAction;
 #endif
-					for(uint i = 1; i < iAction; ++i)
-					{ ApplyAction(State, Actions[i]); }
-					// could apply all actions then reduce action length back to current iLast..
-					State->iLastAction = iLastAction;
-					State->iCurrentAction = iCurrentAction;
-				} break;
+			for(uint i = 1; i < State->iCurrentAction; ++i)
+			{ ApplyAction(State, Actions[i]); }
+			// could apply all actions then reduce action length back to current iLast..
+			State->iLastAction = iLastAction;
+			State->iCurrentAction = iCurrentAction;
+		} break;
 
-				case ACTION_RemovePt:
-				{ Assert(Action.i == AddPoint(State, Action.po, Action.PointStatus, 0)); } break;
+		case ACTION_RemovePt:
+		{ Assert(Action.i == AddPoint(State, Action.po, Action.PointStatus, 0, ACTION_Point)); } break;
 
-				case ACTION_Basis:
-				{ // find the previous basis and apply that
-					basis PrevBasis = DefaultBasis; // in case no previous basis found
-					for(uint i = iAction; i > 0; --i)
-					{
-						if(Actions[i].Kind == ACTION_Basis)
-						{
-							PrevBasis = Actions[i].Basis;
-							break;
-						}
-					}
-					SetBasis(State, PrevBasis);
-				} break;
-
-				case ACTION_Segment:
-				case ACTION_Circle:
-				case ACTION_Arc:
+		case ACTION_Basis:
+		{ // find the previous basis and apply that
+			basis PrevBasis = DefaultBasis; // in case no previous basis found
+			for(uint i = State->iCurrentAction; i > 0; --i)
+			{
+				if(Actions[i].Kind == ACTION_Basis)
 				{
-					State->Shapes[Action.i].Kind = SHAPE_Free;
-					if(Action.i == State->iLastShape)
-					{
-						--State->iLastShape;
-						PopStruct(&State->maShapes, shape);
-					}
-					else
-					{ Assert(!"TODO: undo shape additions mid-array"); }
-						// does anything actually need to be done?
-				} break;
-
-				case ACTION_Point:
-				{
-					State->PointStatus[Action.i] = POINT_Free;
-					if(Action.i == State->iLastPoint)
-					{
-						--State->iLastPoint;
-						PopStruct(&State->maPoints, v2);
-					}
-					else
-					{ Assert(!"TODO: undo point additions mid-array"); }
-						// does anything actually need to be done?
-				} break;
-
-				default:
-				{
-					Assert(!"Unknown/invalid action type");
+					PrevBasis = Actions[i].Basis;
+					break;
 				}
 			}
+			SetBasis(State, PrevBasis);
+		} break;
+
+		case ACTION_Segment:
+		case ACTION_Circle:
+		case ACTION_Arc:
+		{
+			State->Shapes[Action.i].Kind = SHAPE_Free;
+			if(Action.i == State->iLastShape)
+			{
+				--State->iLastShape;
+				PopStruct(&State->maShapes, shape);
+			}
+			else
+			{ Assert(!"TODO: undo shape additions mid-array"); }
+			// does anything actually need to be done?
+		} break;
+
+		case ACTION_Point:
+		{
+			State->PointStatus[Action.i] = POINT_Free;
+			if(Action.i == State->iLastPoint)
+			{
+				--State->iLastPoint;
+				PopStruct(&State->maPoints, v2);
+				PopStruct(&State->maPointStatus, u8);
+			}
+			else
+			{ Assert(!"TODO: undo point additions mid-array"); }
+			// does anything actually need to be done?
+		} break;
+
+		default:
+		{
+			Assert(!"Unknown/invalid action type");
 		}
 	}
 
-	State->iCurrentAction += Offset;
+	--State->iCurrentAction;
 	Assert(State->iCurrentAction <= State->iLastAction);
 	// NOTE: shapes on screen need to be updated before this is called
 	// (or you can accept an occasional frame of lag for points near the edge)
@@ -860,6 +858,22 @@ OffsetActions(state *State, int Offset)
 	LogActionsToFile(State, "ActionLog.txt");
 #endif
 	END_TIMED_BLOCK;
+}
+
+
+internal inline void
+UserUndo(state *State)
+{
+	action *Actions = (action *)State->maActions.Base;
+	do { SimpleUndo(State); }
+	while(Actions[State->iCurrentAction].Kind > ACTION_NON_USER);
+}
+internal inline void
+UserRedo(state *State)
+{
+	action *Actions = (action *)State->maActions.Base;
+	do { SimpleRedo(State); }
+	while(Actions[State->iCurrentAction].Kind > ACTION_NON_USER);
 }
 
 #if 0
@@ -1169,6 +1183,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
 	{ LOG("INPUT");
+		action *Actions = (action *)State->maActions.Base;
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
@@ -1458,7 +1473,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			// the point adding overwrites future history, so if user starts
 			// adding a point, then realizes they actually want to redo, they
 			// no longer can.
-			OffsetActions(State, -1);
+			SimpleUndo(State);
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
 			State->InputMode = MODE_Normal;
@@ -1478,6 +1493,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				case MODE_Normal:
 				{
+					Assert(Actions[State->iCurrentAction].Kind < ACTION_NON_USER);
+
 					if(Keyboard.Ctrl.EndedDown)
 					{
 						if(DEBUGPress(Keyboard.S))
@@ -1506,11 +1523,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 							(State->iCurrentAction > 0))
-					{ OffsetActions(State, -1); } // UNDO
+					{ UserUndo(State); } // UNDO
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
 						(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
 						(State->iCurrentAction < State->iLastAction))
-					{ OffsetActions(State, 1); } // REDO
+					{ UserRedo(State); } // REDO
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
@@ -1521,14 +1538,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Arc))
 					{ // start drawing arc
 						// NOTE: Starting a shape, save the first point
-						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
+						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0], ACTION_NonUserPoint);
 						State->InputMode = MODE_SetLength;
 					}
 
 					else if(DEBUGClick(C_Line))
 					{ // start drawing line
 						// NOTE: Starting a shape, save the first point
-						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0]);
+						State->ipoSelect = AddPoint(State, SnapMouseP, POINT_Extant, &State->SavedStatus[0], ACTION_NonUserPoint);
 						State->InputMode = MODE_QuickSeg;
 					}
 
@@ -1610,12 +1627,12 @@ case_mode_drawarc:
 						f32 Radius = State->Length;
 						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON))
 						{
-							AddCircle(State, State->ipoSelect, AddPoint(State, V2(poFocus.X + Radius, poFocus.Y), POINT_Radius, 0));
+							AddCircle(State, State->ipoSelect, AddPoint(State, V2(poFocus.X + Radius, poFocus.Y), POINT_Radius, 0, ACTION_NonUserPoint));
 							State->InputMode = MODE_Normal;
 						}
 						else
 						{
-							State->ipoArcStart = AddPoint(State, poAtDist, POINT_Arc, 0);
+							State->ipoArcStart = AddPoint(State, poAtDist, POINT_Arc, 0, ACTION_NonUserPoint);
 							State->InputMode = MODE_ExtendArc;
 						}
 					}
@@ -1623,7 +1640,8 @@ case_mode_drawarc:
 					else if(DEBUGClick(C_PointOnly))
 					{ // add point intersecting shape 
 						// TODO IMPORTANT (fix): don't add when no shape intersected
-						AddPoint(State, poAtDist, POINT_Extant, 0);
+						AddPoint(State, poAtDist, POINT_Extant, 0, ACTION_Point);
+						// TODO: look out for adding points from existing shape points -> may weird up undo
 						State->InputMode = MODE_Normal;
 					}
 				} break;
@@ -1649,7 +1667,7 @@ case_mode_drawarc:
 
 						else
 						{ // arc
-							uint ipoArcEnd = AddPoint(State, poAtDist, POINT_Arc, 0);
+							uint ipoArcEnd = AddPoint(State, poAtDist, POINT_Arc, 0, ACTION_NonUserPoint);
 							AddArc(State, State->ipoSelect, State->ipoArcStart, ipoArcEnd);
 						}
 						State->ipoSelect = 0;
@@ -1685,7 +1703,7 @@ case_mode_drawarc:
 						}
 						else
 						{ // draw quick seg
-							AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0));
+							AddSegment(State, State->ipoSelect, AddPoint(State, SnapMouseP, POINT_Line, 0, ACTION_NonUserPoint));
 							State->ipoSelect = 0;
 							State->InputMode = MODE_Normal;
 						}
@@ -1724,7 +1742,14 @@ case_mode_drawarc:
 					{ // continue to extending shape if valid
 						if(V2WithinEpsilon(poSelect, SnapMouseP, POINT_EPSILON))
 						{
-							// TODO (ui): cancel point?
+							// NOTE: trying to see if the last point was only just added
+							action Action = Actions[State->iCurrentAction];
+							if(Action.Kind == ACTION_NonUserPoint &&
+							   Action.i == FindPointAtPos(State, poSelect, ~(uint)POINT_Free) &&
+							   V2Equals(Action.po, poSelect) &&
+							   Action.PointStatus != POINT_Free)
+							{ Actions[State->iCurrentAction].Kind -= ACTION_NON_USER; }
+
 							State->ipoSelect = 0;
 							State->InputMode = MODE_Normal;
 						}
@@ -1741,15 +1766,10 @@ case_mode_drawarc:
 #undef DRAW_PERP
 
 
-				// TODO (fix): shape snapping not working
 				case MODE_ExtendLinePt: // fallthrough
 				InputButton = CB_PointOnly;
 				case MODE_ExtendSeg:
 				{ // find point on shape closest to mouse along line
-					// remove temp intersection in case length changes for next frame
-					// NOTE: currently relies on not being overwritten...
-					// may want to move after draw
-
 					// TODO (fix): preview point pulling away from shape
 					v2 TestStart = POINTS(State->ipoSelect); 
 					v2 poExtend = State->poSaved;
@@ -1769,8 +1789,10 @@ case_mode_drawarc:
 					{ // add point along line (and maybe add segment)
 						// NOTE: remove temporary intersection at user length
 						PopStruct(&State->maIntersects, v2);
-						uint ipoNew = AddPoint(State, poOnLine, POINT_Extant, 0);
-						if(State->InputMode == MODE_ExtendSeg)  { AddSegment(State, State->ipoSelect, ipoNew); }
+						if(State->InputMode == MODE_ExtendSeg)
+						{ AddSegment(State, State->ipoSelect, AddPoint(State, poOnLine, POINT_Extant, 0, ACTION_NonUserPoint)); }
+						else
+						{ AddPoint(State, poOnLine, POINT_Extant, 0, ACTION_Point); }
 						State->ipoSelect = 0;
 						State->InputMode = MODE_Normal;
 					}

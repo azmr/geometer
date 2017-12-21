@@ -101,21 +101,31 @@ typedef enum shape_types
 
 // TODO (opt): define the statements to redo each action here?
 #define ACTION_TYPES \
-	ACTION_TYPE(ACTION_Reset   = -2,            "Reset"  ) \
-	ACTION_TYPE(ACTION_RemovePt= -1,            "Remove Pt" ) \
-	ACTION_TYPE(ACTION_Basis   = 0,             "Change Basis"  ) \
-	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add Line"   ) \
-	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add Ray"    ) \
-	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add Segment") \
-	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add Circle" ) \
-	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add Arc"    ) \
-	ACTION_TYPE(ACTION_Point,                   "Add Point"  )
+	ACTION_TYPE(ACTION_Reset   = 0,             "Reset"                  ) \
+	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add line"               ) \
+	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add ray"                ) \
+	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add segment"            ) \
+	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"             ) \
+	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"                ) \
+	ACTION_TYPE(ACTION_Point,                   "Add point"              ) \
+	ACTION_TYPE(ACTION_RemovePt,                "Remove Pt"              ) \
+	ACTION_TYPE(ACTION_Basis,                   "Change Basis"           ) \
+	ACTION_TYPE(ACTION_NON_USER,                "**NON-USER**"           ) \
+	ACTION_TYPE(ACTION_NonUserLine,             "Add line (non-user)"    ) \
+	ACTION_TYPE(ACTION_NonUserRay,              "Add ray (non-user)"     ) \
+	ACTION_TYPE(ACTION_NonUserSegment,          "Add segment (non-user)" ) \
+	ACTION_TYPE(ACTION_NonUserCircle,           "Add circle (non-user)"  ) \
+	ACTION_TYPE(ACTION_NonUserArc,              "Add arc (non-user)"     ) \
+	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   )
+
+#define USERIFY_ACTION(a) ((a) < ACTION_NON_USER ? (a) : (a) - ACTION_NON_USER)
 
 typedef enum action_types
 {
 #define ACTION_TYPE(a, b) a,
 	ACTION_TYPES
 #undef ACTION_TYPE
+	ACTION_Count
 } action_types;
 
 char *ActionTypesStrings[] =
@@ -170,10 +180,6 @@ typedef struct shape
 } shape;
 shape gZeroShape;
 
-// TODO: will be more meaningful when intersections are separate
-// should map to user actions -> better undo facility
-// TODO: store if action was 'user-activated' (change after input)
-// for better undo/redo... could probs store in Kind (negatives/offset?)
 typedef struct action
 {
 	action_types Kind;
@@ -232,6 +238,8 @@ typedef struct state
 	v2 *Points;
 	shape *Shapes;
 	u8 *PointStatus;
+	// TODO (opt): PointStatus now just a marker for free points...
+	// could use bit vector? NaN in the point values?
 	memory_arena maPoints;
 	memory_arena maPointStatus;
 	memory_arena maShapes;
@@ -302,7 +310,7 @@ LogActionsToFile(state *State, char *FilePath)
 		fprintf(ActionFile,
 				"Action %2u: %s",
 				iAction,
-				ActionTypesStrings[Action.Kind+2]);
+				ActionTypesStrings[Action.Kind]);
 
 		if(Action.i)
 		{ fprintf(ActionFile, " -> [%u]", Action.i); }
@@ -316,7 +324,7 @@ LogActionsToFile(state *State, char *FilePath)
 		uint ipo1 = Action.P[0];
 		uint ipo2 = Action.P[1];
 		uint ipo3 = Action.P[2];
-		switch(Action.Kind)
+		switch(USERIFY_ACTION(Action.Kind))
 		{
 			case ACTION_Basis:
 			{
