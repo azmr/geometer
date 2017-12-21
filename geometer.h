@@ -1,6 +1,5 @@
 #ifndef GEOMETER_H
-#define DRAW_STATE State->Draw[State->iCurrentDraw]
-#define pDRAW_STATE State->Draw[iDrawOffset(State, -1)]
+#define DRAW_STATE State->Draw
 #define BASIS State->Basis
 #define pBASIS State->pBasis
 #define POINTS(i) (State->Points[i])
@@ -65,6 +64,8 @@ typedef struct basis
 	// TODO: include in XAxis
 	f32 Zoom;
 } basis;
+#define INITIAL_ZOOM 0.1f
+#define DefaultBasis (basis){ (v2){1.f, 0.f}, (v2){0.f, 0.f}, INITIAL_ZOOM }
 
 typedef struct line
 {
@@ -98,18 +99,42 @@ typedef enum shape_types
 	SHAPE_Arc,
 } shape_types;
 
+// TODO (opt): define the statements to redo each action here?
+#define ACTION_TYPES \
+	ACTION_TYPE(ACTION_Reset   = 0,             "Reset"                  ) \
+	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add line"               ) \
+	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add ray"                ) \
+	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add segment"            ) \
+	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"             ) \
+	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"                ) \
+	ACTION_TYPE(ACTION_Point,                   "Add point"              ) \
+	ACTION_TYPE(ACTION_RemovePt,                "Remove Pt"              ) \
+	ACTION_TYPE(ACTION_Basis,                   "Change Basis"           ) \
+	ACTION_TYPE(ACTION_NON_USER,                "**NON-USER**"           ) \
+	ACTION_TYPE(ACTION_NonUserLine,             "Add line (non-user)"    ) \
+	ACTION_TYPE(ACTION_NonUserRay,              "Add ray (non-user)"     ) \
+	ACTION_TYPE(ACTION_NonUserSegment,          "Add segment (non-user)" ) \
+	ACTION_TYPE(ACTION_NonUserCircle,           "Add circle (non-user)"  ) \
+	ACTION_TYPE(ACTION_NonUserArc,              "Add arc (non-user)"     ) \
+	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   )
+
+#define USERIFY_ACTION(a) ((a) < ACTION_NON_USER ? (a) : (a) - ACTION_NON_USER)
+
 typedef enum action_types
 {
-	ACTION_Reset   = -2,
-	ACTION_Remove  = -1,
-	ACTION_Basis   = 0,
-	ACTION_Line    = SHAPE_Line,
-	ACTION_Ray     = SHAPE_Ray,
-	ACTION_Segment = SHAPE_Segment,
-	ACTION_Circle  = SHAPE_Circle,
-	ACTION_Arc     = SHAPE_Arc,
-	ACTION_Point,
+#define ACTION_TYPE(a, b) a,
+	ACTION_TYPES
+#undef ACTION_TYPE
+	ACTION_Count
 } action_types;
+
+char *ActionTypesStrings[] =
+{
+#define ACTION_TYPE(a, b) b,
+	ACTION_TYPES
+#undef ACTION_TYPE
+};
+#undef ACTION_TYPES
 
 typedef enum input_mode
 {
@@ -144,7 +169,10 @@ typedef union shape_union
 	line Line;
 	circle Circle;
 	arc Arc;
-	uint P[NUM_SHAPE_POINTS];
+	union {
+		uint P[NUM_SHAPE_POINTS];
+		struct { uint P[NUM_SHAPE_POINTS]; } AllPoints;
+	};
 } shape_union;
 
 typedef struct shape
@@ -155,8 +183,6 @@ typedef struct shape
 } shape;
 shape gZeroShape;
 
-// TODO: will be more meaningful when intersections are separate
-// should map to user actions -> better undo facility
 typedef struct action
 {
 	action_types Kind;
@@ -194,7 +220,7 @@ typedef struct debug
 global_variable debug Debug;
 #define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
-// TODO: make these as orthogonal as possible?
+// TODO: replace with better way of indicating existence
 typedef enum point_flags
 {
 	POINT_Free         = 0,
@@ -209,38 +235,28 @@ typedef enum point_flags
 	POINT_Dist         = (1 << 7), 
 } point_flags;
 
-typedef struct draw_state
-{
-	memory_arena maPoints;
-	memory_arena maPointStatus;
-	memory_arena maShapes;
-	basis Basis;
-} draw_state;
-
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
 {
 	v2 *Points;
 	shape *Shapes;
 	u8 *PointStatus;
+	action *Actions;
+	// TODO (opt): PointStatus now just a marker for free points...
+	// could use bit vector? NaN in the point values?
+	memory_arena maPoints;
+	memory_arena maPointStatus;
+	memory_arena maShapes;
 	memory_arena maIntersects;
 	memory_arena maActions; 
 	memory_arena maShapesNearScreen;
 	memory_arena maPointsOnScreen;
 
-#define NUM_UNDO_STATES 16
-	draw_state Draw[NUM_UNDO_STATES];
-	uint iLastDraw;
-	uint iCurrentDraw;
-	uint iSaveDraw;
-	// NOTE: for when only < NUM_UNDO_STATES are used and checking against 'modified'
-	uint cDraws;
-
-	basis *Basis;
-	// NOTE: probably has to be a pointer to a draw state's basis
-	// if you want bases to create a new undo state
+	basis Basis;
 	basis pBasis;
 
+	uint iSaveAction;
+	uint iCurrentAction;
 	uint iLastAction;
 	uint iLastPoint;
 	uint iLastShape;
@@ -277,51 +293,145 @@ typedef struct state
 	u64 OverflowTest;
 } state;
 
-internal inline uint
-iDrawOffset(state *State, int Offset)
+#if INTERNAL
+internal void
+LogActionsToFile(state *State, char *FilePath)
 {
-	uint Result = (State->iCurrentDraw + Offset) % NUM_UNDO_STATES;
-	return Result;
+	FILE *ActionFile = fopen(FilePath, "w");
+
+	memory_arena maActions = State->maActions;
+	// TODO (refactor): ignores initial Reset, make consistent
+	Assert(State->iLastAction == maActions.Used/sizeof(action) - 1);
+	// NOTE: account for initial offset
+	action *Actions = (action *)maActions.Base;
+	uint iLastAction = State->iLastAction;
+	uint iCurrentAction = State->iCurrentAction;
+
+	for(uint iAction = 1; iAction <= iLastAction; ++iAction)
+	{
+		action Action = Actions[iAction];
+
+		fprintf(ActionFile,
+				"Action %2u: %s",
+				iAction,
+				ActionTypesStrings[Action.Kind]);
+
+		if(Action.i)
+		{ fprintf(ActionFile, " -> [%u]", Action.i); }
+
+		if(iAction == iCurrentAction)
+		{ fprintf(ActionFile, "\t\t<-- CURRENT"); }
+
+		fprintf(ActionFile, "\n");
+
+
+		uint ipo1 = Action.P[0];
+		uint ipo2 = Action.P[1];
+		uint ipo3 = Action.P[2];
+		switch(USERIFY_ACTION(Action.Kind))
+		{
+			case ACTION_Basis:
+			{
+				basis B = Action.Basis;
+				fprintf(ActionFile,
+						"\tx-axis: (%.3f, %.3f)\n"
+						"\toffset: (%.3f, %.3f)\n"
+						"\tzoom: %.3f\n",
+						B.XAxis.X, B.XAxis.Y,
+						B.Offset.X, B.Offset.Y,
+						B.Zoom);
+			} break;
+
+			case ACTION_Segment:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				fprintf(ActionFile,
+						"\tPoint 1: %u (%.3f, %.3f)\n"
+						"\tPoint 2: %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y);
+			} break;
+
+			case ACTION_Circle:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				fprintf(ActionFile,
+						"\tFocus:  %u (%.3f, %.3f)\n"
+						"\tRadius: %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y);
+			} break;
+
+			case ACTION_Arc:
+			{
+				v2 po1 = POINTS(ipo1);
+				v2 po2 = POINTS(ipo2);
+				v2 po3 = POINTS(ipo3);
+				fprintf(ActionFile,
+						"\tFocus:  %u (%.3f, %.3f)\n"
+						"\tStart:  %u (%.3f, %.3f)\n"
+						"\tEnd:    %u (%.3f, %.3f)\n",
+						ipo1, po1.X, po1.Y,
+						ipo2, po2.X, po2.Y,
+						ipo3, po3.X, po3.Y);
+			} break;
+
+			case ACTION_Point:
+			{
+				char Types[] = "DARTFILE";
+				char Status[sizeof(Types)];
+				ssprintf(Status, "%08b", Action.PointStatus);
+				v2 po1 = Action.po;
+				fprintf(ActionFile,
+						"\t(%f, %f)\n"
+						"\t        %s\n"
+						"\tStatus: %s\n",
+						po1.X, po1.Y,
+						Types, Status);
+			} break;
+
+			default: {}
+		}
+
+		fprintf(ActionFile, "\n");
+	}
+
+	fclose(ActionFile);
 }
+#endif // INTERNAL
 
 internal inline void
-UpdateDrawPointers(state *State, uint iPrevDraw)
+UpdateArenaPointers(state *State)
 {
-	draw_state *Draw = State->Draw;
-	uint iCurrentDraw = State->iCurrentDraw;
-	State->Points      = (v2 *)Draw[iCurrentDraw].maPoints.Base;
-	State->PointStatus = (u8 *)Draw[iCurrentDraw].maPointStatus.Base;
-	State->Shapes      = (shape *)Draw[iCurrentDraw].maShapes.Base;
+	State->Points      = (v2 *)State->maPoints.Base;
+	State->PointStatus = (u8 *)State->maPointStatus.Base;
+	State->Shapes      = (shape *)State->maShapes.Base;
+	State->Actions     = (action *)State->maActions.Base;
 	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint = (uint)Draw[iCurrentDraw].maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape = (uint)Draw[iCurrentDraw].maShapes.Used / sizeof(shape) - 1;
-	State->pBasis = Draw[iPrevDraw].Basis;
-	State->Basis  = &Draw[iCurrentDraw].Basis;
-	State->tBasis = 0;
+	State->iLastPoint  = (uint)State->maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape  = (uint)State->maShapes.Used / sizeof(shape) - 1;
+	State->iLastAction = (uint)State->maActions.Used / sizeof(action) - 1;
 }
 
 internal void
-Reset(state *State)
+ResetNoAction(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{ POINTSTATUS(i) = POINT_Free; }
 	// NOTE: Point index 0 is reserved for null points (not defined in lines)
 
-	DRAW_STATE.maPoints.Used       = sizeof(v2);
-	DRAW_STATE.maPointStatus.Used  = sizeof(u8);
-	DRAW_STATE.maShapes.Used       = sizeof(shape);
+	State->maPoints.Used           = sizeof(v2);
+	State->maPointStatus.Used      = sizeof(u8);
+	State->maShapes.Used           = sizeof(shape);
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
-	UpdateDrawPointers(State, 1);
+	UpdateArenaPointers(State);
 
-#define INITIAL_ZOOM 0.1f
-	State->Basis->XAxis  = V2(1.f, 0.f);
-	State->Basis->Offset = ZeroV2;
-	State->Basis->Zoom   = INITIAL_ZOOM;
-
-	State->cDraws = 0;
+	State->Basis = DefaultBasis;
 
 	State->tBasis        = 1.f;
 	State->ipoSelect     = 0;
@@ -329,33 +439,17 @@ Reset(state *State)
 
 	State->Length = DEFAULT_LENGTH;
 
+	END_TIMED_BLOCK;
+}
+
+internal void
+Reset(state *State)
+{
+	ResetNoAction(State);
 	action Action;
 	Action.Kind = ACTION_Reset;
 	AppendStruct(&State->maActions, action, Action);
 	++State->iLastAction;
-
-	END_TIMED_BLOCK;
-}
-
-internal inline void
-SaveUndoState(state *State)
-{
-	BEGIN_TIMED_BLOCK;
-	uint iPrevDraw = State->iCurrentDraw;
-	State->iCurrentDraw = iDrawOffset(State, 1);
-	// NOTE: prevents redos
-	State->iLastDraw = State->iCurrentDraw;
-
-	draw_state *Draw = State->Draw;
-	CopyArenaContents(Draw[iPrevDraw].maPoints, &Draw[State->iCurrentDraw].maPoints);
-	CopyArenaContents(Draw[iPrevDraw].maShapes, &Draw[State->iCurrentDraw].maShapes);
-	CopyArenaContents(Draw[iPrevDraw].maPointStatus, &Draw[State->iCurrentDraw].maPointStatus);
-	Draw[State->iCurrentDraw].Basis = Draw[iPrevDraw].Basis;
-	
-	UpdateDrawPointers(State, iPrevDraw);
-
-	++State->cDraws;
-	END_TIMED_BLOCK;
 }
 
 // TODO (internal): for some reason these aren't found by the compiler
