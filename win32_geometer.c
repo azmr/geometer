@@ -231,7 +231,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 
 		// TODO IMPORTANT: CRC32
 		// fclose?
-		UpdateDrawPointers(State);
+		UpdateArenaPointers(State);
+		State->iCurrentAction = State->iLastAction;
 	}
 
 open_end:

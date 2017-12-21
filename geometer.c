@@ -739,7 +739,7 @@ ApplyAction(state *State, action Action)
 			// just stored a normal shape... (it would take more memory...)
 			shape Shape;
 			Shape.Kind = Action.Kind;
-			Shape.Arc = Action.Arc; // NOTE: arc has all 3 points
+			Shape.AllPoints = Action.AllPoints; // NOTE: arc has all 3 points
 			uint iShape = 0;
 			AddShapeNoAction(State, Shape, &iShape);
 			Assert(Action.i == iShape);
@@ -761,8 +761,7 @@ SimpleRedo(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	Assert(State->iCurrentAction < State->iLastAction);
-	action *Actions = (action *)State->maActions.Base;
-	ApplyAction(State, Actions[++State->iCurrentAction]);
+	ApplyAction(State, State->Actions[++State->iCurrentAction]);
 	Assert(State->iCurrentAction <= State->iLastAction);
 	END_TIMED_BLOCK;
 }
@@ -772,7 +771,7 @@ SimpleUndo(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	Assert(State->iCurrentAction > 0);
-	action *Actions = (action *)State->maActions.Base;
+	action *Actions = State->Actions;
 	action Action = Actions[State->iCurrentAction];
 	switch(USERIFY_ACTION(Action.Kind))
 	{
@@ -1139,9 +1138,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	if(!Memory->IsInitialized)
 	{
 		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
-
-		// TODO: reconsider any inconsistencies in actions...
-		State->iLastAction = 0;
 
 		State->iSaveAction = State->iCurrentAction;
 

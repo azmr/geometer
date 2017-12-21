@@ -169,7 +169,10 @@ typedef union shape_union
 	line Line;
 	circle Circle;
 	arc Arc;
-	uint P[NUM_SHAPE_POINTS];
+	union {
+		uint P[NUM_SHAPE_POINTS];
+		struct { uint P[NUM_SHAPE_POINTS]; } AllPoints;
+	};
 } shape_union;
 
 typedef struct shape
@@ -217,7 +220,7 @@ typedef struct debug
 global_variable debug Debug;
 #define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
-// TODO: make these as orthogonal as possible?
+// TODO: replace with better way of indicating existence
 typedef enum point_flags
 {
 	POINT_Free         = 0,
@@ -238,6 +241,7 @@ typedef struct state
 	v2 *Points;
 	shape *Shapes;
 	u8 *PointStatus;
+	action *Actions;
 	// TODO (opt): PointStatus now just a marker for free points...
 	// could use bit vector? NaN in the point values?
 	memory_arena maPoints;
@@ -399,14 +403,16 @@ LogActionsToFile(state *State, char *FilePath)
 #endif // INTERNAL
 
 internal inline void
-UpdateDrawPointers(state *State)
+UpdateArenaPointers(state *State)
 {
 	State->Points      = (v2 *)State->maPoints.Base;
 	State->PointStatus = (u8 *)State->maPointStatus.Base;
 	State->Shapes      = (shape *)State->maShapes.Base;
+	State->Actions     = (action *)State->maActions.Base;
 	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint = (uint)State->maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape = (uint)State->maShapes.Used / sizeof(shape) - 1;
+	State->iLastPoint  = (uint)State->maPoints.Used / sizeof(v2) - 1;
+	State->iLastShape  = (uint)State->maShapes.Used / sizeof(shape) - 1;
+	State->iLastAction = (uint)State->maActions.Used / sizeof(action) - 1;
 }
 
 internal void
@@ -423,7 +429,7 @@ ResetNoAction(state *State)
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
-	UpdateDrawPointers(State);
+	UpdateArenaPointers(State);
 
 	State->Basis = DefaultBasis;
 
