@@ -337,10 +337,11 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	ArenaAssert(maShapes);
 	ArenaAssert(maShapesNearScreen);
 	ArenaAssert(maIntersects);
+	if(maIntersects->Used >= maIntersects->Size / 2)
+	{ MemErrorOnFail(WindowHandle, ArenaRealloc(maIntersects,       maIntersects->Size * 2)); }
 	if(maShapes->Used >= maShapes->Size)
 	{ LOG("Adding to shapes arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapes,           maShapes->Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maIntersects,       maIntersects->Size * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapesNearScreen, maShapesNearScreen->Size * 2));
 	}
 	ArenaAssert(maActions);
@@ -349,6 +350,8 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	{ LOG("Adding to actions arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(maActions, maActions->Size * 2));
 	}
+
+	UpdateArenaPointers(State);
 #undef ArenaAssert
 }
 
@@ -787,6 +790,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
 
 #if !SINGLE_EXECUTABLE
+		// TODO IMPORTANT: fix random overwrites of data
+		// may be OS freeing data used in Lib..?
 		Win32ReloadLibOnRecompile(&Lib); 
 		update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
 		if(!UpdateAndRender) { break; }

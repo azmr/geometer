@@ -293,7 +293,8 @@ typedef struct state
 	u64 OverflowTest;
 } state;
 
-#if INTERNAL
+#define DEBUG_LOG_ACTIONS 0
+#if INTERNAL && DEBUG_LOG_ACTIONS
 internal void
 LogActionsToFile(state *State, char *FilePath)
 {

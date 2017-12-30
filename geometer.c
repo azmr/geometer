@@ -242,6 +242,7 @@ AddAction(state *State, action Action)
 #endif
 }
 
+#include <math.h>
 /// returns true if a point is added/updated (i.e. an action is needed)
 internal b32
 AddPointNoAction(state *State, v2 po, uint PointStatus, u8 *PriorStatus, uint *ipoOut)
@@ -486,6 +487,8 @@ internal b32
 AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 {
 	BEGIN_TIMED_BLOCK;
+	Assert(Shape.P[0] != Shape.P[1]);
+	Assert(Shape.P[0] != Shape.P[2]);
 	b32 Result = 0;
 	b32 ExistingShape = 0;
 	shape *Shapes = State->Shapes;
@@ -1469,7 +1472,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			// the point adding overwrites future history, so if user starts
 			// adding a point, then realizes they actually want to redo, they
 			// no longer can.
-			SimpleUndo(State);
+			UserUndo(State);
 			State->ipoSelect = 0;
 			State->ipoArcStart = 0;
 			State->InputMode = MODE_Normal;
@@ -1623,7 +1626,11 @@ case_mode_drawarc:
 						f32 Radius = State->Length;
 						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON))
 						{
-							AddCircle(State, State->ipoSelect, AddPoint(State, V2(poFocus.X + Radius, poFocus.Y), POINT_Radius, 0, ACTION_NonUserPoint));
+							v2 poRad = V2(poFocus.X + Radius, poFocus.Y);
+							Assert( ! V2Equals(poRad, poFocus));
+							uint ipoRad = AddPoint(State, poRad, POINT_Radius, 0, ACTION_NonUserPoint);
+							Assert(ipoRad != State->ipoSelect);
+							AddCircle(State, State->ipoSelect, ipoRad);
 							State->InputMode = MODE_Normal;
 						}
 						else
@@ -1954,6 +1961,7 @@ case_mode_drawarc:
 					v2 poFocus  = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoFocus], ScreenCentre);
 					v2 poRadius = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoRadius], ScreenCentre);
 					f32 Radius = Dist(poFocus, poRadius);
+					Assert(Radius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnCircle(ScreenBuffer, Mouse.P, poFocus, Radius); }
@@ -2242,24 +2250,34 @@ case_mode_drawarc:
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
-#if 0
-		char ShapeInfo[512];
-		ssprintf(ShapeInfo, "L#  P#\n\n");
-		for(uint i = 1; i <= State->iLastShape && i <= 32; ++i)
-		{
-			ssprintf(ShapeInfo, "%s%02u  %04b\n", ShapeInfo, i, SHAPES(i).Kind);
-		}
-		char PointInfo[512];
-		ssprintf(PointInfo, " # DARTFILE\n\n");
+#if 1
+		TextSize = 13.f;
+		char TextInfoBuffer[512];
+		*TextInfoBuffer = 0;
+		/* ssprintf(TextInfoBuffer, "L#  P#\n\n"); */
+		/* for(uint i = 1; i <= State->iLastShape && i <= 32; ++i) */
+		/* { */
+		/* 	ssprintf(TextInfoBuffer, "%s%02u  %04b\n", TextInfoBuffer, i, SHAPES(i).Kind); */
+		/* } */
+		/* DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize, */
+		/* 		ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK); */
+
+		ssprintf(TextInfoBuffer, " # DARTFILE\n\n");
 		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
 		{
-			ssprintf(PointInfo, "%s%02u %08b\n", PointInfo, i, POINTSTATUS(i));
+			ssprintf(TextInfoBuffer, "%s%02u %08b\n", TextInfoBuffer, i, POINTSTATUS(i));
 		}
-		TextSize = 13.f;
-		DrawString(ScreenBuffer, &State->DefaultFont, ShapeInfo, TextSize,
-				ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK);
-		DrawString(ScreenBuffer, &State->DefaultFont, PointInfo, TextSize,
+		DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
 				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
+
+		*TextInfoBuffer = 0;
+		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
+		{
+			v2 po = State->Points[i];
+			ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
+		}
+		DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
+				ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
 #endif
 	}
 
