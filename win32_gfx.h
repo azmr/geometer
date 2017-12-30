@@ -50,7 +50,7 @@ Win32ScreenResolution(HWND WindowHandle, int *Width, int *Height)
 	HDC DeviceContext = Win32WindowDC(WindowHandle);
 	*Width = GetDeviceCaps(DeviceContext, HORZRES);
 	*Height = GetDeviceCaps(DeviceContext, VERTRES);
-	ReleaseDC(WindowHandle, DeviceContext);
+	DeleteDC(DeviceContext);
 }
 
 internal void
