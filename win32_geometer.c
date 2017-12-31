@@ -859,7 +859,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			}
 		}
 
-#if INTERNAL
+#if INTERNAL && DEBUG_LOG_ACTIONS
 		// Just in case the location-specific logs missed any changes
 		// TODO: How best to assert for anything missed?
 		LogActionsToFile(State, "ActionLog.txt");
