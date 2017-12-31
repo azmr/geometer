@@ -7,7 +7,7 @@
 This project is under development, nothing is final. These are notes I've made for myself.
 By using any executables herein, you understand it is in an unfinished state, and may break your computer or eat your cat.
 
-[Download working prototype here](https://github.com/azmr/geometer/releases)
+[Download working prototype here](https://github.com/azmr/geometer/releases/latest)
 
 ## Contents
 - [Current UI](#current-ui)
