@@ -237,7 +237,7 @@ AddAction(state *State, action Action)
 	State->maActions.Used = State->iCurrentAction * sizeof(action);
 	AppendStruct(&State->maActions, action, Action);
 	State->iLastAction = State->iCurrentAction;
-#if INTERNAL
+#if INTERNAL && DEBUG_LOG_ACTIONS
 	LogActionsToFile(State, "ActionLog.txt");
 #endif
 }
@@ -856,7 +856,7 @@ SimpleUndo(state *State)
 	// TODO: seems to be including the undone shape after undoing
 	// (and the equivalent after redoing?)
 	RecalcNearScreenIntersects(State);
-#if INTERNAL
+#if INTERNAL && DEBUG_LOG_ACTIONS
 	LogActionsToFile(State, "ActionLog.txt");
 #endif
 	END_TIMED_BLOCK;
@@ -1098,7 +1098,8 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 	}
 	else
 	{
-		Result = ClosestPtOnCircle(SnapMouseP, poFocus, Radius);
+		v2 P = V2Equals(SnapMouseP, poFocus) ? MouseP : SnapMouseP;
+		Result = ClosestPtOnCircle(P, poFocus, Radius);
 	}
 	return Result;
 }
@@ -1381,7 +1382,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			if(Keyboard.Shift.EndedDown) { Index = index; } \
 			else /*straight after caps*/ { Index = index + 26; } \
 			testcharindex = Index; \
-			Assert(Index >= 0 && Index < 52) \
+			Assert(Index >= 0 && Index < 52); \
 			if(Keyboard.Alt.EndedDown) { State->LengthStores[Index] = State->Length; } \
 			else if(State->LengthStores[Index] > 0.f && \
 					State->LengthStores[Index] != State->Length) \
