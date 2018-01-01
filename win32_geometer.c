@@ -50,7 +50,7 @@ typedef struct file_header
 	char ID[8];        // unique(ish) text id e.g. "Geometer"/"GeoMeTeR"
 	u16 FormatVersion; // file format version num
 	u16 cArrays;       // for data section
-	u32 CRC32;      // checksum of data
+	u32 CRC32;         // checksum of data
 	u64 cBytes;        // bytes in data section (everything after this point)
 	// Data following this point:
 	//   cArrays * [
@@ -144,6 +144,17 @@ ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 Element
 	return cBytesEl;
 }
 
+internal inline u32
+CRC32FileArray(u32 Continuation, u32 Tag, u32 Count, void *Array, size_t ElSize)
+{
+	u32 Result = Continuation;
+	Result = CRC32(&Tag, sizeof(Tag), Result);
+	Result = CRC32(&Count, sizeof(Count), Result);
+	// TODO IMPORTANT: Count * ElSize????
+	Result = CRC32(Array, Count, Result);
+	return Result;
+}
+
 internal FILE *
 OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND WindowHandle)
 {
@@ -152,6 +163,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 	{
 		Result = fopen(FilePath, "r+b");
 		FileErrorOnFail(WindowHandle, Result, FilePath); 
+		u32 OpenCRC32 = 0;
 		file_header FH;
 		LOG("\tCHECK ID");
 		Assert(fread(&FH, sizeof(FH), 1, Result));
@@ -184,12 +196,14 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints,
 									cElements, sizeof(v2), 2, 0, WindowHandle);
 							ArenaRealloc(&State->maPointsOnScreen, CeilPow2U64(2 * sizeof(v2) * cElements));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Base + sizeof(v2), sizeof(v2));
 						} break;
 
 						case HEAD_PointStatus_v1:
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maPointStatus,
 									cElements, sizeof(u8), 2, 0, WindowHandle);
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_PointStatus_v1, cElements, State->maPointStatus.Base + sizeof(u8), sizeof(u8));
 						} break;
 
 						case HEAD_Shapes_v1:
@@ -197,12 +211,14 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes,
 									cElements, sizeof(shape), 1, 2, WindowHandle);
 							ArenaRealloc(&State->maShapesNearScreen, CeilPow2U64(2 * sizeof(shape) * cElements));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Base + sizeof(shape), sizeof(shape));
 						} break;
 
 						case HEAD_Actions_v1:
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maActions,
 									cElements, sizeof(action), 2, 2, WindowHandle);
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Base + sizeof(action), sizeof(action));
 						} break;
 
 						case HEAD_Basis_v1:
@@ -210,6 +226,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 							u64 cElCheck = fread(&State->Basis, sizeof(basis), cElements, Result);
 							cBytesCheck += cElCheck * sizeof(basis);
 							Assert(cElCheck == 1);
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Basis_v1, 1, &State->Basis, sizeof(basis));
 						} break;
 
 						default:
@@ -231,7 +248,13 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			} break;
 		}
 
+		// TODO: set save action to current action
 		// TODO IMPORTANT: CRC32
+		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle, "The validity check for opening this file (CRC32) failed.\n"
+				"The file might be corrupted, or Geometer might have made an error.\n\n"
+				"If your file looks correct, you can continue, "
+				"but I advise you to back up the existing file before saving over it "
+				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
 		// fclose?
 		UpdateArenaPointers(State);
 		// TODO IMPORTANT: allocate space to account for intersections (and add them?)
@@ -252,7 +275,7 @@ open_error:
 }
 
 // TODO: error checking
-internal void
+internal u32
 SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 {
 	BEGIN_TIMED_BLOCK;
@@ -280,16 +303,12 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
 	//           elementType          cElements           arraybase
 
-	// NOTE: needed to fix size of enum
 	u32 Tag; 
 	u32 One = 1; // To make it addressable
 	// CRC processing and byte count
 #define DATA_PROCESS(tag, count, arraybase) \
-	Tag = tag; \
-	Header.CRC32 = CRC32(&Tag, sizeof(Tag), Header.CRC32); \
-	Header.CRC32 = CRC32(&count, sizeof(count), Header.CRC32); \
-	Header.CRC32 = CRC32(arraybase, count, Header.CRC32); \
-	Header.cBytes += sizeof(Tag) + sizeof(count) + (count)*sizeof((arraybase)[0])
+	Header.CRC32 = CRC32FileArray(Header.CRC32, tag, count, arraybase, sizeof(*(arraybase))); \
+	Header.cBytes += 2*sizeof(u32) + (count)*sizeof(*(arraybase))
 
 	PROCESS_DATA_ARRAY();
 #undef DATA_PROCESS
@@ -310,6 +329,7 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	// TODO: use checksum to ensure written properly?
 	fclose(SaveFile);
 	END_TIMED_BLOCK;
+	return Header.CRC32;
 }
 
 internal void
