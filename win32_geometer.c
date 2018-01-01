@@ -183,6 +183,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints,
 									cElements, sizeof(v2), 2, 0, WindowHandle);
+							ArenaRealloc(&State->maPointsOnScreen, CeilPow2U64(2 * sizeof(v2) * cElements));
 						} break;
 
 						case HEAD_PointStatus_v1:
@@ -195,6 +196,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes,
 									cElements, sizeof(shape), 1, 2, WindowHandle);
+							ArenaRealloc(&State->maShapesNearScreen, CeilPow2U64(2 * sizeof(shape) * cElements));
 						} break;
 
 						case HEAD_Actions_v1:
@@ -232,6 +234,10 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		// TODO IMPORTANT: CRC32
 		// fclose?
 		UpdateArenaPointers(State);
+		// TODO IMPORTANT: allocate space to account for intersections (and add them?)
+		uint cIntersects = CountShapeIntersects(State->Points, State->Shapes + 1, State->iLastShape);
+		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
+		RecalcAllIntersects(State);
 		State->iCurrentAction = State->iLastAction;
 	}
 
