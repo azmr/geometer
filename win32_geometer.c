@@ -632,6 +632,7 @@ HardReset(state *State, FILE *OpenFile)
 	state NewState = {0};
 	AllocStateArenas(&NewState);
 	ChangeFilePath(&NewState, calloc(1, 1), 1); // 1 byte set to 0 (empty string)
+	NewState.DefaultFont = State->DefaultFont;
 	
 	Reset(&NewState);
 	*State = NewState;
