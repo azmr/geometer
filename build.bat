@@ -26,7 +26,9 @@ del lock.tmp
 set CommonCompilerFlags=%CommonCompilerFlags% 
 timethis cl %CommonCompilerFlags% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\win32_geometer.c -Fmwin32_geometer.map /link %CommonLinkerFlags% E:\Documents\Coding\C\geometer\geometer.res
 
-start "Geometer tests" cmd /c "timethis cl -nologo -MTd -FC %CommonOptimisations% %Defines% %Includes% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\test_geometer.c /link %CommonLinkerFlags% && test_geometer.exe & pause"
+start "Geometer tests" cmd /c "timethis cl -nologo -MTd -FC %CommonOptimisations% %Defines% %Includes% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\test_win32_geometer.c /link -PDB:test_win32_geometer.pdb -SUBSYSTEM:CONSOLE %CommonLinkerFlags% && test_win32_geometer.exe & pause"
+
+REM start "Macro expansion" cmd /c "timethis cl -nologo -MTd -FC %CommonOptimisations% %Defines% %Includes% %DebugCompilerFlags% E:\Documents\Coding\C\geometer\test_win32_geometer.c -E /link -PDB:test_win32_geometer.pdb -SUBSYSTEM:CONSOLE %CommonLinkerFlags% > E:\Documents\Coding\C\geometer\test_win32_geometer.i & pause"
 
 echo Finished at %time%
 REM ./win32_geometer.exe
