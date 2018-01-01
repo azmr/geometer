@@ -528,7 +528,7 @@ AABBFromShape(v2 *Points, shape Shape)
 	return Result;
 }
 
-
+#include "geometer_core.c"
 
 #define UPDATE_AND_RENDER(name) platform_request name(image_buffer *ScreenBuffer, memory *Memory, input Input)
 
