@@ -150,8 +150,7 @@ CRC32FileArray(u32 Continuation, u32 Tag, u32 Count, void *Array, size_t ElSize)
 	u32 Result = Continuation;
 	Result = CRC32(&Tag, sizeof(Tag), Result);
 	Result = CRC32(&Count, sizeof(Count), Result);
-	// TODO IMPORTANT: Count * ElSize????
-	Result = CRC32(Array, Count, Result);
+	Result = CRC32(Array, Count * ElSize, Result);
 	return Result;
 }
 
@@ -249,7 +248,6 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		}
 
 		// TODO: set save action to current action
-		// TODO IMPORTANT: CRC32
 		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle, "The validity check for opening this file (CRC32) failed.\n"
 				"The file might be corrupted, or Geometer might have made an error.\n\n"
 				"If your file looks correct, you can continue, "
@@ -257,7 +255,6 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
 		// fclose?
 		UpdateArenaPointers(State);
-		// TODO IMPORTANT: allocate space to account for intersections (and add them?)
 		uint cIntersects = CountShapeIntersects(State->Points, State->Shapes + 1, State->iLastShape);
 		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
 		RecalcAllIntersects(State);
