@@ -278,12 +278,8 @@ typedef struct state
 
 	// TODO: Consolidate to 2 points used as determined by flags
 	uint ipoDrag; // TODO: consolidate into ipoSelect
-	uint ipoSelect;
-	union
-	{
-		uint ipoArcStart; // Non-zero -> drawing arc
-		uint ipoLength; // Lines at length aways from start
-	};
+	v2 poArcStart;
+	v2 poSelect;
 	v2 poSaved;
 	v2 PerpDir;
 
@@ -432,10 +428,7 @@ ResetNoAction(state *State)
 	UpdateArenaPointers(State);
 
 	State->Basis = DefaultBasis;
-
 	State->tBasis        = 1.f;
-	State->ipoSelect     = 0;
-	State->ipoArcStart   = 0;
 
 	State->Length = DEFAULT_LENGTH;
 

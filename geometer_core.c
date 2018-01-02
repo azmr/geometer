@@ -108,6 +108,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	uint Result = 0;
 	// TODO: better way of doing this?
 	f32 Closest = 0;
+	// TODO (opt): look at only those on screen
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{
 		if(POINTSTATUS(i) != POINT_Free)
@@ -255,6 +256,13 @@ RemovePointsOfType(state *State, uint PointType)
 	return Result;
 }
 
+internal inline b32
+IsDrawing(state *State)
+{ return State->InputMode > MODE_Normal; }
+
+internal inline b32
+IsDrawingArc(state *State)
+{ return State->InputMode == MODE_ExtendArc; }
 
 ///////////////////////////////////////////////////////////////////////////////
 //  INTERSECTIONS  ////////////////////////////////////////////////////////////
@@ -264,6 +272,7 @@ internal uint
 ClosestIntersectIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 {
 	BEGIN_TIMED_BLOCK;
+	// TODO (opt): look at only those on screen
 	v2 *Intersects = (v2 *)State->maIntersects.Base;
 	uint iLast = (uint)ArenaCount(State->maIntersects, v2) - 1;
 	uint Result = 0;
@@ -497,7 +506,8 @@ AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 {
 	BEGIN_TIMED_BLOCK;
 	Assert(Shape.P[0] != Shape.P[1]);
-	Assert(Shape.P[0] != Shape.P[2]);
+	Assert(!(Shape.Kind == SHAPE_Arc && Shape.P[0] == Shape.P[2]));
+	Assert(!(Shape.Kind == SHAPE_Arc && Shape.P[1] == Shape.P[2]));
 	b32 Result = 0;
 	b32 ExistingShape = 0;
 	shape *Shapes = State->Shapes;
@@ -575,6 +585,14 @@ AddSegment(state *State, uint P1, uint P2)
 	return Result;
 }
 
+internal inline uint
+AddSegmentAtPoints(state *State, v2 po1, v2 po2)
+{
+	uint ipo1 = AddPoint(State, po1, POINT_Line, 0, ACTION_NonUserPoint);
+	uint ipo2 = AddPoint(State, po2, POINT_Line, 0, ACTION_NonUserPoint);
+	return AddSegment(State, ipo1, ipo2);
+}
+
 /// returns position in Shapes array
 internal inline uint
 AddCircle(state *State, uint ipoFocus, uint ipoRadius)
@@ -585,6 +603,14 @@ AddCircle(state *State, uint ipoFocus, uint ipoRadius)
 	Shape.Circle.ipoRadius = ipoRadius;
 	uint Result = AddShape(State, Shape);
 	return Result;
+}
+
+internal inline uint
+AddCircleAtPoints(state *State, v2 poFocus, v2 poRadius)
+{
+	uint ipoFocus  = AddPoint(State, poFocus,  POINT_Focus,  0, ACTION_NonUserPoint);
+	uint ipoRadius = AddPoint(State, poRadius, POINT_Radius, 0, ACTION_NonUserPoint);
+	return AddCircle(State, ipoFocus, ipoRadius);
 }
 
 /// returns position in Shapes array
@@ -598,6 +624,15 @@ AddArc(state *State, uint ipoFocus, uint ipoStart, uint ipoEnd)
 	Shape.Arc.ipoEnd   = ipoEnd;
 	uint Result = AddShape(State, Shape);
 	return Result;
+}
+
+internal inline uint
+AddArcAtPoints(state *State, v2 poFocus, v2 poStart, v2 poEnd)
+{
+	uint ipoFocus = AddPoint(State, poFocus, POINT_Focus,  0, ACTION_NonUserPoint);
+	uint ipoStart = AddPoint(State, poStart, POINT_Radius, 0, ACTION_NonUserPoint);
+	uint ipoEnd   = AddPoint(State, poEnd,   POINT_Radius, 0, ACTION_NonUserPoint);
+	return AddArc(State, ipoFocus, ipoStart, ipoEnd);
 }
 
 internal inline void
