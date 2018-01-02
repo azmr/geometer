@@ -266,7 +266,6 @@ typedef struct state
 	f32 tBasis;
 	f32 Length;
 	f32 pLength;
-	// TODO IMPORTANT (feature): include these in save
 	f32 LengthStores[26];
 
 	font DefaultFont;

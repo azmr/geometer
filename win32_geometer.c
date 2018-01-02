@@ -43,6 +43,7 @@ typedef enum header_section
 	HEAD_Shapes_v1,
 	HEAD_Actions_v1,
 	HEAD_Basis_v1,
+	HEAD_Lengths_v1,
 } header_section;
 
 typedef struct file_header
@@ -220,12 +221,21 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Base + sizeof(action), sizeof(action));
 						} break;
 
+						case HEAD_Lengths_v1:
+						{
+							u64 cElCheck = fread(State->LengthStores, sizeof(*State->LengthStores), cElements, Result);
+							cBytesCheck += cElCheck * sizeof(*State->LengthStores);
+							Assert(cElCheck == 26);
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Lengths_v1, cElements, State->LengthStores, sizeof(*State->LengthStores));
+						} break;
+
 						case HEAD_Basis_v1:
 						{
 							u64 cElCheck = fread(&State->Basis, sizeof(basis), cElements, Result);
 							cBytesCheck += cElCheck * sizeof(basis);
+							Assert(cElCheck == cElements);
 							Assert(cElCheck == 1);
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Basis_v1, 1, &State->Basis, sizeof(basis));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Basis_v1, cElements, &State->Basis, sizeof(basis));
 						} break;
 
 						default:
@@ -288,20 +298,22 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	Header.ID[6] = 'e';
 	Header.ID[7] = 'r';
 	Header.FormatVersion = 1;
-	Header.cArrays = 5; // IMPORTANT: Keep updated when adding new arrays!
+	Header.cArrays = 6; // IMPORTANT: Keep updated when adding new arrays!
 	Header.CRC32 = 0;  // edited in following macros
 	Header.cBytes = 0; // edited in following macros
 
 #define PROCESS_DATA_ARRAY() \
-	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->Points + 1);\
-	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->PointStatus + 1);\
-	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->Shapes + 1);\
+	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->Points + 1); \
+	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->PointStatus + 1); \
+	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->Shapes + 1); \
 	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, (action *)State->maActions.Base + 1); \
+	DATA_PROCESS(HEAD_Lengths_v1,     cLengthStores,      State->LengthStores); \
 	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
 	//           elementType          cElements           arraybase
 
 	u32 Tag; 
 	u32 One = 1; // To make it addressable
+	u32 cLengthStores = ArrayCount(State->LengthStores);
 	// CRC processing and byte count
 #define DATA_PROCESS(tag, count, arraybase) \
 	Header.CRC32 = CRC32FileArray(Header.CRC32, tag, count, arraybase, sizeof(*(arraybase))); \
@@ -643,6 +655,7 @@ AllocStateArenas(state *State)
 internal void
 HardReset(state *State, FILE *OpenFile)
 {
+	// TODO: set length and pLength
 	if(OpenFile) { fclose(OpenFile); }
 	FreeStateArenas(State);
 	Free(State->FilePath);
