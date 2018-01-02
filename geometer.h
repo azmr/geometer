@@ -267,7 +267,7 @@ typedef struct state
 	f32 Length;
 	f32 pLength;
 	// TODO IMPORTANT (feature): include these in save
-	f32 LengthStores[52];
+	f32 LengthStores[26];
 
 	font DefaultFont;
 	uint cchFilePath;

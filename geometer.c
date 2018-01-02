@@ -505,9 +505,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
 	platform_request File = {0};
 
-	// REMOVE
-	static int testcharindex = 0;
-
 	memory_arena TempArena;
 	InitArena(&TempArena, (u8 *)Memory->TransientStorage, Memory->TransientStorageSize);
 
@@ -747,20 +744,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 #if 1
 #define KEYBOARD_LENGTH_STORE(key, index) \
-		if(DEBUGPress(Keyboard.key)) \
-		{ \
-			int Index; \
-			/* TODO (feature): what if caps lock is on?*/ \
-			if(Keyboard.Shift.EndedDown) { Index = index; } \
-			else /*straight after caps*/ { Index = index + 26; } \
-			testcharindex = Index; \
-			Assert(Index >= 0 && Index < 52); \
-			if(Keyboard.Alt.EndedDown) { State->LengthStores[Index] = State->Length; } \
-			else if(State->LengthStores[Index] > 0.f && \
-					State->LengthStores[Index] != State->Length) \
-			{ \
+		if(DEBUGPress(Keyboard.key)) { \
+			Assert(index >= 0 && index < ArrayCount(State->LengthStores)); \
+			if(Keyboard.Alt.EndedDown) { State->LengthStores[index] = State->Length; } \
+			else if(State->LengthStores[index] > 0.f && \
+					State->LengthStores[index] != State->Length) { \
 				State->pLength = State->Length; \
-				State->Length = State->LengthStores[Index]; \
+				State->Length = State->LengthStores[index]; \
 			} \
 		}
 		KEYBOARD_LENGTH_STORE(A, 0)
