@@ -191,8 +191,8 @@ AddPointNoAction(state *State, v2 po, uint PointStatus, u8 *PriorStatus, uint *i
 		// NOTE: Create new point if needed
 		if(!ipo)
 		{
-			PushStruct(&State->maPoints, v2);
-			PushStruct(&State->maPointStatus, u8);
+			Push1(&State->maPoints);
+			Push1(&State->maPointStatus);
 			ipo = ++State->iLastPoint;
 		}
 		POINTS(ipo) = po;
@@ -273,7 +273,7 @@ ClosestIntersectIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 {
 	BEGIN_TIMED_BLOCK;
 	// TODO (opt): look at only those on screen
-	v2 *Intersects = (v2 *)State->maIntersects.Base;
+	v2 *Intersects = State->maIntersects.Items;
 	uint iLast = (uint)ArenaCount(State->maIntersects, v2) - 1;
 	uint Result = 0;
 	f32 Closest = 0;
@@ -391,7 +391,7 @@ AddIntersection(state *State, v2 po)
 	// TODO (opt): only add if on screen
 	if( ! FindPointAtPos(State, po, ~(uint)POINT_Free))
 	{ // given that there isn't a point already, add an intersection
-		AppendStruct(&State->maIntersects, v2, po);
+		Push(&State->maIntersects, po);
 	}
 }
 
@@ -446,7 +446,7 @@ AddShapeIntersections(state *State, shape *Shapes, uint cShapes, uint iShape)
 	{
 		if(i == iShape) continue;
 
-		cIntersections = IntersectShapes(State->Points, Shape, Shapes[i], &po1, &po2);
+		cIntersections = IntersectShapes(State->maPoints.Items, Shape, Shapes[i], &po1, &po2);
 		AddIntersections(State, po1, po2, cIntersections);
 		Result += cIntersections;
 	}
@@ -457,14 +457,14 @@ AddShapeIntersections(state *State, shape *Shapes, uint cShapes, uint iShape)
 internal inline uint
 AddNearScreenShapeIntersects(state *State, uint iShape)
 {
-	memory_arena Arena = State->maShapesNearScreen;
-	uint Result = AddShapeIntersections(State, (shape *)Arena.Base, (uint)Arena.Used/sizeof(shape), iShape);
+	shape_arena Arena = State->maShapesNearScreen;
+	uint Result = AddShapeIntersections(State, Arena.Items, (uint)Len(Arena), iShape);
 	return Result;
 }
 internal inline uint
 AddAllShapeIntersects(state *State, uint iShape)
 {
-	uint Result = AddShapeIntersections(State, State->Shapes + 1, State->iLastShape, iShape - 1);
+	uint Result = AddShapeIntersections(State, State->maShapes.Items + 1, State->iLastShape, iShape - 1);
 	return Result;
 }
 
@@ -483,14 +483,14 @@ RecalcIntersects(state *State, shape *Shapes, uint cShapes)
 internal inline uint
 RecalcAllIntersects(state *State)
 {
-	uint Result = RecalcIntersects(State, State->Shapes + 1, State->iLastShape);
+	uint Result = RecalcIntersects(State, State->maShapes.Items + 1, State->iLastShape);
 	return Result;
 }
 internal inline uint
 RecalcNearScreenIntersects(state *State)
 {
-	memory_arena Arena = State->maShapesNearScreen;
-	uint Result = RecalcIntersects(State, (shape *)Arena.Base, (uint)ArenaCount(Arena, shape));
+	shape_arena Arena = State->maShapesNearScreen;
+	uint Result = RecalcIntersects(State, Arena.Items, (uint)ArenaCount(Arena, shape));
 	return Result;
 }
 
@@ -510,7 +510,7 @@ AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 	Assert(!(Shape.Kind == SHAPE_Arc && Shape.P[1] == Shape.P[2]));
 	b32 Result = 0;
 	b32 ExistingShape = 0;
-	shape *Shapes = State->Shapes;
+	shape *Shapes = State->maShapes.Items;
 	uint iShape;
 	// NOTE: check if exists already
 	// TODO (opt): any reason why you can't only check onscreen shapes?
@@ -543,7 +543,7 @@ AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 		}
 		else
 		{ // NOTE: new shape
-			AppendStruct(&State->maShapes, shape, Shape);
+			Push(&State->maShapes, Shape);
 			iShape = ++State->iLastShape;
 			AddAllShapeIntersects(State, iShape);
 		}
@@ -639,7 +639,7 @@ internal inline void
 InvalidateShapesAtPoint(state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
-	shape *Shapes = State->Shapes;
+	shape *Shapes = State->maShapes.Items;
 	for(uint i = 1; i <= State->iLastShape; ++i)
 	{ // NOTE: if any of the shape's points match, remove it
 		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
@@ -658,7 +658,7 @@ AddAction(state *State, action Action)
 	++State->iCurrentAction;
 	// NOTE: prevent redoing to future history
 	State->maActions.Used = State->iCurrentAction * sizeof(action);
-	AppendStruct(&State->maActions, action, Action);
+	Push(&State->maActions, Action);
 	State->iLastAction = State->iCurrentAction;
 #if INTERNAL && DEBUG_LOG_ACTIONS
 	LogActionsToFile(State, "ActionLog.txt");

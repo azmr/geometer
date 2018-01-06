@@ -136,7 +136,7 @@ SimpleRedo(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	Assert(State->iCurrentAction < State->iLastAction);
-	ApplyAction(State, State->Actions[++State->iCurrentAction]);
+	ApplyAction(State, Pull(State->maActions, ++State->iCurrentAction));
 	Assert(State->iCurrentAction <= State->iLastAction);
 	END_TIMED_BLOCK;
 }
@@ -146,7 +146,7 @@ SimpleUndo(state *State)
 {
 	BEGIN_TIMED_BLOCK;
 	Assert(State->iCurrentAction > 0);
-	action *Actions = State->Actions;
+	action *Actions = State->maActions.Items;
 	action Action = Actions[State->iCurrentAction];
 	switch(USERIFY_ACTION(Action.Kind))
 	{
@@ -190,11 +190,11 @@ SimpleUndo(state *State)
 		case ACTION_Circle:
 		case ACTION_Arc:
 		{
-			State->Shapes[Action.i].Kind = SHAPE_Free;
+			Pull(State->maShapes, Action.i).Kind = SHAPE_Free;
 			if(Action.i == State->iLastShape)
 			{
 				--State->iLastShape;
-				PopStruct(&State->maShapes, shape);
+				PopDiscard(&State->maShapes);
 			}
 			else
 			{ Assert(!"TODO: undo shape additions mid-array"); }
@@ -203,12 +203,12 @@ SimpleUndo(state *State)
 
 		case ACTION_Point:
 		{
-			State->PointStatus[Action.i] = POINT_Free;
+			Pull(State->maPointStatus, Action.i) = POINT_Free;
 			if(Action.i == State->iLastPoint)
 			{
 				--State->iLastPoint;
-				PopStruct(&State->maPoints, v2);
-				PopStruct(&State->maPointStatus, u8);
+				PopDiscard(&State->maPoints);
+				PopDiscard(&State->maPointStatus);
 			}
 			else
 			{ Assert(!"TODO: undo point additions mid-array"); }
@@ -238,16 +238,14 @@ SimpleUndo(state *State)
 internal inline void
 UserUndo(state *State)
 {
-	action *Actions = (action *)State->maActions.Base;
 	do { SimpleUndo(State); }
-	while(Actions[State->iCurrentAction].Kind > ACTION_NON_USER);
+	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
 }
 internal inline void
 UserRedo(state *State)
 {
-	action *Actions = (action *)State->maActions.Base;
 	do { SimpleRedo(State); }
-	while(Actions[State->iCurrentAction].Kind > ACTION_NON_USER);
+	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
 }
 
 #if 0
@@ -463,8 +461,8 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 	v2 Result;
 	if(ShapeLock)
 	{
-		uint cIntersects = ClosestPtIntersectingCircle(State->Points, State->Shapes, State->iLastShape, MouseP,
-				poFocus, Radius, &Result);
+		uint cIntersects = ClosestPtIntersectingCircle(State->maPoints.Items, State->maShapes.Items,
+				State->iLastShape, MouseP, poFocus, Radius, &Result);
 		if(cIntersects == 0) { Result = ClosestPtOnCircle(MouseP, poFocus, Radius); }
 		DebugReplace("cIntersects: %u\n", cIntersects);
 	}
@@ -506,11 +504,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	platform_request File = {0};
 
 	memory_arena TempArena;
-	InitArena(&TempArena, (u8 *)Memory->TransientStorage, Memory->TransientStorageSize);
+	InitArena(&TempArena, Memory->TransientStorage, Memory->TransientStorageSize);
 
 	if(!Memory->IsInitialized)
 	{
-		InitArena(&Arena, (u8 *)Memory->PermanentStorage + sizeof(state), Memory->PermanentStorageSize - sizeof(state));
+		InitArena(&Arena, (state *)Memory->PermanentStorage + 1, Memory->PermanentStorageSize - sizeof(state));
 
 		State->iSaveAction = State->iCurrentAction;
 
@@ -552,7 +550,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
 	{ LOG("INPUT");
-		action *Actions = (action *)State->maActions.Base;
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
@@ -629,7 +626,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{ poClosest = POINTS(ipoClosest); }
 					else
 					{
-						poClosest = *PullEl(State->maIntersects, ipoClosestIntersect, v2);
+						poClosest = Pull(State->maIntersects, ipoClosestIntersect);
 						ClosestDistSq = ClosestIntersectDistSq;
 					}
 				}
@@ -637,7 +634,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				{ poClosest = POINTS(ipoClosest); }
 				else if(ipoClosestIntersect)
 				{
-					poClosest = *PullEl(State->maIntersects, ipoClosestIntersect, v2);
+					poClosest = Pull(State->maIntersects, ipoClosestIntersect);
 					ClosestDistSq = ClosestIntersectDistSq;
 				}
 
@@ -687,7 +684,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
 				{
 					v2 TestP = ZeroV2;
-					shape Shape = State->Shapes[iShape];
+					shape Shape = Pull(State->maShapes, iShape);
 					switch(Shape.Kind)
 					{
 						case SHAPE_Circle:
@@ -856,14 +853,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		}
 
 		else if(DEBUGPress(C_Cancel) && State->InputMode != MODE_Normal)
-		{ // cancel selection, point returns to saved location
-			State->InputMode = MODE_Normal;
-		}
+		{ State->InputMode = MODE_Normal; }
 
 		else if(DEBUGPress(Keyboard.F1))
-		{
-			State->ShowHelpInfo = !State->ShowHelpInfo;
-		}
+		{ State->ShowHelpInfo = !State->ShowHelpInfo; }
 
 		else
 		{
@@ -874,7 +867,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				case MODE_Normal:
 				{
-					Assert(Actions[State->iCurrentAction].Kind < ACTION_NON_USER);
+					Assert(Pull(State->maActions, State->iCurrentAction).Kind < ACTION_NON_USER);
 
 					if(Keyboard.Ctrl.EndedDown)
 					{
@@ -1137,8 +1130,8 @@ case_mode_drawarc:
 					if(C_ShapeLock.EndedDown)
 					{
 						cIntersects =
-							ClosestPtIntersectingLine(State->Points, State->Shapes, State->iLastShape, CanvasMouseP,
-									TestStart, TestDir, &poOnLine);
+							ClosestPtIntersectingLine(State->maPoints.Items, State->maShapes.Items,
+									State->iLastShape, CanvasMouseP, TestStart, TestDir, &poOnLine);
 						if(cIntersects == 0)  { poOnLine = ClosestPtOnLine(CanvasMouseP, TestStart, TestDir); }
 					}
 					else
@@ -1147,7 +1140,7 @@ case_mode_drawarc:
 					if( ! Mouse.Buttons[InputButton].EndedDown)
 					{ // add point along line (and maybe add segment)
 						// NOTE: remove temporary intersection at user length
-						PopStruct(&State->maIntersects, v2);
+						Pop(&State->maIntersects);
 						if(State->InputMode == MODE_ExtendSeg)
 						{ AddSegmentAtPoints(State, State->poSelect, poOnLine); }
 						else
@@ -1215,12 +1208,8 @@ case_mode_drawarc:
 #endif
 	}
 
-	v2 *Points = State->Points;
-	shape *Shapes = State->Shapes;
-
-	// TODO: do properly with arenas
-	memory_arena *maShapesNearScreen = &State->maShapesNearScreen;
-	memory_arena *maPointsOnScreen   = &State->maPointsOnScreen;
+	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
+	v2_arena *maPointsOnScreen      = &State->maPointsOnScreen;
 	maShapesNearScreen->Used = 0;
 	maPointsOnScreen->Used = 0;
 	uint cShapesNearScreen = 0;
@@ -1245,6 +1234,8 @@ case_mode_drawarc:
 		DrawAABB(ScreenBuffer, ScreenBB, GREEN);
 #endif
 
+		v2 *Points = State->maPoints.Items;
+		shape *Shapes = State->maShapes.Items;
 		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
 		{
 			shape Shape = Shapes[iShape];
@@ -1264,7 +1255,7 @@ case_mode_drawarc:
 			/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
 			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
 			{ // add shape to array of shapes on screen
-				AppendStruct(maShapesNearScreen, shape, Shape);
+				Push(maShapesNearScreen, Shape);
 				++cShapesNearScreen;
 			}
 		}
@@ -1275,7 +1266,7 @@ case_mode_drawarc:
 			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
 			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
 			{
-				AppendStruct(maPointsOnScreen, v2, P);
+				Push(maPointsOnScreen, P);
 				++cPointsOnScreen;
 			}
 		}
@@ -1293,14 +1284,11 @@ case_mode_drawarc:
 			V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
 #endif
 
-		// NOTE: should be unchanged after this point in the frame
-		shape *ShapesNearScreen = (shape *)maShapesNearScreen->Base;
-		v2    *PointsOnScreen   = (v2    *)maPointsOnScreen->Base;
-
+		v2 *Points = State->maPoints.Items;
 		LOG("\tDRAW SHAPES");
 		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)
 		{
-			shape Shape = ShapesNearScreen[iShape];
+			shape Shape = Pull(*maShapesNearScreen, iShape);
 			switch(Shape.Kind)
 			{
 				case SHAPE_Segment:
@@ -1339,7 +1327,7 @@ case_mode_drawarc:
 		for(uint i = 0; i < cPointsOnScreen; ++i)
 		{
 			// NOTE: basis already applied
-			DrawCircleFill(ScreenBuffer, PointsOnScreen[i], 3.f, LIGHT_GREY);
+			DrawCircleFill(ScreenBuffer, Pull(*maPointsOnScreen, i), 3.f, LIGHT_GREY);
 		}
 
 		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
@@ -1628,7 +1616,7 @@ case_mode_drawarc:
 		*TextInfoBuffer = 0;
 		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
 		{
-			v2 po = State->Points[i];
+			v2 po = Pull(State->maPoints, i);
 			ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
 		}
 		DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,

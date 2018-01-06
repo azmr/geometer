@@ -140,7 +140,7 @@ ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 Element
 	// TODO: check individual array size is right
 	// NOTE: add ElementSize to avoid writing valid elements to index 0
 	Assert(Arena->Base);
-	u64 cElCheck = fread(Arena->Base + ElementSize, ElementSize, cElements, File);
+	u64 cElCheck = fread(Arena->Bytes + ElementSize, ElementSize, cElements, File);
 	Assert(cElements == cElCheck);
 	return cBytesEl;
 }
@@ -193,32 +193,32 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 					{
 						case HEAD_Points_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints.Arena,
 									cElements, sizeof(v2), 2, 0, WindowHandle);
-							ArenaRealloc(&State->maPointsOnScreen, CeilPow2U64(2 * sizeof(v2) * cElements));
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Base + sizeof(v2), sizeof(v2));
+							ArenaRealloc(&State->maPointsOnScreen.Arena, CeilPow2U64(2 * sizeof(v2) * cElements));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Bytes + sizeof(v2), sizeof(v2));
 						} break;
 
 						case HEAD_PointStatus_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maPointStatus,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maPointStatus.Arena,
 									cElements, sizeof(u8), 2, 0, WindowHandle);
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_PointStatus_v1, cElements, State->maPointStatus.Base + sizeof(u8), sizeof(u8));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_PointStatus_v1, cElements, State->maPointStatus.Bytes + sizeof(u8), sizeof(u8));
 						} break;
 
 						case HEAD_Shapes_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes.Arena,
 									cElements, sizeof(shape), 1, 2, WindowHandle);
-							ArenaRealloc(&State->maShapesNearScreen, CeilPow2U64(2 * sizeof(shape) * cElements));
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Base + sizeof(shape), sizeof(shape));
+							ArenaRealloc(&State->maShapesNearScreen.Arena, CeilPow2U64(2 * sizeof(shape) * cElements));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Bytes + sizeof(shape), sizeof(shape));
 						} break;
 
 						case HEAD_Actions_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maActions,
+							cBytesCheck += ReadFileArrayToArena(Result, &State->maActions.Arena,
 									cElements, sizeof(action), 2, 2, WindowHandle);
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Base + sizeof(action), sizeof(action));
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Bytes + sizeof(action), sizeof(action));
 						} break;
 
 						case HEAD_Lengths_v1:
@@ -265,8 +265,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
 		// fclose?
 		UpdateArenaPointers(State);
-		uint cIntersects = CountShapeIntersects(State->Points, State->Shapes + 1, State->iLastShape);
-		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
+		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
+		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
 		RecalcAllIntersects(State);
 		State->iCurrentAction = State->iLastAction;
 	}
@@ -303,10 +303,10 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	Header.cBytes = 0; // edited in following macros
 
 #define PROCESS_DATA_ARRAY() \
-	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->Points + 1); \
-	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->PointStatus + 1); \
-	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->Shapes + 1); \
-	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, (action *)State->maActions.Base + 1); \
+	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->maPoints.Items + 1); \
+	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1); \
+	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->maShapes.Items + 1); \
+	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, State->maActions.Items + 1); \
 	DATA_PROCESS(HEAD_Lengths_v1,     cLengthStores,      State->LengthStores); \
 	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
 	//           elementType          cElements           arraybase
@@ -346,13 +346,13 @@ ReallocateArenas(state *State, HWND WindowHandle)
 { LOG("REALLOCATION")
 #define ArenaAssert(arena) Assert(arena->Used <= arena->Size)
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
-	memory_arena *maPoints           = &State->maPoints;
-	memory_arena *maPointStatus      = &State->maPointStatus;
-	memory_arena *maShapes           = &State->maShapes;
-	memory_arena *maPointsOnScreen   = &State->maPointsOnScreen;
-	memory_arena *maShapesNearScreen = &State->maShapesNearScreen;
-	memory_arena *maIntersects       = &State->maIntersects;
-	memory_arena *maActions          = &State->maActions;
+	v2_arena *maPoints              = &State->maPoints;
+	u8_arena *maPointStatus         = &State->maPointStatus;
+	shape_arena *maShapes           = &State->maShapes;
+	v2_arena *maPointsOnScreen      = &State->maPointsOnScreen;
+	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
+	v2_arena *maIntersects          = &State->maIntersects;
+	action_arena *maActions         = &State->maActions;
 
 	// NOTE: Can add multiple points per frame (intersections), but can't double
 	// NOTE: Realloc the next undo state if needed
@@ -363,9 +363,9 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	{ LOG("Adding to points arena");
 		// NOTE: points and pointstatus should have exactly the same number of members
 		Assert(maPointStatus->Used/sizeof(u8) == maPoints->Used/sizeof(v2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maPoints,         maPoints->Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maPointStatus,    maPointStatus->Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maPointsOnScreen, maPointsOnScreen->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointsOnScreen->Arena, maPointsOnScreen->Size * 2));
 	}
 
 	// NOTE: Can only create 1 shape per frame
@@ -373,17 +373,17 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	ArenaAssert(maShapesNearScreen);
 	ArenaAssert(maIntersects);
 	if(maIntersects->Used >= maIntersects->Size / 2)
-	{ MemErrorOnFail(WindowHandle, ArenaRealloc(maIntersects,       maIntersects->Size * 2)); }
+	{ MemErrorOnFail(WindowHandle, ArenaRealloc(&maIntersects->Arena,         maIntersects->Size * 2)); }
 	if(maShapes->Used >= maShapes->Size)
 	{ LOG("Adding to shapes arena");
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapes,           maShapes->Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maShapesNearScreen, maShapesNearScreen->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maShapes->Arena,           maShapes->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maShapesNearScreen->Arena, maShapesNearScreen->Size * 2));
 	}
 	ArenaAssert(maActions);
 	// TODO: this will change once action = user action
 	if(maActions->Used >= maActions->Size/2 - sizeof(action))
 	{ LOG("Adding to actions arena");
-		MemErrorOnFail(WindowHandle, ArenaRealloc(maActions, maActions->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maActions->Arena, maActions->Size * 2));
 	}
 
 	UpdateArenaPointers(State);
@@ -515,7 +515,7 @@ FirstValidShape(state *State)
 	uint iFirstValidShape = 0;
 	for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
 	{
-		shape Shape = State->Shapes[iShape];
+		shape Shape = Pull(State->maShapes, iShape);
 		if(Shape.Kind != SHAPE_Free)
 		{
 			iFirstValidShape = iShape;
@@ -543,8 +543,8 @@ AABBOfAllShapes(v2 *Points, shape *Shapes, uint iFirstValidShape, uint iLastShap
 internal void
 ExportSVGToFile(state *State, char *FilePath)
 {
-	v2 *Points = State->Points;
-	shape *Shapes = State->Shapes;
+	v2 *Points = State->maPoints.Items;
+	shape *Shapes = State->maShapes.Items;
 	uint iLastShape = State->iLastShape;
 	uint iFirstValidShape = FirstValidShape(State);
 
@@ -642,13 +642,13 @@ internal void
 AllocStateArenas(state *State)
 {
 #define cSTART_POINTS 32
-	State->maPoints           = ArenaCalloc(sizeof(v2)	   * cSTART_POINTS);
-	State->maPointStatus      = ArenaCalloc(sizeof(u8)	   * cSTART_POINTS);
-	State->maShapes           = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
-	State->maActions          = ArenaCalloc(sizeof(action) * cSTART_POINTS);
-	State->maIntersects       = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
-	State->maPointsOnScreen   = ArenaCalloc(sizeof(v2)     * cSTART_POINTS);
-	State->maShapesNearScreen = ArenaCalloc(sizeof(shape)  * cSTART_POINTS);
+	State->maPointStatus.Arena      = ArenaCalloc(sizeof(u8    ) * cSTART_POINTS);
+	State->maPoints.Arena           = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
+	State->maShapes.Arena           = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
+	State->maActions.Arena          = ArenaCalloc(sizeof(action) * cSTART_POINTS);
+	State->maIntersects.Arena       = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
+	State->maPointsOnScreen.Arena   = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
+	State->maShapesNearScreen.Arena = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
 #undef cSTART_POINTS
 }
 

@@ -1,11 +1,10 @@
 #ifndef GEOMETER_H
-#define DRAW_STATE State->Draw
 #define BASIS State->Basis
 #define pBASIS State->pBasis
-#define POINTS(i) (State->Points[i])
-#define POINTSTATUS(i) (State->PointStatus[i])
-#define SHAPES(i) (State->Shapes[i])
-#define ACTIONS(i) (*PullEl(State->maActions, i, action))
+#define POINTS(i)      Pull(State->maPoints, i)
+#define POINTSTATUS(i) Pull(State->maPointStatus, i)
+#define SHAPES(i)      Pull(State->maShapes, i)
+#define ACTIONS(i)     Pull(State->maActions, i)
 #define DEFAULT_LENGTH 20.f
 
 #include <types.h>
@@ -36,6 +35,9 @@ static debug_text DebugText;
 #include <fonts.h>
 #include <input.h>
 #include <misc.h>
+
+typedef arena_type(v2); typedef union v2_arena v2_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(u8); typedef union u8_arena u8_arena; // repeated from macro - just for syntax highlighting
 
 #define POINT_EPSILON 0.02f
 
@@ -182,6 +184,17 @@ typedef struct shape
 	shape_union;
 } shape;
 shape gZeroShape;
+typedef arena_type(shape); typedef union shape_arena shape_arena;
+
+internal inline b32
+ShapeEq(shape S1, shape S2)
+{
+	b32 Result = S1.Kind == S2.Kind &&
+				 S1.P[0] == S2.P[0] &&
+				 S1.P[1] == S2.P[1] &&
+				 S1.P[2] == S2.P[2];
+	return Result;
+}
 
 typedef struct action
 {
@@ -197,16 +210,7 @@ typedef struct action
 		};
 	};
 } action;
-
-internal inline b32
-ShapeEq(shape S1, shape S2)
-{
-	b32 Result = S1.Kind == S2.Kind &&
-				 S1.P[0] == S2.P[0] &&
-				 S1.P[1] == S2.P[1] &&
-				 S1.P[2] == S2.P[2];
-	return Result;
-}
+typedef arena_type(action); typedef union action_arena action_arena;
 
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
 typedef struct debug
@@ -238,19 +242,15 @@ typedef enum point_flags
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
 {
-	v2 *Points;
-	shape *Shapes;
-	u8 *PointStatus;
-	action *Actions;
 	// TODO (opt): PointStatus now just a marker for free points...
 	// could use bit vector? NaN in the point values?
-	memory_arena maPoints;
-	memory_arena maPointStatus;
-	memory_arena maShapes;
-	memory_arena maIntersects;
-	memory_arena maActions; 
-	memory_arena maShapesNearScreen;
-	memory_arena maPointsOnScreen;
+	v2_arena maPoints;
+	v2_arena maIntersects;
+	v2_arena maPointsOnScreen;
+	shape_arena maShapesNearScreen;
+	shape_arena maShapes;
+	u8_arena maPointStatus;
+	action_arena maActions; 
 
 	basis Basis;
 	basis pBasis;
@@ -297,15 +297,14 @@ LogActionsToFile(state *State, char *FilePath)
 
 	memory_arena maActions = State->maActions;
 	// TODO (refactor): ignores initial Reset, make consistent
-	Assert(State->iLastAction == maActions.Used/sizeof(action) - 1);
 	// NOTE: account for initial offset
-	action *Actions = (action *)maActions.Base;
+	Assert(State->iLastAction == LEN(maActions.Used) - 1);
 	uint iLastAction = State->iLastAction;
 	uint iCurrentAction = State->iCurrentAction;
 
 	for(uint iAction = 1; iAction <= iLastAction; ++iAction)
 	{
-		action Action = Actions[iAction];
+		action Action = Pull(maActions, iAction);
 
 		fprintf(ActionFile,
 				"Action %2u: %s",
@@ -401,14 +400,10 @@ LogActionsToFile(state *State, char *FilePath)
 internal inline void
 UpdateArenaPointers(state *State)
 {
-	State->Points      = (v2 *)State->maPoints.Base;
-	State->PointStatus = (u8 *)State->maPointStatus.Base;
-	State->Shapes      = (shape *)State->maShapes.Base;
-	State->Actions     = (action *)State->maActions.Base;
 	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint  = (uint)State->maPoints.Used / sizeof(v2) - 1;
-	State->iLastShape  = (uint)State->maShapes.Used / sizeof(shape) - 1;
-	State->iLastAction = (uint)State->maActions.Used / sizeof(action) - 1;
+	State->iLastPoint  = (uint)Len(State->maPoints) - 1;
+	State->iLastShape  = (uint)Len(State->maShapes) - 1;
+	State->iLastAction = (uint)Len(State->maActions) - 1;
 }
 
 internal void
@@ -441,7 +436,7 @@ Reset(state *State)
 	ResetNoAction(State);
 	action Action;
 	Action.Kind = ACTION_Reset;
-	AppendStruct(&State->maActions, action, Action);
+	Push(&State->maActions, Action);
 	++State->iLastAction;
 }
 
