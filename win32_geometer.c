@@ -266,10 +266,10 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
 		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
 		State->iLastAction = (uint)Len(State->maActions) - 1;
+		State->iCurrentAction = State->iSaveAction = State->iLastAction;
 		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
 		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
 		RecalcAllIntersects(State);
-		State->iCurrentAction = State->iLastAction;
 	}
 
 open_end:
