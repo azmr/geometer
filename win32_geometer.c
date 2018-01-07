@@ -48,7 +48,7 @@ typedef enum header_section
 
 typedef struct file_header
 {
-	char ID[8];        // unique(ish) text id e.g. "Geometer"/"GeoMeTeR"
+	char ID[8];        // unique(ish) text id: "Geometer"
 	u16 FormatVersion; // file format version num
 	u16 cArrays;       // for data section
 	u32 CRC32;         // checksum of data
@@ -144,11 +144,10 @@ ArenaAllocSize(u32 cElements, size_t ElementSize, u32 Factor, u32 Add)
 internal inline u64
 ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 ElementSize, u32 Factor, u32 Add, HWND Window)
 {
-	size_t cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
+	size_t cBytesEl = cElements * ElementSize;
 	MemErrorOnFail(Window, ArenaRealloc(Arena, ArenaAllocSize(cElements, ElementSize, Factor, Add)));
-	Arena->Used = cBytesEl;
+	Arena->Used = cBytesEl + ElementSize; // Account for index 0
 	// TODO: check individual array size is right
-	// NOTE: add ElementSize to avoid writing valid elements to index 0
 	Assert(Arena->Base);
 	size_t cElCheck = fread(Arena->Bytes + ElementSize, ElementSize, cElements, File);
 	Assert(cElements == cElCheck);
@@ -181,16 +180,17 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			 FH.ID[4]=='e'&&FH.ID[5]=='t'&&FH.ID[6]=='e'&&FH.ID[7]=='r'))
 		{ goto open_end; }
 
+		// TODO (opt): read in entire file in one go based on cBytes
 		// all in from now?
 		ChangeFilePath(State, FilePath, cchFilePath);
 		State->iCurrentAction = 0;
 		State->iLastAction    = 0;
 
+		u64 cBytesCheck = 0;
 		switch(FH.FormatVersion)
 		{
 			case 1:
 			{
-				u64 cBytesCheck = 0;
 				u64 cBytesCheckT = 0;
 				u32 ElType;
 				u32 cElements;
@@ -269,10 +269,24 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		}
  
 		// TODO: check against FH.cBytes
+		if(cBytesCheck != FH.cBytes) {
+			char *WarningText = cBytesCheck < FH.cBytes ? 
+				"There was less data in the file than expected.\n"
+				"The file might be corrupted, or Geometer might have made an error.\n\n"
+				"If your file looks correct you can continue, "
+				"but I advise you to back up the existing file before saving over it "
+				"(e.g. copy and paste the file in 'My Computer')."
+				:
+				"There was more data in the file than expected.\n"
+				"The file might be corrupted, or Geometer might have made an error.\n\n"
+				"If your file looks correct you can continue, "
+				"but I advise you to back up the existing file before saving over it "
+				"(e.g. copy and paste the file in 'My Computer').";
+				 MessageBox(WindowHandle, WarningText, "CRC32 check failed", MB_ICONWARNING); }
 		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle,
 				"The validity check (CRC32) for opening this file failed.\n"
 				"The file might be corrupted, or Geometer might have made an error.\n\n"
-				"If your file looks correct, you can continue, "
+				"If your file looks correct you can continue, "
 				"but I advise you to back up the existing file before saving over it "
 				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
 		// fclose?
