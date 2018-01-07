@@ -131,16 +131,26 @@ OpenFilenameDefault(HWND OwnerWindow, uint cchFilePath)
 	return File;
 }
 
+internal inline size_t
+ArenaAllocSize(u32 cElements, size_t ElementSize, u32 Factor, u32 Add)
+{
+	size_t cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
+	size_t Result = CeilPow2U64(Factor * cBytesEl + Add * ElementSize);
+	if(Result < ElementSize * cSTART_POINTS)
+	{  Result = ElementSize * cSTART_POINTS; }
+	return Result;
+}
+
 internal inline u64
 ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 ElementSize, u32 Factor, u32 Add, HWND Window)
 {
-	u64 cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
-	MemErrorOnFail(Window, ArenaRealloc(Arena, CeilPow2U64(Factor * cBytesEl + Add * ElementSize)));
+	size_t cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
+	MemErrorOnFail(Window, ArenaRealloc(Arena, ArenaAllocSize(cElements, ElementSize, Factor, Add)));
 	Arena->Used = cBytesEl;
 	// TODO: check individual array size is right
 	// NOTE: add ElementSize to avoid writing valid elements to index 0
 	Assert(Arena->Base);
-	u64 cElCheck = fread(Arena->Bytes + ElementSize, ElementSize, cElements, File);
+	size_t cElCheck = fread(Arena->Bytes + ElementSize, ElementSize, cElements, File);
 	Assert(cElements == cElCheck);
 	return cBytesEl;
 }
@@ -181,19 +191,22 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			case 1:
 			{
 				u64 cBytesCheck = 0;
+				u64 cBytesCheckT = 0;
 				u32 ElType;
 				u32 cElements;
 				for(uint iArray = 0; iArray < FH.cArrays; ++iArray)
 				{
-					DoAssert(cBytesCheck += fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
-					DoAssert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
+					DoAssert(cBytesCheckT = fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
+					cBytesCheck += cBytesCheckT;
+					DoAssert(cBytesCheckT = fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
+					cBytesCheck += cBytesCheckT;
 					switch(ElType)
 					{
 						case HEAD_Points_v1:
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints.Arena,
 									cElements, sizeof(v2), 2, 0, WindowHandle);
-							ArenaRealloc(&State->maPointsOnScreen.Arena, CeilPow2U64(2 * sizeof(v2) * cElements));
+							ArenaRealloc(&State->maPointsOnScreen.Arena, ArenaAllocSize(cElements, sizeof(v2), 2, 0));
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Bytes + sizeof(v2), sizeof(v2));
 						} break;
 
@@ -208,7 +221,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 						{
 							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes.Arena,
 									cElements, sizeof(shape), 1, 2, WindowHandle);
-							ArenaRealloc(&State->maShapesNearScreen.Arena, CeilPow2U64(2 * sizeof(shape) * cElements));
+							ArenaRealloc(&State->maShapesNearScreen.Arena, ArenaAllocSize(cElements, sizeof(shape), 2, 0));
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Bytes + sizeof(shape), sizeof(shape));
 						} break;
 
@@ -256,7 +269,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		}
  
 		// TODO: check against FH.cBytes
-		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle, "The validity check for opening this file (CRC32) failed.\n"
+		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle,
+				"The validity check (CRC32) for opening this file failed.\n"
 				"The file might be corrupted, or Geometer might have made an error.\n\n"
 				"If your file looks correct, you can continue, "
 				"but I advise you to back up the existing file before saving over it "
@@ -267,7 +281,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		State->iLastAction = (uint)Len(State->maActions) - 1;
 		State->iCurrentAction = State->iSaveAction = State->iLastAction;
 		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
-		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
+		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, ArenaAllocSize(cIntersects, sizeof(v2), 2, 0)));
 		RecalcAllIntersects(State);
 	}
 
@@ -639,7 +653,6 @@ FreeStateArenas(state *State)
 internal void
 AllocStateArenas(state *State)
 {
-#define cSTART_POINTS 32
 	State->maPointStatus.Arena      = ArenaCalloc(sizeof(u8    ) * cSTART_POINTS);
 	State->maPoints.Arena           = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
 	State->maShapes.Arena           = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
@@ -647,7 +660,6 @@ AllocStateArenas(state *State)
 	State->maIntersects.Arena       = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
 	State->maPointsOnScreen.Arena   = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
 	State->maShapesNearScreen.Arena = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
-#undef cSTART_POINTS
 }
 
 internal void

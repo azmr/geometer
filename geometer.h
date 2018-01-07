@@ -6,6 +6,7 @@
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
 #define DEFAULT_LENGTH 20.f
+#define cSTART_POINTS 32
 
 #include <types.h>
 

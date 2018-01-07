@@ -696,7 +696,7 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 //  ACTIONS  //////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#define DEBUG_LOG_ACTIONS 1
+#define DEBUG_LOG_ACTIONS 0
 #if INTERNAL && DEBUG_LOG_ACTIONS
 internal void
 LogActionsToFile(state *State, char *FilePath)
@@ -804,6 +804,7 @@ LogActionsToFile(state *State, char *FilePath)
 
 	fclose(ActionFile);
 }
+#endif//INTERNAL && DEBUG_LOG_ACTIONS
 
 internal void
 AddAction(state *State, action Action)
@@ -885,5 +886,3 @@ CountActionPoints(state *State, uint iActionFrom, uint iActionTo)
 	{ if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++Result;} }
 	return Result;
 }
-
-#endif // INTERNAL

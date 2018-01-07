@@ -654,7 +654,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 				}
 				DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
-				gDebugPoint = poClosest;
+				/* gDebugPoint = poClosest; */
 
 #define POINT_SNAP_DIST 5000.f
 				// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
