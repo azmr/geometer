@@ -186,6 +186,12 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		State->iCurrentAction = 0;
 		State->iLastAction    = 0;
 
+#define FileDataWarning(desc, title) MessageBox(WindowHandle, desc \
+				"\nThe file might be corrupted, or Geometer might have made an error.\n\n" \
+				"If your file looks correct you can continue, " \
+				"but I advise you to back up the existing file before saving over it " \
+				"(e.g. copy and paste the file in 'My Computer').", title, MB_ICONWARNING)
+
 		u64 cBytesCheck = 0;
 		switch(FH.FormatVersion)
 		{
@@ -204,37 +210,47 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 					{
 						case HEAD_Points_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maPoints.Arena,
-									cElements, sizeof(v2), 2, 0, WindowHandle);
+							cBytesCheckT = ReadFileArrayToArena(Result, &State->maPoints.Arena, cElements, sizeof(v2), 2, 0, WindowHandle);
+							cBytesCheck += cBytesCheckT;
+							if(cBytesCheckT != cElements * sizeof(v2)) 
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Points)", "Unexpected quantity of data"); }
 							ArenaRealloc(&State->maPointsOnScreen.Arena, ArenaAllocSize(cElements, sizeof(v2), 2, 0));
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Bytes + sizeof(v2), sizeof(v2));
 						} break;
 
 						case HEAD_PointStatus_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maPointStatus.Arena,
-									cElements, sizeof(u8), 2, 0, WindowHandle);
+							cBytesCheckT = ReadFileArrayToArena(Result, &State->maPointStatus.Arena, cElements, sizeof(u8), 2, 0, WindowHandle);
+							cBytesCheck += cBytesCheckT;
+							if(cBytesCheckT != cElements * sizeof(u8)) 
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Point Status)", "Unexpected quantity of data"); }
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_PointStatus_v1, cElements, State->maPointStatus.Bytes + sizeof(u8), sizeof(u8));
 						} break;
 
 						case HEAD_Shapes_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maShapes.Arena,
-									cElements, sizeof(shape), 1, 2, WindowHandle);
+							cBytesCheckT = ReadFileArrayToArena(Result, &State->maShapes.Arena, cElements, sizeof(shape), 1, 2, WindowHandle);
+							cBytesCheck += cBytesCheckT;
+							if(cBytesCheckT != cElements * sizeof(shape)) 
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Shapes)", "Unexpected quantity of data"); }
 							ArenaRealloc(&State->maShapesNearScreen.Arena, ArenaAllocSize(cElements, sizeof(shape), 2, 0));
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Bytes + sizeof(shape), sizeof(shape));
 						} break;
 
 						case HEAD_Actions_v1:
 						{
-							cBytesCheck += ReadFileArrayToArena(Result, &State->maActions.Arena,
-									cElements, sizeof(action), 2, 2, WindowHandle);
+							cBytesCheckT = ReadFileArrayToArena(Result, &State->maActions.Arena, cElements, sizeof(action), 2, 2, WindowHandle);
+							cBytesCheck += cBytesCheckT;
+							if(cBytesCheckT != cElements * sizeof(action)) 
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Actions)", "Unexpected quantity of data"); }
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Bytes + sizeof(action), sizeof(action));
 						} break;
 
 						case HEAD_Lengths_v1:
 						{
 							u64 cElCheck = fread(State->LengthStores, sizeof(*State->LengthStores), cElements, Result);
+							if(cElCheck != cElements)
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Lengths)", "Unexpected quantity of data"); }
 							cBytesCheck += cElCheck * sizeof(*State->LengthStores);
 							Assert(cElCheck == 26);
 							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Lengths_v1, cElements, State->LengthStores, sizeof(*State->LengthStores));
@@ -243,6 +259,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 						case HEAD_Basis_v1:
 						{
 							u64 cElCheck = fread(&State->Basis, sizeof(basis), cElements, Result);
+							if(cElCheck != cElements)
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Basis)", "Unexpected quantity of data"); }
 							cBytesCheck += cElCheck * sizeof(basis);
 							Assert(cElCheck == cElements);
 							Assert(cElCheck == 1);
@@ -268,27 +286,14 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			} break;
 		}
  
-		// TODO: check against FH.cBytes
-		if(cBytesCheck != FH.cBytes) {
-			char *WarningText = cBytesCheck < FH.cBytes ? 
-				"There was less data in the file than expected.\n"
-				"The file might be corrupted, or Geometer might have made an error.\n\n"
-				"If your file looks correct you can continue, "
-				"but I advise you to back up the existing file before saving over it "
-				"(e.g. copy and paste the file in 'My Computer')."
-				:
-				"There was more data in the file than expected.\n"
-				"The file might be corrupted, or Geometer might have made an error.\n\n"
-				"If your file looks correct you can continue, "
-				"but I advise you to back up the existing file before saving over it "
-				"(e.g. copy and paste the file in 'My Computer').";
-				 MessageBox(WindowHandle, WarningText, "CRC32 check failed", MB_ICONWARNING); }
-		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle,
-				"The validity check (CRC32) for opening this file failed.\n"
-				"The file might be corrupted, or Geometer might have made an error.\n\n"
-				"If your file looks correct you can continue, "
-				"but I advise you to back up the existing file before saving over it "
-				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
+		if(cBytesCheck != FH.cBytes)
+		{
+			if(cBytesCheck < FH.cBytes)
+			{ FileDataWarning("There was less data in the file than expected.", "Unexpected quantity of data"); }
+			else
+			{ FileDataWarning("There was more data in the file than expected.", "Unexpected quantity of data"); }
+		}
+		if(OpenCRC32 != FH.CRC32) { FileDataWarning( "The validity check (CRC32) for opening this file failed." , "CRC32 check failed"); }
 		// fclose?
 		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
 		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
@@ -297,6 +302,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
 		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, ArenaAllocSize(cIntersects, sizeof(v2), 2, 0)));
 		RecalcAllIntersects(State);
+#undef FileDataWarning
 	}
 
 open_end:
