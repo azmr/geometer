@@ -153,20 +153,9 @@ SimpleUndo(state *State)
 		case ACTION_Reset:
 		{ // reapply all actions from scratch
 			// TODO: add checkpoints so it doesn't have to start right from beginning
-			/* Assert(!"TODO: undo reset"); */
-			// NOTE: not thread-safe
-			// PROBLEM: not redoable afterwards:
-#if 0
-			State->maActions.Used = sizeof(action);
-#else
 			uint iCurrentAction = State->iCurrentAction;
-			uint iLastAction = State->iLastAction;
-#endif
-			for(uint i = 1; i < State->iCurrentAction; ++i)
+			for(uint i = 1; i < iCurrentAction; ++i)
 			{ ApplyAction(State, Actions[i]); }
-			// could apply all actions then reduce action length back to current iLast..
-			State->iLastAction = iLastAction;
-			State->iCurrentAction = iCurrentAction;
 		} break;
 
 		case ACTION_RemovePt:
@@ -1140,7 +1129,7 @@ case_mode_drawarc:
 					if( ! Mouse.Buttons[InputButton].EndedDown)
 					{ // add point along line (and maybe add segment)
 						// NOTE: remove temporary intersection at user length
-						Pop(&State->maIntersects);
+						PopDiscard(&State->maIntersects);
 						if(State->InputMode == MODE_ExtendSeg)
 						{ AddSegmentAtPoints(State, State->poSelect, poOnLine); }
 						else
