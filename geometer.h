@@ -127,7 +127,9 @@ typedef enum action_types
 #define ACTION_TYPE(a, b) a,
 	ACTION_TYPES
 #undef ACTION_TYPE
-	ACTION_Count
+	ACTION_Count,
+	ACTION_SHAPE_START = ACTION_Line,
+	ACTION_SHAPE_END   = ACTION_Arc
 } action_types;
 
 char *ActionTypesStrings[] =
@@ -198,8 +200,9 @@ ShapeEq(shape S1, shape S2)
 
 typedef struct action
 {
+	// TODO: choose size for this instead of action_types, otherwise serializing will be unpredictable
 	action_types Kind;
-	uint i;
+	u32 i;
 	union {
 		shape_union;
 		basis Basis;

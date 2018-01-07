@@ -1,29 +1,30 @@
 internal void AddAction(state *State, action Action);
-
-internal inline void
-UpdateArenaPointers(state *State)
-{
-	// NOTE: ignore space for empty zeroth pos
-	State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
-	State->iLastShape  = (uint)Len(State->maShapes)  - 1;
-	State->iLastAction = (uint)Len(State->maActions) - 1;
-}
+internal uint CountActionPoints(state *State, uint iActionFrom, uint iActionTo);
+internal uint CountActionShapes(state *State, uint iActionFrom, uint iActionTo);
 
 internal void
-ResetNoAction(state *State)
+ResetNoAction(state *State, uint iAction)
 {
 	BEGIN_TIMED_BLOCK;
-	for(uint i = 1; i <= State->iLastPoint; ++i)
-	{ POINTSTATUS(i) = POINT_Free; }
-	// NOTE: Point index 0 is reserved for null points (not defined in lines)
-
-	State->maPoints.Used           = sizeof(v2);
-	State->maPointStatus.Used      = sizeof(u8);
-	State->maShapes.Used           = sizeof(shape);
+ 
+	uint cPoints = 0;
+	uint cShapes = 0;
+	if(iAction)
+	{
+		cPoints = CountActionPoints(State, 1, iAction);
+		cShapes = CountActionShapes(State, 1, iAction);
+	}
+	State->iLastPoint = cPoints;
+	State->iLastShape = cPoints;
+	State->maPointStatus.Used      = sizeof(u8)    * (1+cPoints);
+	State->maPoints.Used           = sizeof(v2)    * (1+cPoints);
+	State->maShapes.Used           = sizeof(shape) * (1+cShapes);
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
-	UpdateArenaPointers(State);
+
+	for(uint i = cPoints+1; i <= State->iLastPoint; ++i)
+	{ POINTSTATUS(i) = POINT_Free; }
 
 	State->Basis = DefaultBasis;
 	State->tBasis = 1.f;
@@ -34,11 +35,12 @@ ResetNoAction(state *State)
 }
 
 internal void
-Reset(state *State)
+Reset(state *State, uint iAction)
 {
-	ResetNoAction(State);
+	ResetNoAction(State, iAction);
 	action Action;
 	Action.Kind = ACTION_Reset;
+	Action.i = iAction;
 	AddAction(State, Action);
 }
 
@@ -694,68 +696,16 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 //  ACTIONS  //////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-internal void
-AddAction(state *State, action Action)
-{
-	++State->iCurrentAction;
-	// NOTE: prevent redoing to future history
-	State->maActions.Used = State->iCurrentAction * sizeof(action);
-	Push(&State->maActions, Action);
-	State->iLastAction = State->iCurrentAction;
-#if INTERNAL && DEBUG_LOG_ACTIONS
-	LogActionsToFile(State, "ActionLog.txt");
-#endif
-}
-
-internal inline void
-ApplyAction(state *State, action Action)
-{
-	switch(USERIFY_ACTION(Action.Kind))
-	{
-		case ACTION_Reset:
-		{ ResetNoAction(State); } break;
-
-		case ACTION_RemovePt:
-		{ Assert(!"TODO: RemovePt"); } break;
-
-		case ACTION_Basis:
-		{ SetBasis(State, Action.Basis); } break;
-
-		case ACTION_Segment:
-		case ACTION_Circle:
-		case ACTION_Arc:
-		{
-			shape Shape;
-			Shape.Kind = Action.Kind;
-			Shape.AllPoints = Action.AllPoints;
-			uint iShape = 0;
-			AddShapeNoAction(State, Shape, &iShape);
-			Assert(Action.i == iShape);
-		} break;
-
-		case ACTION_Point:
-		{
-			uint ipo = 0;
-			AddPointNoAction(State, Action.po, Action.PointStatus, 0, &ipo);
-			Assert(Action.i == ipo);
-		} break;
-
-		default:
-		{ Assert(!"Unknown action type"); }
-	}
-}
-
-#define DEBUG_LOG_ACTIONS 0
+#define DEBUG_LOG_ACTIONS 1
 #if INTERNAL && DEBUG_LOG_ACTIONS
 internal void
 LogActionsToFile(state *State, char *FilePath)
 {
 	FILE *ActionFile = fopen(FilePath, "w");
 
-	memory_arena maActions = State->maActions;
-	// TODO (refactor): ignores initial Reset, make consistent
+	action_arena maActions = State->maActions;
 	// NOTE: account for initial offset
-	Assert(State->iLastAction == LEN(maActions.Used) - 1);
+	Assert(State->iLastAction == Len(maActions)-1);
 	uint iLastAction = State->iLastAction;
 	uint iCurrentAction = State->iCurrentAction;
 
@@ -777,6 +727,8 @@ LogActionsToFile(state *State, char *FilePath)
 		fprintf(ActionFile, "\n");
 
 
+		// NOTE: not doing boundary checks (i.e. `Pull`) as I'm accessing
+		// outside the Len - this is only because this is for debugging!
 		uint ipo1 = Action.P[0];
 		uint ipo2 = Action.P[1];
 		uint ipo3 = Action.P[2];
@@ -796,8 +748,8 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Segment:
 			{
-				v2 po1 = POINTS(ipo1);
-				v2 po2 = POINTS(ipo2);
+				v2 po1 = State->maPoints.Items[ipo1];
+				v2 po2 = State->maPoints.Items[ipo2];
 				fprintf(ActionFile,
 						"\tPoint 1: %u (%.3f, %.3f)\n"
 						"\tPoint 2: %u (%.3f, %.3f)\n",
@@ -807,8 +759,8 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Circle:
 			{
-				v2 po1 = POINTS(ipo1);
-				v2 po2 = POINTS(ipo2);
+				v2 po1 = State->maPoints.Items[ipo1];
+				v2 po2 = State->maPoints.Items[ipo2];
 				fprintf(ActionFile,
 						"\tFocus:  %u (%.3f, %.3f)\n"
 						"\tRadius: %u (%.3f, %.3f)\n",
@@ -818,9 +770,9 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Arc:
 			{
-				v2 po1 = POINTS(ipo1);
-				v2 po2 = POINTS(ipo2);
-				v2 po3 = POINTS(ipo3);
+				v2 po1 = State->maPoints.Items[ipo1];
+				v2 po2 = State->maPoints.Items[ipo2];
+				v2 po3 = State->maPoints.Items[ipo3];
 				fprintf(ActionFile,
 						"\tFocus:  %u (%.3f, %.3f)\n"
 						"\tStart:  %u (%.3f, %.3f)\n"
@@ -852,4 +804,86 @@ LogActionsToFile(state *State, char *FilePath)
 
 	fclose(ActionFile);
 }
+
+internal void
+AddAction(state *State, action Action)
+{
+	++State->iCurrentAction;
+	// NOTE: prevent redoing to future history
+	State->maActions.Used = State->iCurrentAction * sizeof(action);
+	Push(&State->maActions, Action);
+	State->iLastAction = State->iCurrentAction;
+#if INTERNAL && DEBUG_LOG_ACTIONS
+	LogActionsToFile(State, "ActionLog.txt");
+#endif
+}
+
+internal inline void
+ApplyAction(state *State, action Action)
+{
+	switch(USERIFY_ACTION(Action.Kind))
+	{
+		case ACTION_Reset:
+		{ ResetNoAction(State, 0); } break;
+
+		case ACTION_RemovePt:
+		{ Assert(!"TODO: RemovePt"); } break;
+
+		case ACTION_Basis:
+		{ SetBasis(State, Action.Basis); } break;
+
+		case ACTION_Segment:
+		case ACTION_Circle:
+		case ACTION_Arc:
+		{
+			shape Shape;
+			Shape.Kind = Action.Kind;
+			Shape.AllPoints = Action.AllPoints;
+			uint iShape = 0;
+			AddShapeNoAction(State, Shape, &iShape);
+			Assert(Action.i == iShape);
+		} break;
+
+		case ACTION_Point:
+		{
+			uint ipo = 0;
+			AddPointNoAction(State, Action.po, Action.PointStatus, 0, &ipo);
+			Assert(Action.i == ipo);
+		} break;
+
+		default:
+		{ Assert(!"Unknown action type"); }
+	}
+}
+
+internal inline b32 ActionIsShape(action_types Action)
+{
+	Action = USERIFY_ACTION(Action);
+	b32 Result = (Action >= ACTION_SHAPE_START && Action <= ACTION_SHAPE_END);
+	return Result;
+}
+
+internal inline b32 ActionIsPoint(action_types Action)
+{
+	b32 Result = USERIFY_ACTION(Action) == ACTION_Point;
+	return Result;
+}
+
+internal uint
+CountActionShapes(state *State, uint iActionFrom, uint iActionTo)
+{
+	uint Result = 0;
+	for(uint iAction = iActionFrom; iAction <= iActionTo; ++iAction)
+	{ if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++Result;} }
+	return Result;
+}
+internal uint
+CountActionPoints(state *State, uint iActionFrom, uint iActionTo)
+{
+	uint Result = 0;
+	for(uint iAction = iActionFrom; iAction <= iActionTo; ++iAction)
+	{ if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++Result;} }
+	return Result;
+}
+
 #endif // INTERNAL

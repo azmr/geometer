@@ -154,7 +154,7 @@ SimpleUndo(state *State)
 		{ // reapply all actions from scratch
 			// TODO: add checkpoints so it doesn't have to start right from beginning
 			uint iCurrentAction = State->iCurrentAction;
-			for(uint i = 1; i < iCurrentAction; ++i)
+			for(uint i = Action.i; i < iCurrentAction; ++i)
 			{ ApplyAction(State, Actions[i]); }
 		} break;
 
@@ -856,7 +856,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{
 				case MODE_Normal:
 				{
-					Assert(Pull(State->maActions, State->iCurrentAction).Kind < ACTION_NON_USER);
+					if(State->iCurrentAction)
+					{ Assert(Pull(State->maActions, State->iCurrentAction).Kind < ACTION_NON_USER); }
 
 					if(Keyboard.Ctrl.EndedDown)
 					{
@@ -914,7 +915,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGPress(C_Reset))
 					{ // reset canvas
-						Reset(State);
+						Reset(State, 0);
 						DebugClear();
 					}
 					{// unwanted?

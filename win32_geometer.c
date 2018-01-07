@@ -166,12 +166,10 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		u32 OpenCRC32 = 0;
 		file_header FH;
 		LOG("\tCHECK ID");
-		Assert(fread(&FH, sizeof(FH), 1, Result));
+		DoAssert(fread(&FH, sizeof(FH), 1, Result));
 		if(!(FH.ID[0]=='G'&&FH.ID[1]=='e'&&FH.ID[2]=='o'&&FH.ID[3]=='m'&&
 			 FH.ID[4]=='e'&&FH.ID[5]=='t'&&FH.ID[6]=='e'&&FH.ID[7]=='r'))
-		{
-			goto open_end;
-		}
+		{ goto open_end; }
 
 		// all in from now?
 		ChangeFilePath(State, FilePath, cchFilePath);
@@ -187,8 +185,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				u32 cElements;
 				for(uint iArray = 0; iArray < FH.cArrays; ++iArray)
 				{
-					Assert(cBytesCheck += fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
-					Assert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
+					DoAssert(cBytesCheck += fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
+					DoAssert(cBytesCheck += fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
 					switch(ElType)
 					{
 						case HEAD_Points_v1:
@@ -256,7 +254,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				goto open_error;
 			} break;
 		}
-
+ 
+		// TODO: check against FH.cBytes
 		// TODO: set save action to current action
 		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle, "The validity check for opening this file (CRC32) failed.\n"
 				"The file might be corrupted, or Geometer might have made an error.\n\n"
@@ -264,7 +263,9 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				"but I advise you to back up the existing file before saving over it "
 				"(e.g. copy and paste the file in 'My Computer').", "CRC32 check failed", MB_ICONWARNING); }
 		// fclose?
-		UpdateArenaPointers(State);
+		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
+		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
+		State->iLastAction = (uint)Len(State->maActions) - 1;
 		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
 		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
 		RecalcAllIntersects(State);
@@ -385,8 +386,6 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	{ LOG("Adding to actions arena");
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maActions->Arena, maActions->Size * 2));
 	}
-
-	UpdateArenaPointers(State);
 #undef ArenaAssert
 }
 
@@ -655,7 +654,7 @@ AllocStateArenas(state *State)
 internal void
 HardReset(state *State, FILE *OpenFile)
 {
-	// TODO: set length and pLength
+	// TODO: set length and pLength (and bases?)
 	if(OpenFile) { fclose(OpenFile); }
 	FreeStateArenas(State);
 	Free(State->FilePath);
@@ -663,8 +662,9 @@ HardReset(state *State, FILE *OpenFile)
 	AllocStateArenas(&NewState);
 	ChangeFilePath(&NewState, calloc(1, 1), 1); // 1 byte set to 0 (empty string)
 	NewState.DefaultFont = State->DefaultFont;
+	NewState.maActions.Used = sizeof(action);
 	
-	Reset(&NewState);
+	ResetNoAction(&NewState, 0);
 	*State = NewState;
 }
 
@@ -700,17 +700,19 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	}
 
 	state *State = (state *)Memory.PermanentStorage;
+	// Should already be cleared to 0, but just to be doubly sure...
+	state EmptyState = {0};
+	*State = EmptyState;
 
 	LOG("OPEN BLANK FILE");
-	AllocStateArenas(State);
-	Reset(State);
+	HardReset(State, 0);
 
 	State->cchFilePath = 1024;
 	State->FilePath = calloc(State->cchFilePath, sizeof(char));
 	FILE *OpenedFile = 0;
 
 	char **argv = __argv;
-	uint argc = __argc;
+	uint   argc = __argc;
 	if(argc > 1)
 	{
 		LOG("OPEN FILENAME");
