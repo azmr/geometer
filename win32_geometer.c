@@ -627,10 +627,7 @@ ExportSVG(state *State, HWND WindowHandle)
 		ExportSVGToFile(State, ExportPath);
 		free(ExportPath);
 	}
-	else
-	{
-		MessageBox(WindowHandle, "Unable to export SVG, could not find file name.", "Export failed", MB_ICONERROR);
-	}
+	// else has been cancelled (or an error message has already been presented)
 	END_TIMED_BLOCK;
 }
 
