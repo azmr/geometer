@@ -256,7 +256,6 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		}
  
 		// TODO: check against FH.cBytes
-		// TODO: set save action to current action
 		if(OpenCRC32 != FH.CRC32) { MessageBox(WindowHandle, "The validity check for opening this file (CRC32) failed.\n"
 				"The file might be corrupted, or Geometer might have made an error.\n\n"
 				"If your file looks correct, you can continue, "
@@ -266,10 +265,10 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
 		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
 		State->iLastAction = (uint)Len(State->maActions) - 1;
+		State->iCurrentAction = State->iSaveAction = State->iLastAction;
 		uint cIntersects = CountShapeIntersects(State->maPoints.Items, State->maShapes.Items + 1, State->iLastShape);
 		MemErrorOnFail(0, ArenaRealloc(&State->maIntersects.Arena, 2 * CeilPow2U64(sizeof(v2) * cIntersects)));
 		RecalcAllIntersects(State);
-		State->iCurrentAction = State->iLastAction;
 	}
 
 open_end:
