@@ -208,64 +208,35 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 					cBytesCheck += cBytesCheckT;
 					switch(ElType)
 					{
-						case HEAD_Points_v1:
-						{
-							cBytesCheckT = ReadFileArrayToArena(Result, &State->maPoints.Arena, cElements, sizeof(v2), 2, 0, WindowHandle);
-							cBytesCheck += cBytesCheckT;
-							if(cBytesCheckT != cElements * sizeof(v2)) 
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Points)", "Unexpected quantity of data"); }
-							ArenaRealloc(&State->maPointsOnScreen.Arena, ArenaAllocSize(cElements, sizeof(v2), 2, 0));
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Points_v1, cElements, State->maPoints.Bytes + sizeof(v2), sizeof(v2));
-						} break;
+#define FILE_HEADER_ARENA(ID, vNum, type, mult, add) \
+						case HEAD_## ID ##_## vNum: { \
+							cBytesCheckT = ReadFileArrayToArena(Result, &State->ma## ID.Arena, cElements, sizeof(type), mult, add, WindowHandle); \
+							cBytesCheck += cBytesCheckT; \
+							if(cBytesCheckT != cElements * sizeof(type))  \
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. ("#ID")", "Unexpected quantity of data"); } \
+							ArenaRealloc(&State->maPointsOnScreen.Arena, ArenaAllocSize(cElements, sizeof(type), mult, add)); \
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_## ID ##_## vNum, cElements, State->ma## ID.Bytes + sizeof(type), sizeof(type)); \
+						} break
 
-						case HEAD_PointStatus_v1:
-						{
-							cBytesCheckT = ReadFileArrayToArena(Result, &State->maPointStatus.Arena, cElements, sizeof(u8), 2, 0, WindowHandle);
-							cBytesCheck += cBytesCheckT;
-							if(cBytesCheckT != cElements * sizeof(u8)) 
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Point Status)", "Unexpected quantity of data"); }
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_PointStatus_v1, cElements, State->maPointStatus.Bytes + sizeof(u8), sizeof(u8));
-						} break;
+						FILE_HEADER_ARENA(Points,      v1, v2,     2, 0);
+						FILE_HEADER_ARENA(PointStatus, v1, u8,     2, 0);
+						FILE_HEADER_ARENA(Shapes,      v1, shape,  1, 2);
+						FILE_HEADER_ARENA(Actions,     v1, action, 2, 0);
+#undef FILE_HEADER_ARENA
 
-						case HEAD_Shapes_v1:
-						{
-							cBytesCheckT = ReadFileArrayToArena(Result, &State->maShapes.Arena, cElements, sizeof(shape), 1, 2, WindowHandle);
-							cBytesCheck += cBytesCheckT;
-							if(cBytesCheckT != cElements * sizeof(shape)) 
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Shapes)", "Unexpected quantity of data"); }
-							ArenaRealloc(&State->maShapesNearScreen.Arena, ArenaAllocSize(cElements, sizeof(shape), 2, 0));
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Shapes_v1, cElements, State->maShapes.Bytes + sizeof(shape), sizeof(shape));
-						} break;
+#define FILE_HEADER_ARRAY(ID, vNum, to, num) \
+						case HEAD_## ID ##_## vNum: { \
+							u64 cElCheck = fread(to, sizeof(*(to)), cElements, Result); \
+							if(cElCheck != cElements) \
+							{ FileDataWarning("Unexpected quantity of data or corrupted file. ("#ID")", "Unexpected quantity of data"); } \
+							cBytesCheck += cElCheck * sizeof(*(to)); \
+							Assert(cElCheck == num); \
+							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_## ID ##_## vNum, cElements, to, sizeof(*(to))); \
+						} break
 
-						case HEAD_Actions_v1:
-						{
-							cBytesCheckT = ReadFileArrayToArena(Result, &State->maActions.Arena, cElements, sizeof(action), 2, 2, WindowHandle);
-							cBytesCheck += cBytesCheckT;
-							if(cBytesCheckT != cElements * sizeof(action)) 
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Actions)", "Unexpected quantity of data"); }
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Actions_v1, cElements, State->maActions.Bytes + sizeof(action), sizeof(action));
-						} break;
-
-						case HEAD_Lengths_v1:
-						{
-							u64 cElCheck = fread(State->LengthStores, sizeof(*State->LengthStores), cElements, Result);
-							if(cElCheck != cElements)
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Lengths)", "Unexpected quantity of data"); }
-							cBytesCheck += cElCheck * sizeof(*State->LengthStores);
-							Assert(cElCheck == 26);
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Lengths_v1, cElements, State->LengthStores, sizeof(*State->LengthStores));
-						} break;
-
-						case HEAD_Basis_v1:
-						{
-							u64 cElCheck = fread(&State->Basis, sizeof(basis), cElements, Result);
-							if(cElCheck != cElements)
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. (Basis)", "Unexpected quantity of data"); }
-							cBytesCheck += cElCheck * sizeof(basis);
-							Assert(cElCheck == cElements);
-							Assert(cElCheck == 1);
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_Basis_v1, cElements, &State->Basis, sizeof(basis));
-						} break;
+						FILE_HEADER_ARRAY(Lengths, v1, State->LengthStores, 26);
+						FILE_HEADER_ARRAY(Basis, v1, &State->Basis, 1);
+#undef FILE_HEADER_ARRAY
 
 						default:
 						{
@@ -280,10 +251,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				}
 			} break;
 
-			default:
-			{
-				goto open_error;
-			} break;
+			default: { goto open_error; }
 		}
  
 		if(cBytesCheck != FH.cBytes)
