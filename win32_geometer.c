@@ -551,7 +551,15 @@ ExportSVGToFile(state *State, char *FilePath)
 	if(iFirstValidShape)
 	{
 		aabb TotalAABB = AABBOfAllShapes(Points, Shapes, iFirstValidShape, iLastShape);
-		FILE *SVGFile = NewSVG(FilePath, "fill='none' stroke-width='2' stroke='black' stroke-linecap='round'");
+		// TODO: have better automatic sizing for export
+#if 0
+		// NOTE: svg is top down. I'm assuming bottom-up.
+		v2 Min = CanvasToSVG(V2(TotalAABB.MinX, TotalAABB.MaxY), TotalAABB);
+		v2 Max = CanvasToSVG(V2(TotalAABB.MaxX, TotalAABB.MinY), TotalAABB);
+		aabb BorderAABB = { Min.X, Min.Y, Max.X, Max.Y };
+#endif
+		FILE *SVGFile = NewSVG(FilePath, "fill='none' stroke-width='1' stroke='black' stroke-linecap='round'");
+				/* AABBWidth(TotalAABB), AABBHeight(TotalAABB)); */
 		for(uint iShape = iFirstValidShape; iShape <= iLastShape; ++iShape)
 		{
 			shape Shape = Shapes[iShape];

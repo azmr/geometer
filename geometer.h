@@ -29,7 +29,7 @@ static debug_text DebugText;
 #include <intrinsics.h>
 #define LOGGING 0
 #include <debug.h>
-#include <geometry.h>
+#include "geometry.h"
 #include <platform.h>
 #include <memory.h>
 #include "gfx.h"
@@ -291,43 +291,6 @@ typedef struct state
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;
-
-// TODO (internal): for some reason these aren't found by the compiler
-// when they're in `geometry.h`, but that's where they should live!
-internal aabb
-AABBExpand(aabb Expandee, aabb Expander)
-{
-	aabb Result = Expandee;
-	if(Expander.MinX < Result.MinX) { Result.MinX = Expander.MinX; }
-	if(Expander.MaxX > Result.MaxX) { Result.MaxX = Expander.MaxX; }
-	if(Expander.MinY < Result.MinY) { Result.MinY = Expander.MinY; }
-	if(Expander.MaxY > Result.MaxY) { Result.MaxY = Expander.MaxY; }
-	return Result;
-}
-
-internal b32
-PointInAABB(v2 P, aabb AABB)
-{
-	b32 InsideHorz = P.X >= AABB.MinX && P.X <= AABB.MaxX; 
-	b32 InsideVert = P.Y >= AABB.MinY && P.Y <= AABB.MaxY;
-	b32 Result = InsideHorz && InsideVert;
-	return Result;
-}
-
-internal b32
-AABBOverlaps(aabb A, aabb B)
-{
-	b32 HorizontOverlap = (A.MinX >= B.MinX && A.MinX <= B.MaxX) ||
-	                      (A.MaxX >= B.MinX && A.MaxX <= B.MaxX) ||
-	                      (B.MinX >= A.MinX && B.MinX <= A.MaxX) ||
-	                      (B.MinX >= A.MinX && B.MinX <= A.MaxX);
-	b32 VerticalOverlap = (A.MinY >= B.MinY && A.MinY <= B.MaxY) ||
-	                      (A.MaxY >= B.MinY && A.MaxY <= B.MaxY) ||
-	                      (B.MaxY >= A.MinY && B.MaxY <= A.MaxY) ||
-	                      (B.MaxY >= A.MinY && B.MaxY <= A.MaxY);
-	b32 Result = HorizontOverlap && VerticalOverlap;
-	return Result;
-}
 
 internal aabb
 AABBFromShape(v2 *Points, shape Shape)

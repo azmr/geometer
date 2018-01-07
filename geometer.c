@@ -18,6 +18,7 @@
 // - Resizable windo (maintain centre vs maintain absolute position)
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
+// - F keys to open toolbars (layers/minimap/action history/...)
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
