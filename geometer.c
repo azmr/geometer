@@ -544,6 +544,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
 
+		// TODO (ui): animate zoom (and pan?)
 		// Pan with arrow keys
 		b32 Down  = C_PanDown.EndedDown;
 		b32 Up    = C_PanUp.EndedDown;
@@ -715,7 +716,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// TODO IMPORTANT (fix): stop unwanted clicks from registering. e.g. on open/save
 		// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
-#define DEBUGClick(button) (IsInScreenBounds(ScreenBuffer, Mouse.P) && DEBUGPress(button))
+		b32 MouseInScreenBounds = IsInScreenBounds(ScreenBuffer, Mouse.P); 
+#define DEBUGClick(button) (MouseInScreenBounds && DEBUGPress(button))
 #define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)
 #define DEBUGPress(button)   (!Input.Old->button.EndedDown && Input.New->button.EndedDown)
 
@@ -916,7 +918,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGPress(C_Reset))
 					{ // reset canvas
+						/* if(Keyboard.Alt.EndedDown) */
 						Reset(State, 0);
+						// TODO (ui): reset to save point
+						/* else */
+						/* { Reset(State, State->iSaveAction); } */
+						
 						DebugClear();
 					}
 					{// unwanted?

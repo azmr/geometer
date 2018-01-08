@@ -1,6 +1,5 @@
 internal void AddAction(state *State, action Action);
-internal uint CountActionPoints(state *State, uint iActionFrom, uint iActionTo);
-internal uint CountActionShapes(state *State, uint iActionFrom, uint iActionTo);
+internal void CountActionPointsShapes(state *State, uint iActionLow, uint iActionHigh, uint *cPointsOut, uint *cShapesOut);
 
 internal void
 ResetNoAction(state *State, uint iAction)
@@ -10,10 +9,7 @@ ResetNoAction(state *State, uint iAction)
 	uint cPoints = 0;
 	uint cShapes = 0;
 	if(iAction)
-	{
-		cPoints = CountActionPoints(State, 1, iAction);
-		cShapes = CountActionShapes(State, 1, iAction);
-	}
+	{ CountActionPointsShapes(State, 1, iAction, &cPoints, &cShapes); }
 	State->iLastPoint = cPoints;
 	State->iLastShape = cPoints;
 	State->maPointStatus.Used      = sizeof(u8)    * (1+cPoints);
@@ -870,19 +866,18 @@ internal inline b32 ActionIsPoint(action_types Action)
 	return Result;
 }
 
-internal uint
-CountActionShapes(state *State, uint iActionFrom, uint iActionTo)
+internal void
+CountActionPointsShapes(state *State, uint iActionLow, uint iActionHigh, uint *cPointsOut, uint *cShapesOut)
 {
-	uint Result = 0;
-	for(uint iAction = iActionFrom; iAction <= iActionTo; ++iAction)
-	{ if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++Result;} }
-	return Result;
-}
-internal uint
-CountActionPoints(state *State, uint iActionFrom, uint iActionTo)
-{
-	uint Result = 0;
-	for(uint iAction = iActionFrom; iAction <= iActionTo; ++iAction)
-	{ if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++Result;} }
-	return Result;
+	uint cPoints = 0, cShapes = 0;
+	for(uint iAction = iActionHigh; iAction >= iActionLow && iAction; --iAction)
+	{
+		     if(ActionIsPoint(Pull(State->maActions, iAction).Kind)) {++cPoints;}
+		else if(ActionIsShape(Pull(State->maActions, iAction).Kind)) {++cShapes;}
+		// TODO: what to do when encountering Resets?
+		/* else if(Action.Kind == ACTION_Reset && iAction.i < iActionLow)
+		 * { iActionAction.i; } */
+	}
+	*cPointsOut = cPoints;
+	*cShapesOut = cShapes;
 }
