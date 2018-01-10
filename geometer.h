@@ -252,6 +252,8 @@ typedef struct state
 	u8_arena maPointStatus;
 	action_arena maActions; 
 
+	uint SelectedPoint;
+
 	basis Basis;
 	basis pBasis;
 

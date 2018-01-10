@@ -43,11 +43,13 @@
 #define CB_Arc         LMB
 #define CB_Line        RMB
 #define CB_Length      LMB
+#define CB_Select      RMB
 
 #define C_StartShape   Mouse.CB_StartShape
 #define C_Arc          Mouse.CB_Arc
 #define C_Line         Mouse.CB_Line
 #define C_Length       Mouse.CB_Length
+#define C_Select       Mouse.CB_Select
 // divide length       1-0
 // mult length         Alt + 1-0
 // get store length    a-z,A-Z
@@ -546,6 +548,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	b32 IsSnapped;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
+	uint ipoSnap = 0;
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -621,7 +624,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if(ipoClosest && ipoClosestIntersect)
 				{
 					if(ClosestDistSq <= ClosestIntersectDistSq)
-					{ poClosest = POINTS(ipoClosest); }
+					{
+						poClosest = POINTS(ipoClosest);
+						ipoSnap = ipoClosest;
+					}
 					else
 					{
 						poClosest = Pull(State->maIntersects, ipoClosestIntersect);
@@ -629,7 +635,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 				}
 				else if(ipoClosest)
-				{ poClosest = POINTS(ipoClosest); }
+				{
+					poClosest = POINTS(ipoClosest);
+					ipoSnap = ipoClosest;
+				}
 				else if(ipoClosestIntersect)
 				{
 					poClosest = Pull(State->maIntersects, ipoClosestIntersect);
@@ -647,6 +656,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						poClosest = State->poSelect;
 						DebugAdd("Adding poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
 						ClosestDistSq = SelectDistSq;
+						ipoSnap = 0;
 					}
 				}
 				if(IsDrawingArc(State))
@@ -660,6 +670,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						poClosest = State->poArcStart;
 						ClosestDistSq = ArcStartDistSq;
 						DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
+						ipoSnap = 0;
 					}
 				}
 				DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
@@ -677,6 +688,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 				}
 			}
+			if(IsSnapped == 0) { ipoSnap = 0; }
+
 			if(C_ShapeLock.EndedDown)
 			{
 				for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
@@ -808,39 +821,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #undef KEYBOARD_LENGTH_STORE
 #endif
 
-		{ // unwanted?
-			/* // TODO: Do I actually want to be able to drag points? */
-			/* else if(State->ipoDrag) */
-			/* { */
-			/*	 if(DEBUGClick(C_Drag)) */
-			/*	 { */
-			/*		 // Set point to mouse location and recompute intersections */
-			/*		 State->ipoDrag = 0; */
-			/*		 // TODO: this breaks lines attached to intersections... */
-			/*		 RemovePointsOfType(State, POINT_Intersection); */
-			/*		 for(uint i = 1; i <= State->iLastLinePoint; i+=2) */
-			/*		 { */
-			/*			 // TODO: this is wasteful */
-			/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
-			/*		 } */
-			/*	 } */
-
-			/*	 else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown) */
-			/*	 { */
-			/*		 // Cancel dragging, point returns to saved location */
-			/*		 State->Points[State->ipoDrag] = State->poSaved; */
-			/*		 State->ipoDrag = 0; */
-			/*	 } */
-
-			/*	 else */
-			/*	 { */
-			/*		 State->Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
-			/*	 } */
-			/*	 // Snapping is off while dragging; TODO: maybe change this when points can be combined */
-			/*	 ipoSnap = 0; */
-			/* } */
-		}
-
 		// TODO (UI): if panning, ignore input but still do preview
 		// TODO: fix needed for if started and space released part way?
 		if((C_PanMod.EndedDown && Mouse.LMB.EndedDown) || C_Pan.EndedDown)
@@ -927,8 +907,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						
 						DebugClear();
 					}
-					{// unwanted?
 
+					else if(DEBUGClick(C_Select))
+					{
+						if(ipoSnap) { State->SelectedPoint = ipoSnap; }
+					}
+
+					{// unwanted?
 						// TODO: could skip check and just write to invalid point..?
 						/* else if(ipoSnap) */
 						/* { // point snapped to */
@@ -946,6 +931,36 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						/* State->ipoSelect = ipoSnap; */
 						/* State->ipoDrag = ipoSnap; */
 						/* } */ 
+
+						/* else if(State->ipoDrag) */
+						/* { */
+						/*	 if(DEBUGClick(C_Drag)) */
+						/*	 { */
+						/*		 // Set point to mouse location and recompute intersections */
+						/*		 State->ipoDrag = 0; */
+						/*		 // TODO: this breaks lines attached to intersections... */
+						/*		 RemovePointsOfType(State, POINT_Intersection); */
+						/*		 for(uint i = 1; i <= State->iLastLinePoint; i+=2) */
+						/*		 { */
+						/*			 // TODO: this is wasteful */
+						/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
+						/*		 } */
+						/*	 } */
+
+						/*	 else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown) */
+						/*	 { */
+						/*		 // Cancel dragging, point returns to saved location */
+						/*		 State->Points[State->ipoDrag] = State->poSaved; */
+						/*		 State->ipoDrag = 0; */
+						/*	 } */
+
+						/*	 else */
+						/*	 { */
+						/*		 State->Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
+						/*	 } */
+						/*	 // Snapping is off while dragging; TODO: maybe change this when points can be combined */
+						/*	 ipoSnap = 0; */
+						/* } */
 					}
 				} break;
 
@@ -1452,6 +1467,10 @@ case_mode_draw:
 			/* DrawActivePoint(ScreenBuffer, poSS, ORANGE); */
 		}
 
+		if(State->SelectedPoint)
+		{
+			DrawActivePoint(ScreenBuffer, V2CanvasToScreen(Basis, Points[State->SelectedPoint], ScreenCentre), MAGENTA);
+		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{ // draw debug vector
@@ -1567,7 +1586,9 @@ case_mode_draw:
 				/* "Draw Index: %u" */
 				/* "Offset: (%.2f, %.2f), " */
 				"iLastPoint: %u, "
-				"iLastShape: %u"
+				"iLastShape: %u, "
+				"SelectedPoint: %u, "
+				"ipoSnap: %u, "
 				,
 				/* State->cLinePoints, */
 				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
@@ -1583,7 +1604,9 @@ case_mode_draw:
 				State->iCurrentAction, State->iLastAction, State->iSaveAction,
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
 				State->iLastPoint,
-				State->iLastShape
+				State->iLastShape,
+				State->SelectedPoint,
+				ipoSnap
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
