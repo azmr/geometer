@@ -831,8 +831,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			File.Pan = 1;
 		}
 
-		else if(DEBUGPress(C_Cancel) && State->InputMode != MODE_Normal)
-		{ State->InputMode = MODE_Normal; }
+		else if(DEBUGPress(C_Cancel))
+		{
+			State->SelectedPoint = 0;
+			State->InputMode = MODE_Normal;
+		}
 
 		else if(DEBUGPress(Keyboard.F1))
 		{ State->ShowHelpInfo = !State->ShowHelpInfo; }
@@ -910,7 +913,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGClick(C_Select))
 					{
-						if(ipoSnap) { State->SelectedPoint = ipoSnap; }
+						if(ipoSnap)
+						{ State->SelectedPoint = ipoSnap; }
+						State->InputMode = MODE_DragSelect;
 					}
 
 					{// unwanted?
@@ -962,6 +967,23 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						/*	 ipoSnap = 0; */
 						/* } */
 					}
+				} break;
+
+
+				case MODE_DragSelect:
+				{
+					if( ! C_Select.EndedDown)
+					{
+						if(ipoSnap)
+						{ State->SelectedPoint = ipoSnap; }
+						State->InputMode = MODE_Selected;
+					}
+				} break;
+
+
+				case MODE_Selected:
+				{
+					State->InputMode = MODE_Normal;
 				} break;
 
 

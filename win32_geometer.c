@@ -31,6 +31,7 @@ typedef enum cursor_type
 	CURSOR_Normal = 0,
 	CURSOR_Basis,
 	CURSOR_Pan,
+	CURSOR_Select,
 	CURSOR_Draw,
 	CURSOR_Count
 } cursor_type;
@@ -756,6 +757,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	Cursors[CURSOR_Normal] = LoadCursor(0, IDC_ARROW);
 	Cursors[CURSOR_Basis]  = LoadCursor(0, IDC_UPARROW);
 	Cursors[CURSOR_Pan]    = LoadCursor(0, IDC_SIZEALL);
+	Cursors[CURSOR_Select] = LoadCursor(0, IDC_CROSS);
 	Cursors[CURSOR_Draw]   = LoadCursor(0, IDC_CROSS);
 	//////////
 
@@ -925,6 +927,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					{ SetCursor(Cursors[CURSOR_Normal]); } break;
 					case MODE_SetBasis:
 					{ SetCursor(Cursors[CURSOR_Basis]); } break;
+					case MODE_DragSelect:
+					case MODE_Selected:
+					{ SetCursor(Cursors[CURSOR_Select]); } break;
 					case MODE_SetLength:
 					case MODE_QuickPtOrSeg:
 					case MODE_Draw:
