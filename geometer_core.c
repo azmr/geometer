@@ -498,7 +498,7 @@ internal inline uint
 AddNearScreenShapeIntersects(state *State, uint iShape)
 {
 	shape_arena Arena = State->maShapesNearScreen;
-	uint Result = AddShapeIntersections(State, Arena.Items, (uint)Len(Arena), iShape);
+	uint Result = AddShapeIntersections(State, Arena.Items + 1, (uint)Len(Arena) - 1, iShape);
 	return Result;
 }
 internal inline uint
@@ -530,7 +530,7 @@ internal inline uint
 RecalcNearScreenIntersects(state *State)
 {
 	shape_arena Arena = State->maShapesNearScreen;
-	uint Result = RecalcIntersects(State, Arena.Items, (uint)ArenaCount(Arena, shape));
+	uint Result = RecalcIntersects(State, Arena.Items + 1, (uint)Len(Arena) - 1);
 	return Result;
 }
 

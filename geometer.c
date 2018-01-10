@@ -213,11 +213,6 @@ SimpleUndo(state *State)
 
 	--State->iCurrentAction;
 	Assert(State->iCurrentAction <= State->iLastAction);
-	// NOTE: shapes on screen need to be updated before this is called
-	// (or you can accept an occasional frame of lag for points near the edge)
-	// TODO: seems to be including the undone shape after undoing
-	// (and the equivalent after redoing?)
-	RecalcNearScreenIntersects(State);
 #if INTERNAL && DEBUG_LOG_ACTIONS
 	LogActionsToFile(State, "ActionLog.txt");
 #endif
@@ -230,12 +225,16 @@ UserUndo(state *State)
 {
 	do { SimpleUndo(State); }
 	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+	// NOTE: shapes on screen need to be updated before this is called
+	// (or you can accept an occasional frame of lag for points near the edge)
+	RecalcNearScreenIntersects(State);
 }
 internal inline void
 UserRedo(state *State)
 {
 	do { SimpleRedo(State); }
 	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+	RecalcNearScreenIntersects(State);
 }
 
 #if 0
