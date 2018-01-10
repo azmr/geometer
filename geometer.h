@@ -146,26 +146,22 @@ typedef enum input_mode
 	MODE_Normal = 0,
 	MODE_SetBasis,
 	MODE_SetLength,
-		MODE_DrawArc,
-			MODE_ExtendArc,
-	MODE_QuickSeg,
-		MODE_DrawSeg,
-			MODE_SetPerp,
-			MODE_ExtendSeg,
-			MODE_ExtendLinePt,
+	MODE_QuickPtOrSeg,
+	MODE_Draw,
+		MODE_ExtendArc,
+		MODE_ExtendSeg,
+		MODE_SetPerp,
 } input_mode;
 char *InputModeText[] =
 {
 	"MODE_Normal",
 	"MODE_SetBasis",
 	"MODE_SetLength",
-		"MODE_DrawArc",
-			"MODE_ExtendArc",
-	"MODE_QuickSeg",
-		"MODE_DrawSeg",
-			"MODE_SetPerp",
-			"MODE_ExtendSeg",
-			"MODE_ExtendLinePt",
+	"MODE_QuickPtOrSeg",
+	"MODE_Draw",
+		"MODE_ExtendArc",
+		"MODE_ExtendSeg",
+		"MODE_SetPerp",
 };
 
 typedef union shape_union

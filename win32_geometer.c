@@ -31,8 +31,7 @@ typedef enum cursor_type
 	CURSOR_Normal = 0,
 	CURSOR_Basis,
 	CURSOR_Pan,
-	CURSOR_Arc,
-	CURSOR_Seg,
+	CURSOR_Draw,
 	CURSOR_Count
 } cursor_type;
 
@@ -757,8 +756,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	Cursors[CURSOR_Normal] = LoadCursor(0, IDC_ARROW);
 	Cursors[CURSOR_Basis]  = LoadCursor(0, IDC_UPARROW);
 	Cursors[CURSOR_Pan]    = LoadCursor(0, IDC_SIZEALL);
-	Cursors[CURSOR_Arc]    = LoadCursor(0, IDC_CROSS);
-	Cursors[CURSOR_Seg]    = LoadCursor(0, IDC_CROSS);
+	Cursors[CURSOR_Draw]   = LoadCursor(0, IDC_CROSS);
 	//////////
 
 	win32_frame_timing FrameTimer = Win32InitFrameTimer(Window.TargetSecondsPerFrame);
@@ -928,15 +926,12 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					case MODE_SetBasis:
 					{ SetCursor(Cursors[CURSOR_Basis]); } break;
 					case MODE_SetLength:
-					case MODE_DrawArc:
+					case MODE_QuickPtOrSeg:
+					case MODE_Draw:
 					case MODE_ExtendArc:
-					{ SetCursor(Cursors[CURSOR_Arc]); } break;
-					case MODE_QuickSeg:
-					case MODE_DrawSeg:
-					case MODE_SetPerp:
 					case MODE_ExtendSeg:
-					case MODE_ExtendLinePt:
-					{ SetCursor(Cursors[CURSOR_Seg]); } break;
+					case MODE_SetPerp:
+					{ SetCursor(Cursors[CURSOR_Draw]); } break;
 					default:
 					{ Assert(0); }
 				}
