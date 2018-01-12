@@ -246,39 +246,28 @@ AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types Po
 }
 
 internal inline void InvalidateShapesAtPoint(state *State, uint ipo);
-internal inline void InvalidateShapesAtPointNoAction(state *State, uint ipo);
-internal inline void
-InvalidatePointNoAction(state *State, uint ipo)
-{
-	BEGIN_TIMED_BLOCK;
-	// TODO (ui): may not be obvious if deleting a point on a circle circumference
-	// that it's the radius point rather than just a point on the line...
-	// Don't surprise the user!
-	// So... transition back to circles defined by focus and radius
-	InvalidateShapesAtPointNoAction(State, ipo);
-	POINTSTATUS(ipo) = POINT_Free;
-	/* Assert(State->iLastPoint == Len(State->maPoints)-1); */
-	/* for(uint i = State->iLastPoint; i > 0 && Pull(State->maPointStatus, i) == POINT_Free; --i) */
-	/* { */
-	/* 	--State->iLastPoint; */
-	/* 	PopDiscard(&State->maPoints); */
-	/* 	PopDiscard(&State->maPointStatus); */
-	/* } */
-	END_TIMED_BLOCK;
-}
 
-internal inline void
-InvalidatePoint(state *State, uint ipo, action_types ActionType)
+internal inline action
+InvalidatePointOnly(state *State, uint ipo, action_types ActionType)
 {
 	action Action = {0};
 	Action.Kind = ActionType;
 	Action.i = ipo;
 	Action.po = POINTS(ipo);
-
-	// NOTE: order allows valid point access and any invalidated shapes
-	// to be added to actions before point invalidation
-	InvalidateShapesAtPoint(State, ipo);
 	POINTSTATUS(ipo) = POINT_Free;
+	return Action;
+}
+
+internal inline void
+InvalidatePoint(state *State, uint ipo, action_types ActionType)
+{
+	// TODO (ui): may not be obvious if deleting a point on a circle circumference
+	// that it's the radius point rather than just a point on the line...
+	// Don't surprise the user!
+	// So... transition back to circles defined by focus and radius
+
+	action Action = InvalidatePointOnly(State, ipo, ActionType);
+	InvalidateShapesAtPoint(State, ipo);
 	AddAction(State, Action);
 }
 
@@ -662,25 +651,76 @@ AddArcAtPoints(state *State, v2 poFocus, v2 poStart, v2 poEnd)
 	return AddArc(State, ipoFocus, ipoStart, ipoEnd);
 }
 
-internal inline void
-InvalidateShapesAtPointNoAction(state *State, uint ipo)
+internal inline b32
+ShapeUsesPoint(shape Shape, uint ipo)
 {
-	BEGIN_TIMED_BLOCK;
-	shape *Shapes = State->maShapes.Items;
-	for(uint i = 1; i <= State->iLastShape; ++i)
-	{ // NOTE: if any of the shape's points match, remove it
-		// IMPORTANT: any point indexes not used must be 0
-		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
-			Shapes[i].Kind *= SHAPE_ToggleActive;
+	b32 Result = 0;
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			if(Shape.Line.P1 == ipo || Shape.Line.P2 == ipo)
+			{ Result = 1; }
+		} break;
+
+		case SHAPE_Circle:
+		{
+			if(Shape.Circle.ipoFocus == ipo || Shape.Circle.ipoRadius == ipo)
+			{ Result = 1; }
+		} break;
+
+		case SHAPE_Arc:
+		{
+			if(Shape.Arc.ipoFocus == ipo ||
+			   Shape.Arc.ipoStart == ipo ||
+			   Shape.Arc.ipoEnd   == ipo)
+			{ Result = 1; }
+		} break;
+
+		case -SHAPE_Segment:
+		case -SHAPE_Circle:
+		case -SHAPE_Arc:
+		{} break;
+
+		default:
+		{ Assert(!"Unknown shape type"); }
 	}
 
-/* 	Assert(State->iLastShape == Len(State->maShapes)-1); */
-/* 	for(uint i = State->iLastShape; i > 0 && Shapes[i].Kind == SHAPE_Free; --i) */
-/* 	{ */
-/* 		--State->iLastShape; */
-/* 		PopDiscard(&State->maShapes); */
-/* 	} */
-	END_TIMED_BLOCK;
+	return Result;
+}
+
+// TODO: allow user to make automatic point 'user-set' by overriding?
+internal inline b32
+InvalidatePointIfUnusedAndAutomatic(state *State, uint ipo)
+{
+	b32 Used = 0;
+	b32 Result = 0;
+	if(POINTSTATUS(ipo) != POINT_Free)
+	{
+		for(uint iShape = State->iLastShape; iShape > 0; --iShape)
+		{
+			if(ShapeUsesPoint(Pull(State->maShapes, iShape), ipo))
+			{ Used = 1; break; }
+		}
+		if( ! Used)
+		{
+			b32 PlacedByUser = 0;
+			for(uint iAction = State->iLastAction; iAction > 0; --iAction)
+			{
+				action Action = Pull(State->maActions, iAction);
+				if(Action.i == ipo && Action.Kind == ACTION_Point) // the user-intended variant
+				{ PlacedByUser = 1; break; }
+			}
+
+			Result = ! PlacedByUser;
+			if(Result)
+			{
+				action Action = InvalidatePointOnly(State, ipo, ACTION_NonUserRemovePt);
+				AddAction(State, Action);
+			}
+		}
+	}
+	return Result;
 }
 
 internal inline void
@@ -688,20 +728,47 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
 	shape *Shapes = State->maShapes.Items;
-	for(uint i = 1; i <= State->iLastShape; ++i)
+	for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
 	{ // NOTE: if any of the shape's points match, remove it
-		// IMPORTANT: any point indexes not used must be 0
-		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
+		shape Shape = Shapes[iShape];
+		if(ShapeUsesPoint(Shape, ipo))
 		{
-			Shapes[i].Kind *= SHAPE_ToggleActive;
+			Assert(Shape.Kind > SHAPE_Free || !"Shape should be valid before invalidating it");
+			Shapes[iShape].Kind = Shape.Kind > SHAPE_Free ? -Shape.Kind : Shape.Kind;
+
+			switch(Shape.Kind)
+			{ // invalidate any points unused by other shapes and not user-placed
+				case SHAPE_Segment:
+				{
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Line.P1);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Line.P2);
+				} break;                     
+
+				case SHAPE_Circle:           
+				{                            
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Circle.ipoFocus);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Circle.ipoRadius);
+				} break;                     
+
+				case SHAPE_Arc:              
+				{                            
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoFocus);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoStart);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoEnd);
+				} break;
+
+				default:
+				{ Assert(!"Unknown shape type"); }
+			}
+
 			action Action = {0};
 			Action.Kind = ACTION_NonUserRemoveShape;
-			Action.i = i;
+			Action.i = iShape;
 			AddAction(State, Action);
 		}
-
 	}
 
+// Should we reduce the shape array?
 /* 	Assert(State->iLastShape == Len(State->maShapes)-1); */
 /* 	for(uint i = State->iLastShape; i > 0 && Shapes[i].Kind == SHAPE_Free; --i) */
 /* 	{ */

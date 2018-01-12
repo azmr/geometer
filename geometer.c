@@ -24,6 +24,7 @@
 // - Copy and paste (between running apps - clipboard?) without NEEDING clipboard
 // - What else between apps - lengths?
 // - Consolidate history
+// - Cancel actions with other mouseclick e.g. LMB while extending line with RMB
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -945,16 +946,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 
 					{// unwanted?
-						// TODO: could skip check and just write to invalid point..?
-						/* else if(ipoSnap) */
-						/* { // point snapped to */
-						/*	 if(DEBUGPress(C_Delete)) */
-						/*	 { */
-						/*		 // TODO: deleting points */
-						/*		 InvalidatePoint(State, ipoSnap); */
-						/*	 } */
-						/* } */
-
 						/* if(DEBUGClick(MMB)) */
 						/* { */
 						// MOVE POINT
@@ -976,13 +967,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						/*			 // TODO: this is wasteful */
 						/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
 						/*		 } */
-						/*	 } */
-
-						/*	 else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown) */
-						/*	 { */
-						/*		 // Cancel dragging, point returns to saved location */
-						/*		 State->Points[State->ipoDrag] = State->poSaved; */
-						/*		 State->ipoDrag = 0; */
 						/*	 } */
 
 						/*	 else */
@@ -1015,7 +999,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 				case MODE_Selected:
 				{
-					// TODO: change mode if nothing is actually selected
+					if(Len(State->maSelectedPoints) == 0) { State->InputMode = MODE_Normal; break; }
 					if(DEBUGPress(C_Delete))
 					{
 						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
@@ -1025,9 +1009,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						uint cPointsSelected = (uint)Len(State->maSelectedPoints);
 						if(cPointsSelected)
 						{
-							for(uint i = 1; i < cPointsSelected; ++i)
+							uint iLastPoint = cPointsSelected-1;
+							for(uint i = 0; i < iLastPoint; ++i)
 							{ InvalidatePoint(State, Pull(State->maSelectedPoints, i), ACTION_NonUserRemovePt); }
-							InvalidatePoint(State, Pull(State->maSelectedPoints, 0), ACTION_RemovePt);
+							InvalidatePoint  (State, Pull(State->maSelectedPoints, iLastPoint), ACTION_RemovePt);
 						}
 
 						RecalcNearScreenIntersects(State);
@@ -1431,7 +1416,10 @@ case_mode_draw:
 		}
 
 		v2 poSSClosest = ToScreen(poClosest);
-		if(State->iLastPoint)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
+		b32 ValidPointExists = 0; // TODO: may be able to determine at calculation of poClosest
+		for(uint i = 1; i <= State->iLastPoint; ++i)
+		{ if(POINTSTATUS(i) != POINT_Free) { ValidPointExists = 1; break; } }
+		if(ValidPointExists)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
 		if(IsSnapped)
 		{ // draw snapped point
 			DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); 
@@ -1662,6 +1650,8 @@ case_mode_draw:
 				"Mode: %s, "
 				"poSaved: (%3.f, %3.f), "
 				"Selected Points: %u, "
+				"cPtOnScreen: %u, "
+				"cShapesNear: %u, "
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
 				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
@@ -1669,7 +1659,9 @@ case_mode_draw:
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
 				State->poSaved.X, State->poSaved.Y,
-				Len(State->maSelectedPoints)
+				Len(State->maSelectedPoints),
+				Len(State->maPointsOnScreen),
+				Len(State->maShapesNearScreen)
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
 				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
