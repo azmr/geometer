@@ -479,6 +479,7 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 internal void
 DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 {
+	// TODO (fix): missing pixel in bottom right
 	v2 TopLeft     = V2(AABB.MinX, AABB.MaxY);
 	v2 TopRight    = V2(AABB.MaxX, AABB.MaxY);
 	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
@@ -488,6 +489,15 @@ DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 	DEBUGDrawLine(ScreenBuffer, TopLeft,    BottomLeft,  Col);
 	DEBUGDrawLine(ScreenBuffer, TopRight,   BottomRight, Col);
 	DEBUGDrawLine(ScreenBuffer, BottomLeft, BottomRight, Col);
+}
+
+internal aabb
+AABBCanvasToScreen(basis Basis, aabb AABB, v2 ScreenCentre)
+{
+	aabb Result;
+	Result.Min = V2CanvasToScreen(Basis, AABB.Min, ScreenCentre);
+	Result.Max = V2CanvasToScreen(Basis, AABB.Max, ScreenCentre);
+	return Result;
 }
 
 internal b32
@@ -560,6 +570,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
 	uint ipoSnap = 0;
+	aabb SelectionAABB = {0};
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -924,6 +935,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGClick(C_Select))
 					{
+						State->poSaved = SnapMouseP;
 						if(ipoSnap)
 						{ State->SelectedPoint = ipoSnap; }
 						State->InputMode = MODE_DragSelect;
@@ -983,6 +995,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 				case MODE_DragSelect:
 				{
+					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
 					if( ! C_Select.EndedDown)
 					{
 						if(ipoSnap)
@@ -1259,6 +1272,7 @@ case_mode_draw:
 		Assert(tBasis <= 1.f);
 #endif
 
+#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 #if 1
 		Basis = BasisLerp(StartBasis, tBasis, EndBasis);
 #else
@@ -1308,7 +1322,7 @@ case_mode_draw:
 					// that point is inside mem bounds?
 					uint ipo = Shape.P[i];
 					v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
-					ShapePoints[i] = V2CanvasToScreen(Basis, P, ScreenCentre);
+					ShapePoints[i] = ToScreen(P);
 					LocalShape.P[i] = i;
 				}
 				aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
@@ -1324,8 +1338,10 @@ case_mode_draw:
 
 		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
 		{
-			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
-			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
+			// NOTE: needed in canvas form later
+			v2 P = Points[ipo];
+			if(PointInAABB(ToScreen(P), ScreenBB) &&
+					POINTSTATUS(ipo) != POINT_Free)
 			{
 				Push(maPointsOnScreen, P);
 				++cPointsOnScreen;
@@ -1337,7 +1353,7 @@ case_mode_draw:
 	{ LOG("RENDER");
 	////////////////
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
-		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
+		v2 SSSnapMouseP = ToScreen(SnapMouseP);
 
 #if 0
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
@@ -1354,8 +1370,8 @@ case_mode_draw:
 			{
 				case SHAPE_Segment:
 				{
-					v2 poA = V2CanvasToScreen(Basis, Points[Shape.Line.P1], ScreenCentre);
-					v2 poB = V2CanvasToScreen(Basis, Points[Shape.Line.P2], ScreenCentre);
+					v2 poA = ToScreen(Points[Shape.Line.P1]);
+					v2 poB = ToScreen(Points[Shape.Line.P2]);
 					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
@@ -1363,8 +1379,8 @@ case_mode_draw:
 				
 				case SHAPE_Circle:
 				{
-					v2 poFocus  = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoFocus], ScreenCentre);
-					v2 poRadius = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoRadius], ScreenCentre);
+					v2 poFocus  = ToScreen(Points[Shape.Circle.ipoFocus]);
+					v2 poRadius = ToScreen(Points[Shape.Circle.ipoRadius]);
 					f32 Radius = Dist(poFocus, poRadius);
 					Assert(Radius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
@@ -1374,9 +1390,9 @@ case_mode_draw:
 
 				case SHAPE_Arc:
 				{
-					v2 poFocus = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoFocus], ScreenCentre);
-					v2 poStart = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoStart], ScreenCentre);
-					v2 poEnd   = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoEnd],   ScreenCentre);
+					v2 poFocus = ToScreen(Points[Shape.Arc.ipoFocus]);
+					v2 poStart = ToScreen(Points[Shape.Arc.ipoStart]);
+					v2 poEnd   = ToScreen(Points[Shape.Arc.ipoEnd]);
 					DrawArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
@@ -1391,10 +1407,10 @@ case_mode_draw:
 		for(uint i = 0; i < cPointsOnScreen; ++i)
 		{
 			// NOTE: basis already applied
-			DrawCircleFill(ScreenBuffer, Pull(*maPointsOnScreen, i), 3.f, LIGHT_GREY);
+			DrawCircleFill(ScreenBuffer, ToScreen(Pull(*maPointsOnScreen, i)), 3.f, LIGHT_GREY);
 		}
 
-		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
+		v2 poSSClosest = ToScreen(poClosest);
 		if(State->iLastPoint)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
 		if(IsSnapped)
 		{ // draw snapped point
@@ -1410,7 +1426,8 @@ case_mode_draw:
 		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
 		f32 SSLength = State->Length/BASIS.Zoom; 
 		v2 poSelect = State->poSelect;
-		v2 poSSSelect = V2CanvasToScreen(Basis, State->poSelect, ScreenCentre);
+		v2 poSSSelect = ToScreen(State->poSelect);
+		v2 poSSSaved  = ToScreen(State->poSaved);
 		switch(State->InputMode)
 		{
 			case MODE_Normal:
@@ -1424,7 +1441,6 @@ case_mode_draw:
 
 			case MODE_SetBasis:
 			{
-				v2 poSSSaved = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				DEBUGDrawLine(ScreenBuffer, poSSSaved, SSSnapMouseP, RED);
 			} break;
 
@@ -1444,14 +1460,26 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 			} break;
 
+			case MODE_DragSelect:
+			{
+				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
+				for(uint i = 0; i < cPointsOnScreen; ++i)
+				{
+					v2 P = Pull(*maPointsOnScreen, i);
+					if(PointInAABB(P, SelectionAABB))
+					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+				}
+			} break;
+
+			/* MODE_Selected, */
 
 			case MODE_Draw:
 			{
 				v2 poSSEnd = SSSnapMouseP;
-				v2 poSSAtDist = V2CanvasToScreen(Basis, poAtDist, ScreenCentre);
+				v2 poSSAtDist = ToScreen(poAtDist);
 				if( ! V2Equals(State->PerpDir, ZeroV2))
 				{ // draw perpendicular segment
-					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->PerpDir), ScreenCentre);
+					v2 poSSDir = ToScreen(V2Add(poSelect, State->PerpDir));
 					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				}
 				// preview circle at given length and segment
@@ -1467,7 +1495,7 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
-				v2 poSSStart = V2CanvasToScreen(Basis, poStart, ScreenCentre);
+				v2 poSSStart = ToScreen(poStart);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSStart, LIGHT_GREY);
 				if(V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
 				{
@@ -1475,7 +1503,7 @@ case_mode_draw:
 				}
 				else
 				{
-					v2 poSSAtDist = V2CanvasToScreen(Basis, poAtDist, ScreenCentre);
+					v2 poSSAtDist = ToScreen(poAtDist);
 					DrawArcFromPoints(ScreenBuffer, poSSSelect, poSSStart, poSSAtDist, BLACK);
 					DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSAtDist, LIGHT_GREY);
 				}
@@ -1484,8 +1512,8 @@ case_mode_draw:
 
 			case MODE_ExtendSeg:
 			{ // preview extending a line
-				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poSSOnLine = V2CanvasToScreen(Basis, poOnLine, ScreenCentre);
+				v2 poSSDir = ToScreen(State->poSaved);
+				v2 poSSOnLine = ToScreen(poOnLine);
 				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				if(State->InputMode == MODE_ExtendSeg)
 				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
@@ -1499,9 +1527,9 @@ case_mode_draw:
 				v2 PerpDir = State->PerpDir;
 				if( ! V2Equals(PerpDir, ZeroV2))
 				{
-					v2 poSSStart = V2CanvasToScreen(Basis, poSelect, ScreenCentre);
-					v2 poSSPerp = V2CanvasToScreen(Basis, V2Add(poSelect, PerpDir), ScreenCentre);
-					v2 poSSNPerp = V2CanvasToScreen(Basis, V2Add(poSelect, V2Neg(PerpDir)), ScreenCentre);
+					v2 poSSStart = ToScreen(poSelect);
+					v2 poSSPerp  = ToScreen(V2Add(poSelect, PerpDir));
+					v2 poSSNPerp = ToScreen(V2Add(poSelect, V2Neg(PerpDir)));
 					DEBUGDrawLine(ScreenBuffer, poSSStart, SSSnapMouseP, LIGHT_GREY);
 					DEBUGDrawLine(ScreenBuffer, poSSNPerp, poSSPerp, LIGHT_GREY);
 				}
@@ -1517,7 +1545,7 @@ case_mode_draw:
 
 		if(State->SelectedPoint)
 		{
-			DrawActivePoint(ScreenBuffer, V2CanvasToScreen(Basis, Points[State->SelectedPoint], ScreenCentre), MAGENTA);
+			DrawActivePoint(ScreenBuffer, ToScreen(Points[State->SelectedPoint]), MAGENTA);
 		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
@@ -1527,7 +1555,7 @@ case_mode_draw:
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
 			if(IsDrawing(State))
-				DrawActivePoint(ScreenBuffer, V2CanvasToScreen(Basis, gDebugPoint, ScreenCentre), ORANGE);
+				DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE);
 		}
 	}
 
@@ -1624,37 +1652,18 @@ case_mode_draw:
 		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%3.f, %3.f), "
-				/* "Request: {As: %u, Action: %s, Pan: %u}" */
-				/* "Basis: (%.2f, %.2f), " */
-				/* "Char: %d (%c), " */
-				/* "Mode: %s, " */
+				"Mode: %s, "
+				"poSaved: (%3.f, %3.f), "
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
-				"actions (iC/iL/iS): %u/%u/%u, "
-				/* "pBasis: (%.2f, %.2f)" */
-				/* "Draw Index: %u" */
-				/* "Offset: (%.2f, %.2f), " */
-				"iLastPoint: %u, "
-				"iLastShape: %u, "
-				"SelectedPoint: %u, "
-				"ipoSnap: %u, "
+				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
-				/* State->cLinePoints, */
-				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
-				/* C_Cancel.EndedDown, */
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
-				/* File.NewWindow, FileActionText[File.Action], File.Pan, */
-				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
-				/* testcharindex + 65, testcharindex + 65, */
-				/* InputModeText[State->InputMode], */
-				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
+				InputModeText[State->InputMode],
+				State->poSaved.X, State->poSaved.Y
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
-				State->iCurrentAction, State->iLastAction, State->iSaveAction,
+				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
-				State->iLastPoint,
-				State->iLastShape,
-				State->SelectedPoint,
-				ipoSnap
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
@@ -1737,3 +1746,4 @@ DECLARE_DEBUG_FUNCTION
 		DrawString(Buffer, Font, DebugTextBuffer, TextHeight, 0, 2.f*(f32)Buffer->Height/3.f /*- ((HitI+2)*TextHeight)*/, 0, GREY);
 	}
 }
+#undef ToScreen
