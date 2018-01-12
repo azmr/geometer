@@ -18,6 +18,7 @@ ResetNoAction(state *State, uint iAction)
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
+	State->maSelectedPoints.Used   = 0;
 
 	for(uint i = cPoints+1; i <= State->iLastPoint; ++i)
 	{ POINTSTATUS(i) = POINT_Free; }
@@ -267,10 +268,10 @@ InvalidatePointNoAction(state *State, uint ipo)
 }
 
 internal inline void
-InvalidatePoint(state *State, uint ipo)
+InvalidatePoint(state *State, uint ipo, action_types ActionType)
 {
 	action Action = {0};
-	Action.Kind = ACTION_RemovePt;
+	Action.Kind = ActionType;
 	Action.i = ipo;
 	Action.po = POINTS(ipo);
 
@@ -291,7 +292,7 @@ RemovePointsOfType(state *State, uint PointType)
 	{
 		if(POINTSTATUS(i) & PointType)
 		{
-			InvalidatePoint(State, i);
+			InvalidatePoint(State, i, ACTION_RemovePt);
 			++Result;
 		}
 	}

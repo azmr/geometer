@@ -38,8 +38,9 @@ static debug_text DebugText;
 #include <input.h>
 #include <misc.h>
 
-typedef arena_type(v2); typedef union v2_arena v2_arena; // repeated from macro - just for syntax highlighting
-typedef arena_type(u8); typedef union u8_arena u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(v2);   typedef union v2_arena   v2_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(u8);   typedef union u8_arena   u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(uint); typedef union uint_arena uint_arena; // repeated from macro - just for syntax highlighting
 
 #define POINT_EPSILON 0.02f
 
@@ -255,13 +256,12 @@ typedef struct state
 	// could use bit vector? NaN in the point values?
 	v2_arena maPoints;
 	v2_arena maIntersects;
-	v2_arena maPointsOnScreen;
+	uint_arena maPointsOnScreen;
+	uint_arena maSelectedPoints;
 	shape_arena maShapesNearScreen;
 	shape_arena maShapes;
 	u8_arena maPointStatus;
 	action_arena maActions; 
-
-	uint SelectedPoint;
 
 	basis Basis;
 	basis pBasis;

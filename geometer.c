@@ -6,8 +6,9 @@
 // =====
 //
 // - Find (and colour) lines intersecting at a given point
-// - Unlimited undo states
-//  	- save to disk for lots of them? (temporary/pich up undos on load?)
+// Undos
+// -----
+//  	- should saves remove 'superfluous' actions - i.e. take out remove points/indirections?
 //  	- undo history (show overall/with layers)
 //  	- undo by absolute and layer order
 // - Change storage of intersections, so they don't all need to be recomputed on changes
@@ -19,7 +20,9 @@
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
 // - F keys to open toolbars (layers/minimap/action history/...)
+// - ... or have them pop up by 'slamming' mouse to canvas edge... or both
 // - Copy and paste (between running apps - clipboard?) without NEEDING clipboard
+// - What else between apps - lengths?
 // - Consolidate history
 
 // UI that allows modification:
@@ -59,6 +62,8 @@
 
 #define C_NoSnap       Keyboard.Shift
 #define C_ShapeLock    Keyboard.Ctrl
+// IDEA (ui): would this be better as full stop? obvious semantic connection
+// further from resting position, but probably used infrequently..?
 #define C_PointOnly    Keyboard.Alt
 
 #define C_BasisSet     Mouse.RMB
@@ -374,7 +379,7 @@ ClosestPtIntersectingLine(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 T
 		cTotalIntersects += cIntersects;
 
 		// update closest candidate
-		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
+		if(cIntersects      && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
 		{ *poClosest = poIntersect1; }
 		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest))
 		{ *poClosest = poIntersect2; }
@@ -746,9 +751,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						} break;
 
 						default:
-							{
-								// do nothing
-							}
+						{
+							// do nothing
+						}
 					}
 					if(iShape == 1 || DistSq(TestP, CanvasMouseP) < DistSq(CanvasMouseP, SnapMouseP))
 					{ SnapMouseP = TestP; }
@@ -855,7 +860,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		else if(DEBUGPress(C_Cancel))
 		{
-			State->SelectedPoint = 0;
+			State->maSelectedPoints.Used = 0;
 			State->InputMode = MODE_Normal;
 		}
 
@@ -936,8 +941,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Select))
 					{
 						State->poSaved = SnapMouseP;
-						if(ipoSnap)
-						{ State->SelectedPoint = ipoSnap; }
 						State->InputMode = MODE_DragSelect;
 					}
 
@@ -996,25 +999,39 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				case MODE_DragSelect:
 				{
 					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
-					if( ! C_Select.EndedDown)
-					{
-						if(ipoSnap)
-						{ State->SelectedPoint = ipoSnap; }
-						State->InputMode = MODE_Selected;
+					State->maSelectedPoints.Used = 0;
+					for(uint i = 0; i < Len(State->maPointsOnScreen); ++i)
+					{ // add indexes of selected points to that array
+						uint ipo = Pull(State->maPointsOnScreen, i);
+						if(PointInAABB(POINTS(ipo), SelectionAABB))
+						{ Push(&State->maSelectedPoints, ipo); }
 					}
+
+					Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
+
+					if( ! C_Select.EndedDown) { State->InputMode = MODE_Selected; }
 				} break;
 
 
 				case MODE_Selected:
 				{
+					// TODO: change mode if nothing is actually selected
 					if(DEBUGPress(C_Delete))
 					{
 						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
 						// find in action list, see if the actions before were non-user points.
 						// If they were, check other shapes to see if they're used, if not, then delete.
-						InvalidatePoint(State, State->SelectedPoint);
-						State->SelectedPoint = 0;
+
+						uint cPointsSelected = (uint)Len(State->maSelectedPoints);
+						if(cPointsSelected)
+						{
+							for(uint i = 1; i < cPointsSelected; ++i)
+							{ InvalidatePoint(State, Pull(State->maSelectedPoints, i), ACTION_NonUserRemovePt); }
+							InvalidatePoint(State, Pull(State->maSelectedPoints, 0), ACTION_RemovePt);
+						}
+
 						RecalcNearScreenIntersects(State);
+						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_Normal;
 					}
 				} break;
@@ -1095,6 +1112,7 @@ case_mode_draw:
 						else
 						{ // extend segment, possibly through perpendicular
 							// TODO (UI): this should be based on shape snapping rather than intersection
+							// otherwise can accidentally 'extend' to circumference near intended point
 							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, State->poSelect, State->Length);
 							AddIntersection(State, poAtLength);
 
@@ -1192,7 +1210,8 @@ case_mode_draw:
 
 				case MODE_ExtendSeg:
 				{ // find point on shape closest to mouse along line
-					// TODO (fix): preview point pulling away from shape
+					// TODO (fix): preview point pulling away from shape on shape snap
+					// TODO (fix): should be snapping to opposite side of circle
 					v2 TestStart = State->poSelect; 
 					v2 poExtend = State->poSaved;
 					v2 TestDir = V2Sub(poExtend, TestStart);
@@ -1281,7 +1300,8 @@ case_mode_draw:
 	}
 
 	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
-	v2_arena *maPointsOnScreen      = &State->maPointsOnScreen;
+	uint_arena  *maSelectedPoints   = &State->maSelectedPoints;
+	uint_arena  *maPointsOnScreen   = &State->maPointsOnScreen;
 	maShapesNearScreen->Used = 0;
 	maPointsOnScreen->Used = 0;
 	uint cShapesNearScreen = 0;
@@ -1334,20 +1354,20 @@ case_mode_draw:
 				}
 			}
 		}
-		Assert(cShapesNearScreen == State->maShapesNearScreen.Used/sizeof(shape));
+		Assert(cShapesNearScreen == maShapesNearScreen->Used/sizeof(*maShapesNearScreen->Items));
 
 		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
 		{
 			// NOTE: needed in canvas form later
 			v2 P = Points[ipo];
-			if(PointInAABB(ToScreen(P), ScreenBB) &&
-					POINTSTATUS(ipo) != POINT_Free)
+			if(POINTSTATUS(ipo) != POINT_Free &&
+			   PointInAABB(ToScreen(P), ScreenBB))
 			{
-				Push(maPointsOnScreen, P);
+				Push(maPointsOnScreen, ipo);
 				++cPointsOnScreen;
 			}
 		}
-		Assert(cPointsOnScreen == State->maPointsOnScreen.Used/sizeof(v2));
+		Assert(cPointsOnScreen == maPointsOnScreen->Used/sizeof(*maPointsOnScreen->Items));
 	}
 
 	{ LOG("RENDER");
@@ -1407,7 +1427,7 @@ case_mode_draw:
 		for(uint i = 0; i < cPointsOnScreen; ++i)
 		{
 			// NOTE: basis already applied
-			DrawCircleFill(ScreenBuffer, ToScreen(Pull(*maPointsOnScreen, i)), 3.f, LIGHT_GREY);
+			DrawCircleFill(ScreenBuffer, ToScreen(POINTS(Pull(*maPointsOnScreen, i))), 3.f, LIGHT_GREY);
 		}
 
 		v2 poSSClosest = ToScreen(poClosest);
@@ -1461,17 +1481,16 @@ case_mode_draw:
 			} break;
 
 			case MODE_DragSelect:
+			case MODE_Selected:
 			{
 				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
-				for(uint i = 0; i < cPointsOnScreen; ++i)
+				for(uint i = 0; i < Len(*maSelectedPoints); ++i)
 				{
-					v2 P = Pull(*maPointsOnScreen, i);
-					if(PointInAABB(P, SelectionAABB))
+					v2 P = POINTS(Pull(*maSelectedPoints, i));
+					if(State->InputMode == MODE_Selected || PointInAABB(P, SelectionAABB))
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
 				}
 			} break;
-
-			/* MODE_Selected, */
 
 			case MODE_Draw:
 			{
@@ -1534,18 +1553,6 @@ case_mode_draw:
 					DEBUGDrawLine(ScreenBuffer, poSSNPerp, poSSPerp, LIGHT_GREY);
 				}
 			} break;
-		}
-
-		uint LastIntersect = (uint)ArenaCount(State->maIntersects, v2) - 1;
-		for(uint i = 1; i <= LastIntersect; ++i)
-		{
-			/* v2 poSS = V2CanvasToScreen(Basis, *PullEl(State->maIntersects, i, v2), ScreenCentre); */
-			/* DrawActivePoint(ScreenBuffer, poSS, ORANGE); */
-		}
-
-		if(State->SelectedPoint)
-		{
-			DrawActivePoint(ScreenBuffer, ToScreen(Points[State->SelectedPoint]), MAGENTA);
 		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
@@ -1654,13 +1661,15 @@ case_mode_draw:
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
 				"poSaved: (%3.f, %3.f), "
+				"Selected Points: %u, "
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
 				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
-				State->poSaved.X, State->poSaved.Y
+				State->poSaved.X, State->poSaved.Y,
+				Len(State->maSelectedPoints)
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
 				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
