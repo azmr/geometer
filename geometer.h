@@ -5,6 +5,7 @@
 #define POINTSTATUS(i) Pull(State->maPointStatus, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
+#define DEBUG_LOG_ACTIONS 1
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 
@@ -94,6 +95,7 @@ typedef struct arc
 
 typedef enum shape_types
 {
+	SHAPE_ToggleActive = -1, // ensure negatives allowed
 	SHAPE_Free = 0,
 	SHAPE_Line,
 	SHAPE_Ray,
@@ -111,15 +113,18 @@ typedef enum shape_types
 	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"             ) \
 	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"                ) \
 	ACTION_TYPE(ACTION_Point,                   "Add point"              ) \
-	ACTION_TYPE(ACTION_RemovePt,                "Remove Pt"              ) \
-	ACTION_TYPE(ACTION_Basis,                   "Change Basis"           ) \
+	ACTION_TYPE(ACTION_RemovePt,                "Remove point"           ) \
+	ACTION_TYPE(ACTION_RemoveShape,             "Remove shape"           ) \
+	ACTION_TYPE(ACTION_Basis,                   "Change basis"           ) \
 	ACTION_TYPE(ACTION_NON_USER,                "**NON-USER**"           ) \
 	ACTION_TYPE(ACTION_NonUserLine,             "Add line (non-user)"    ) \
 	ACTION_TYPE(ACTION_NonUserRay,              "Add ray (non-user)"     ) \
 	ACTION_TYPE(ACTION_NonUserSegment,          "Add segment (non-user)" ) \
 	ACTION_TYPE(ACTION_NonUserCircle,           "Add circle (non-user)"  ) \
 	ACTION_TYPE(ACTION_NonUserArc,              "Add arc (non-user)"     ) \
-	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   )
+	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   ) \
+	ACTION_TYPE(ACTION_NonUserRemovePt,         "Remove point (non-user)") \
+	ACTION_TYPE(ACTION_NonUserRemoveShape,      "Remove shape (non-user)")
 
 #define USERIFY_ACTION(a) ((a) < ACTION_NON_USER ? (a) : (a) - ACTION_NON_USER)
 

@@ -19,6 +19,8 @@
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
 // - F keys to open toolbars (layers/minimap/action history/...)
+// - Copy and paste (between running apps - clipboard?) without NEEDING clipboard
+// - Consolidate history
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -148,7 +150,7 @@ SimpleUndo(state *State)
 	Assert(State->iCurrentAction > 0);
 	action *Actions = State->maActions.Items;
 	action Action = Actions[State->iCurrentAction];
-	switch(USERIFY_ACTION(Action.Kind))
+	switch(USERIFY_ACTION(Action.Kind)) // whether or not it is user-initiated is dealt with by UserUndo
 	{
 		case ACTION_Reset:
 		{ // reapply all actions from scratch
@@ -159,7 +161,16 @@ SimpleUndo(state *State)
 		} break;
 
 		case ACTION_RemovePt:
-		{ Assert(Action.i == AddPoint(State, Action.po, Action.PointStatus, 0, ACTION_Point)); } break;
+		{
+			POINTSTATUS(Action.i) = POINT_Extant;
+		} break;
+
+		case ACTION_RemoveShape:
+		{
+			shape *Shape = &Pull(State->maShapes, Action.i);
+			Assert(Shape->Kind < SHAPE_Free);
+			Shape->Kind = Shape->Kind < SHAPE_Free ? -Shape->Kind : Shape->Kind;
+		} break;
 
 		case ACTION_Basis:
 		{ // find the previous basis and apply that
@@ -983,7 +994,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 				case MODE_Selected:
 				{
-					State->InputMode = MODE_Normal;
+					if(DEBUGPress(C_Delete))
+					{
+						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
+						// find in action list, see if the actions before were non-user points.
+						// If they were, check other shapes to see if they're used, if not, then delete.
+						InvalidatePoint(State, State->SelectedPoint);
+						State->SelectedPoint = 0;
+						RecalcNearScreenIntersects(State);
+						State->InputMode = MODE_Normal;
+					}
 				} break;
 
 
@@ -1277,24 +1297,27 @@ case_mode_draw:
 		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
 		{
 			shape Shape = Shapes[iShape];
-			// create local copy of shape with basis applied
-			shape LocalShape = Shape;
-			v2 ShapePoints[NUM_SHAPE_POINTS];
-			for(uint i = 0; i < NUM_SHAPE_POINTS; ++i)
+			if(Shape.Kind > SHAPE_Free)
 			{
-				// TODO (opt): init all shape points to 0 so I don't need to check
-				// that point is inside mem bounds?
-				uint ipo = Shape.P[i];
-				v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
-				ShapePoints[i] = V2CanvasToScreen(Basis, P, ScreenCentre);
-				LocalShape.P[i] = i;
-			}
-			aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
-			/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
-			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
-			{ // add shape to array of shapes on screen
-				Push(maShapesNearScreen, Shape);
-				++cShapesNearScreen;
+				// create local copy of shape with basis applied
+				shape LocalShape = Shape;
+				v2 ShapePoints[NUM_SHAPE_POINTS];
+				for(uint i = 0; i < NUM_SHAPE_POINTS; ++i)
+				{
+					// TODO (opt): init all shape points to 0 so I don't need to check
+					// that point is inside mem bounds?
+					uint ipo = Shape.P[i];
+					v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
+					ShapePoints[i] = V2CanvasToScreen(Basis, P, ScreenCentre);
+					LocalShape.P[i] = i;
+				}
+				aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
+				/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
+				if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
+				{ // add shape to array of shapes on screen
+					Push(maShapesNearScreen, Shape);
+					++cShapesNearScreen;
+				}
 			}
 		}
 		Assert(cShapesNearScreen == State->maShapesNearScreen.Used/sizeof(shape));
@@ -1358,6 +1381,9 @@ case_mode_draw:
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
 				} break;
+
+				default:
+				{ Assert(!"Tried to draw unknown shape"); }
 			}
 		}
 
