@@ -778,6 +778,44 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 	END_TIMED_BLOCK;
 }
 
+internal aabb
+AABBFromShape(v2 *Points, shape Shape)
+{
+	aabb Result = {0};
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			v2 po1 = Points[Shape.Line.P1];
+			v2 po2 = Points[Shape.Line.P2];
+			minmaxf32 x = MinMaxF32(po1.X, po2.X);
+			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
+			Result.MinX = x.Min;
+			Result.MaxX = x.Max;
+			Result.MinY = y.Min;
+			Result.MaxY = y.Max;
+		} break;
+
+		// TODO (optimize): arc AABB may be smaller than circle
+		case SHAPE_Arc:
+		case SHAPE_Circle:
+		{
+			v2 Focus = Points[Shape.Circle.ipoFocus];
+			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
+			Result.MinX = Focus.X - Radius;
+			Result.MaxX = Focus.X + Radius;
+			Result.MinY = Focus.Y - Radius;
+			Result.MaxY = Focus.Y + Radius;
+		} break;
+
+		default:
+		{
+			Assert(0);
+		}
+	}
+	return Result;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  ACTIONS  //////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////

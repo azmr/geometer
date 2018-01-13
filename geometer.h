@@ -208,16 +208,18 @@ ShapeEq(shape S1, shape S2)
 typedef struct action
 {
 	// TODO: choose size for this instead of action_types, otherwise serializing will be unpredictable
-	action_types Kind;
-	u32 i;
+	action_types Kind; // MSVC thinks this is 4 bytes
+	u32 i;             // 4 bytes
 	union {
-		shape_union;
-		basis Basis;
-		struct
+		shape_union;   // 12 bytes
+		basis Basis;   // 20 bytes - could compress to 16 by combining XAxis and Zoom
+		struct         // 12?
 		{
 			v2 po;
 			u8 PointStatus;
 		};
+		// TODO: add char array the size of this union... or I could have ACTION_TextStart and ACTION_TextContinue,
+		// just waste the Kind each time (I think I want to be able to look at any individual action and see what it is
 	};
 } action;
 typedef arena_type(action); typedef union action_arena action_arena;
@@ -298,44 +300,6 @@ typedef struct state
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;
-
-internal aabb
-AABBFromShape(v2 *Points, shape Shape)
-{
-	aabb Result = {0};
-	switch(Shape.Kind)
-	{
-		case SHAPE_Segment:
-		{
-			v2 po1 = Points[Shape.Line.P1];
-			v2 po2 = Points[Shape.Line.P2];
-			minmaxf32 x = MinMaxF32(po1.X, po2.X);
-			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
-			Result.MinX = x.Min;
-			Result.MaxX = x.Max;
-			Result.MinY = y.Min;
-			Result.MaxY = y.Max;
-		} break;
-
-		// TODO (optimize): arc AABB may be smaller than circle
-		case SHAPE_Arc:
-		case SHAPE_Circle:
-		{
-			v2 Focus = Points[Shape.Circle.ipoFocus];
-			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
-			Result.MinX = Focus.X - Radius;
-			Result.MaxX = Focus.X + Radius;
-			Result.MinY = Focus.Y - Radius;
-			Result.MaxY = Focus.Y + Radius;
-		} break;
-
-		default:
-		{
-			Assert(0);
-		}
-	}
-	return Result;
-}
 
 #include "geometer_core.c"
 
