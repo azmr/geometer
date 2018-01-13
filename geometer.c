@@ -992,12 +992,25 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if( ! C_Select.EndedDown)
 					{
-						for(uint iipo = 0; iipo < Len(State->maPointsOnScreen); ++iipo)
+						for(uint iipoScreen = 0; iipoScreen < Len(State->maPointsOnScreen); ++iipoScreen)
 						{ // add indexes of selected points to that array
-							uint ipo = Pull(State->maPointsOnScreen, iipo);
-							if(PointInAABB(POINTS(ipo), SelectionAABB) &&
-								(State->InputMode == MODE_DragSelect || ! PointIsSelected(State, ipo)))
-							{ Push(&State->maSelectedPoints, ipo); }
+							uint ipoTest = Pull(State->maPointsOnScreen, iipoScreen);
+							if(PointInAABB(POINTS(ipoTest), SelectionAABB))
+							{
+								for(uint iipoSelected = 0; iipoSelected < Len(State->maSelectedPoints); ++iipoSelected)
+								{ // insert into array, keeping it in ascending order
+									uint ipoSelected = Pull(State->maSelectedPoints, iipoSelected);
+									Assert(ipoSelected);
+									if(ipoTest == ipoSelected) { goto dont_append_selection; } // already in array
+									else if(ipoSelected > ipoTest)
+									{ // found larger element, insert before it
+										Insert(&State->maSelectedPoints, iipoSelected, ipoTest);
+										goto dont_append_selection;
+									}
+								}
+								Push(&State->maSelectedPoints, ipoTest);
+dont_append_selection:;
+							}
 						}
 
 						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
@@ -1015,12 +1028,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{
 						for(uint iipo = 0; iipo < Len(State->maSelectedPoints); ++iipo)
 						{ // add indexes of selected points to that array
-							uint ipo = Pull(State->maSelectedPoints, iipo);
-							if(PointInAABB(POINTS(ipo), SelectionAABB))
-							{ Pull(State->maSelectedPoints, iipo) = 0; }
+							uint ipoTest = Pull(State->maSelectedPoints, iipo);
+							if(PointInAABB(POINTS(ipoTest), SelectionAABB))
+							{ // point inside box. If already selected, remove it.
+								Remove(&State->maSelectedPoints, iipo--);
+							}
 						}
-
-						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
 
 						State->InputMode = MODE_Selected;
 						goto case_mode_selected;
@@ -1531,7 +1544,7 @@ case_mode_draw:
 					{
 						v2 P = POINTS(ipo);
 						if(PointInAABB(P, SelectionAABB))
-						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+						{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 					}
 				}
 			}
@@ -1544,7 +1557,7 @@ case_mode_draw:
 					if(ipo)
 					{
 						v2 P = POINTS(ipo);
-						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+						{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 					}
 				}
 			} break;
