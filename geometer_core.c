@@ -470,18 +470,21 @@ AddShapeIntersections(state *State, shape *Shapes, uint cShapes, uint iShape)
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0, cIntersections;
 	shape Shape = Shapes[iShape];
-	Assert(Shape.Kind >= SHAPE_Free);
+	Assert(Shape.Kind != SHAPE_Free);
 	v2 po1, po2;
 
 	// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
 	// IMPORTANT TODO: spatially separate, maybe hierarchically
-	for(uint i = 0; i < cShapes; ++i)
+	if(Shape.Kind > SHAPE_Free)
 	{
-		if(i == iShape) continue;
+		for(uint i = 0; i < cShapes; ++i)
+		{
+			if(i == iShape) continue;
 
-		cIntersections = IntersectShapes(State->maPoints.Items, Shape, Shapes[i], &po1, &po2);
-		AddIntersections(State, po1, po2, cIntersections);
-		Result += cIntersections;
+			cIntersections = IntersectShapes(State->maPoints.Items, Shape, Shapes[i], &po1, &po2);
+			AddIntersections(State, po1, po2, cIntersections);
+			Result += cIntersections;
+		}
 	}
 	END_TIMED_BLOCK;
 	return Result;
