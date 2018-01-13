@@ -1403,10 +1403,19 @@ case_mode_draw:
 		}
 
 		LOG("\tDRAW POINTS");
-		for(uint i = 0; i < cPointsOnScreen; ++i)
+		for(uint iipo = 0; iipo < cPointsOnScreen; ++iipo)
 		{
 			// NOTE: basis already applied
-			DrawCircleFill(ScreenBuffer, ToScreen(POINTS(Pull(*maPointsOnScreen, i))), 3.f, LIGHT_GREY);
+			uint ipo = Pull(*maPointsOnScreen, iipo);
+			v2 SSPoint = ToScreen(POINTS(ipo));
+			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);
+
+			if(State->ShowDebugInfo)
+			{
+				char PointIndex[8] = {0};
+				ssnprintf(PointIndex, sizeof(PointIndex), "%u", ipo);
+				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
+			}
 		}
 
 		v2 poSSClosest = ToScreen(poClosest);
