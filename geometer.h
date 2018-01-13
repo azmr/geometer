@@ -155,6 +155,8 @@ typedef enum input_mode
 	MODE_QuickPtOrSeg,
 	MODE_DragSelect,
 	MODE_Selected,
+		MODE_AddToSelection,
+		MODE_RmFromSelection,
 	MODE_Draw,
 		MODE_ExtendArc,
 		MODE_ExtendSeg,
@@ -168,6 +170,8 @@ char *InputModeText[] =
 	"MODE_QuickPtOrSeg",
 	"MODE_DragSelect",
 	"MODE_Selected",
+		"MODE_AddToSelection",
+		"MODE_RmFromSelection",
 	"MODE_Draw",
 		"MODE_ExtendArc",
 		"MODE_ExtendSeg",
@@ -258,6 +262,7 @@ typedef struct state
 	// could use bit vector? NaN in the point values?
 	v2_arena maPoints;
 	v2_arena maIntersects;
+	// Could optimize by keeping sorted
 	uint_arena maPointsOnScreen;
 	uint_arena maSelectedPoints;
 	shape_arena maShapesNearScreen;

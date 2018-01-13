@@ -39,23 +39,20 @@
 //		- RMB-drag - extend seg
 //	- RMB - select point/shape
 //	- RMB-drag marquee-select points/shapes
-//	- Alt-RMB for +/- selection
 //	- ??? - move to background layer/another layer...
+//	Once points are selected:
+//	- Alt-RMB for +/- selection
+//	OR
+//	- RMB for + selection, Alt-RMB for - selection
 //	...
 
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
-#define CB_StartShape  LMB
-#define CB_Arc         LMB
-#define CB_Line        RMB
-#define CB_Length      LMB
-#define CB_Select      RMB
 
-#define C_StartShape   Mouse.CB_StartShape
-#define C_Arc          Mouse.CB_Arc
-#define C_Line         Mouse.CB_Line
-#define C_Length       Mouse.CB_Length
-#define C_Select       Mouse.CB_Select
+#define C_StartShape   Mouse.LMB
+#define C_Arc          Mouse.LMB
+#define C_Line         Mouse.RMB
+#define C_Length       Mouse.LMB
 // divide length       1-0
 // mult length         Alt + 1-0
 // get store length    a-z,A-Z
@@ -66,6 +63,9 @@
 // IDEA (ui): would this be better as full stop? obvious semantic connection
 // further from resting position, but probably used infrequently..?
 #define C_PointOnly    Keyboard.Alt
+
+#define C_Select       Mouse.RMB
+#define C_SelectMod    Keyboard.Alt
 
 #define C_BasisSet     Mouse.RMB
 #define C_BasisMod     Keyboard.Space
@@ -480,7 +480,7 @@ DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 	DEBUGDrawLine(ScreenBuffer, BottomLeft, BottomRight, Col);
 }
 
-internal aabb
+internal inline aabb
 AABBCanvasToScreen(basis Basis, aabb AABB, v2 ScreenCentre)
 {
 	aabb Result;
@@ -489,13 +489,26 @@ AABBCanvasToScreen(basis Basis, aabb AABB, v2 ScreenCentre)
 	return Result;
 }
 
-internal b32
+internal inline b32
 CurrentActionIsByUser(state *State)
 {
 	action Action = Pull(State->maActions, State->iCurrentAction);
 	b32 Result = Action.Kind < ACTION_NON_USER;
 	return Result;
 }
+
+internal inline b32
+PointIsSelected(state *State, uint ipo)
+{
+	b32 Result = 0;
+	for(int i = 0; i < Len(State->maSelectedPoints); ++i)
+	{
+		if(Pull(State->maSelectedPoints, i) == ipo)
+		{ Result = 1; break; }
+	}
+	return Result;
+}
+
 
 UPDATE_AND_RENDER(UpdateAndRender)
 {
@@ -973,26 +986,62 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 
 				case MODE_DragSelect:
+				case MODE_AddToSelection:
 				{
 					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
-					State->maSelectedPoints.Used = 0;
-					for(uint i = 0; i < Len(State->maPointsOnScreen); ++i)
-					{ // add indexes of selected points to that array
-						uint ipo = Pull(State->maPointsOnScreen, i);
-						if(PointInAABB(POINTS(ipo), SelectionAABB))
-						{ Push(&State->maSelectedPoints, ipo); }
+
+					if( ! C_Select.EndedDown)
+					{
+						for(uint iipo = 0; iipo < Len(State->maPointsOnScreen); ++iipo)
+						{ // add indexes of selected points to that array
+							uint ipo = Pull(State->maPointsOnScreen, iipo);
+							if(PointInAABB(POINTS(ipo), SelectionAABB) &&
+								(State->InputMode == MODE_DragSelect || ! PointIsSelected(State, ipo)))
+							{ Push(&State->maSelectedPoints, ipo); }
+						}
+
+						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
+
+						State->InputMode = MODE_Selected;
+						goto case_mode_selected;
 					}
+				} break;
 
-					Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
 
-					if( ! C_Select.EndedDown) { State->InputMode = MODE_Selected; }
+				case MODE_RmFromSelection:
+				{
+					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
+					if( ! C_Select.EndedDown)
+					{
+						for(uint iipo = 0; iipo < Len(State->maSelectedPoints); ++iipo)
+						{ // add indexes of selected points to that array
+							uint ipo = Pull(State->maSelectedPoints, iipo);
+							if(PointInAABB(POINTS(ipo), SelectionAABB))
+							{ Pull(State->maSelectedPoints, iipo) = 0; }
+						}
+
+						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
+
+						State->InputMode = MODE_Selected;
+						goto case_mode_selected;
+					}
 				} break;
 
 
 				case MODE_Selected:
 				{
+case_mode_selected:
 					if(Len(State->maSelectedPoints) == 0) { State->InputMode = MODE_Normal; break; }
-					if(DEBUGPress(C_Delete))
+
+					if(DEBUGClick(C_Select))
+					{ // add or remove points to/from selected array
+						State->poSaved = SnapMouseP;
+						if(C_SelectMod.EndedDown) // remove points from selected array
+						{ State->InputMode = MODE_RmFromSelection; }
+						else // add points to selected array
+						{ State->InputMode = MODE_AddToSelection; }
+					}
+					else if(DEBUGPress(C_Delete))
 					{
 						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
 						// find in action list, see if the actions before were non-user points.
@@ -1471,15 +1520,32 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 			} break;
 
+			case MODE_RmFromSelection:
 			case MODE_DragSelect:
+			case MODE_AddToSelection:
+			{
+				for(uint iipo = 0; iipo < Len(*maPointsOnScreen); ++iipo)
+				{
+					uint ipo = Pull(*maPointsOnScreen, iipo);
+					if(ipo)
+					{
+						v2 P = POINTS(ipo);
+						if(PointInAABB(P, SelectionAABB))
+						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+					}
+				}
+			}
 			case MODE_Selected:
 			{
 				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
-				for(uint i = 0; i < Len(*maSelectedPoints); ++i)
+				for(uint iipo = 0; iipo < Len(*maSelectedPoints); ++iipo)
 				{
-					v2 P = POINTS(Pull(*maSelectedPoints, i));
-					if(State->InputMode == MODE_Selected || PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+					uint ipo = Pull(*maSelectedPoints, iipo);
+					if(ipo)
+					{
+						v2 P = POINTS(ipo);
+						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+					}
 				}
 			} break;
 
@@ -1647,24 +1713,24 @@ case_mode_draw:
 
 		char Message[512];
 		TextSize = 15.f;
+		uint *SelP = State->maSelectedPoints.Items;
 		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
-				"poSaved: (%3.f, %3.f), "
-				"Selected Points: %u, "
-				"cPtOnScreen: %u, "
-				"cShapesNear: %u, "
+				"Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], "
+				/* "cPtOnScreen: %u, " */
+				/* "cShapesNear: %u, " */
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
 				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
-				State->poSaved.X, State->poSaved.Y,
 				Len(State->maSelectedPoints),
-				Len(State->maPointsOnScreen),
-				Len(State->maShapesNearScreen)
+				SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7]
+				/* Len(State->maPointsOnScreen), */
+				/* Len(State->maShapesNearScreen) */
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
 				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
