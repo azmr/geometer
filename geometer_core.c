@@ -18,6 +18,7 @@ ResetNoAction(state *State, uint iAction)
 	State->maIntersects.Used       = sizeof(v2);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
+	State->maSelectedPoints.Used   = 0;
 
 	for(uint i = cPoints+1; i <= State->iLastPoint; ++i)
 	{ POINTSTATUS(i) = POINT_Free; }
@@ -189,22 +190,6 @@ NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
 	END_TIMED_BLOCK;
 	return Result;
 }
-/// returns the first free point up to the last point used
-/// returns 0 if none found
-internal inline uint
-FirstFreePoint(state *State)
-{
-	uint Result = 0;
-	for(uint ipo = 1; ipo <= State->iLastPoint; ++ipo)
-	{
-		if(POINTSTATUS(ipo) == POINT_Free)
-		{
-			Result = ipo;
-			break;
-		}
-	}
-	return Result;
-}
 
 /// returns true if a point is added/updated (i.e. an action is needed)
 internal b32
@@ -227,14 +212,10 @@ AddPointNoAction(state *State, v2 po, uint PointStatus, u8 *PriorStatus, uint *i
 	else 
 	{ // add a new point
 		if(PriorStatus) { *PriorStatus = POINT_Free; }
-		ipo = FirstFreePoint(State);
-		// NOTE: Create new point if needed
-		if(!ipo)
-		{
-			Push1(&State->maPoints);
-			Push1(&State->maPointStatus);
-			ipo = ++State->iLastPoint;
-		}
+		// NOTE: Create new point
+		Push1(&State->maPoints);
+		Push1(&State->maPointStatus);
+		ipo = ++State->iLastPoint;
 		POINTS(ipo) = po;
 		POINTSTATUS(ipo) |= PointStatus | POINT_Extant;
 	}
@@ -265,17 +246,29 @@ AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types Po
 }
 
 internal inline void InvalidateShapesAtPoint(state *State, uint ipo);
-internal inline void
-InvalidatePoint(state *State, uint ipo)
+
+internal inline action
+InvalidatePointOnly(state *State, uint ipo, action_types ActionType)
 {
-	BEGIN_TIMED_BLOCK;
-	InvalidateShapesAtPoint(State, ipo);
-	POINTSTATUS(ipo) = POINT_Free;
-	action Action;
-	Action.Kind = ACTION_RemovePt;
+	action Action = {0};
+	Action.Kind = ActionType;
 	Action.i = ipo;
+	Action.po = POINTS(ipo);
+	POINTSTATUS(ipo) = POINT_Free;
+	return Action;
+}
+
+internal inline void
+InvalidatePoint(state *State, uint ipo, action_types ActionType)
+{
+	// TODO (ui): may not be obvious if deleting a point on a circle circumference
+	// that it's the radius point rather than just a point on the line...
+	// Don't surprise the user!
+	// So... transition back to circles defined by focus and radius
+
+	action Action = InvalidatePointOnly(State, ipo, ActionType);
+	InvalidateShapesAtPoint(State, ipo);
 	AddAction(State, Action);
-	END_TIMED_BLOCK;
 }
 
 /// returns number of points removed
@@ -288,7 +281,7 @@ RemovePointsOfType(state *State, uint PointType)
 	{
 		if(POINTSTATUS(i) & PointType)
 		{
-			InvalidatePoint(State, i);
+			InvalidatePoint(State, i, ACTION_RemovePt);
 			++Result;
 		}
 	}
@@ -342,7 +335,7 @@ IntersectShapes(v2 *Points, shape S1, shape S2, v2 *Intersection1, v2 *Intersect
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
-	if(S1.Kind == SHAPE_Free || S2.Kind == SHAPE_Free) goto end;
+	if(S1.Kind <= SHAPE_Free || S2.Kind <= SHAPE_Free) goto end;
 	// NOTE: should be valid for circles or arcs
 	f32 S1Radius = Dist(Points[S1.Circle.ipoFocus], Points[S1.Circle.ipoRadius]);
 	f32 S2Radius = Dist(Points[S2.Circle.ipoFocus], Points[S2.Circle.ipoRadius]);
@@ -482,13 +475,16 @@ AddShapeIntersections(state *State, shape *Shapes, uint cShapes, uint iShape)
 
 	// NOTE: TODO? internal line between eg corners of square adds 1 intersection... sometimes?
 	// IMPORTANT TODO: spatially separate, maybe hierarchically
-	for(uint i = 0; i < cShapes; ++i)
+	if(Shape.Kind > SHAPE_Free)
 	{
-		if(i == iShape) continue;
+		for(uint i = 0; i < cShapes; ++i)
+		{
+			if(i == iShape) continue;
 
-		cIntersections = IntersectShapes(State->maPoints.Items, Shape, Shapes[i], &po1, &po2);
-		AddIntersections(State, po1, po2, cIntersections);
-		Result += cIntersections;
+			cIntersections = IntersectShapes(State->maPoints.Items, Shape, Shapes[i], &po1, &po2);
+			AddIntersections(State, po1, po2, cIntersections);
+			Result += cIntersections;
+		}
 	}
 	END_TIMED_BLOCK;
 	return Result;
@@ -530,7 +526,8 @@ internal inline uint
 RecalcNearScreenIntersects(state *State)
 {
 	shape_arena Arena = State->maShapesNearScreen;
-	uint Result = RecalcIntersects(State, Arena.Items + 1, (uint)Len(Arena) - 1);
+	uint ArenaLen = (uint)Len(Arena);
+	uint Result = RecalcIntersects(State, Arena.Items, ArenaLen);
 	return Result;
 }
 
@@ -564,29 +561,10 @@ AddShapeNoAction(state *State, shape Shape, uint *iShapeOut)
 	}
 
 	if(!ExistingShape)
-	{
-		// NOTE: check for free shape to fill
-		uint iEmptyShape = 0;
-		for(iShape = 1; iShape <= State->iLastShape; ++iShape)
-		{
-			if(Shapes[iShape].Kind == SHAPE_Free)
-			{
-				iEmptyShape = iShape;
-				break;
-			}
-		}
-
-		if(iEmptyShape)
-		{ // NOTE: fill empty shape
-			Shapes[iEmptyShape] = Shape;
-			AddAllShapeIntersects(State, iEmptyShape);
-		}
-		else
-		{ // NOTE: new shape
-			Push(&State->maShapes, Shape);
-			iShape = ++State->iLastShape;
-			AddAllShapeIntersects(State, iShape);
-		}
+	{ // NOTE: new shape
+		Push(&State->maShapes, Shape);
+		iShape = ++State->iLastShape;
+		AddAllShapeIntersects(State, iShape);
 
 		Result = 1;
 	}
@@ -603,7 +581,7 @@ AddShape(state *State, shape Shape)
 	uint Result = 0;
 	if(AddShapeNoAction(State, Shape, &Result))
 	{
-		action Action;
+		action Action = {0};
 		Action.Kind = Shape.Kind;
 		Action.i = Result;
 		Action.P[0] = Shape.P[0];
@@ -675,24 +653,175 @@ AddArcAtPoints(state *State, v2 poFocus, v2 poStart, v2 poEnd)
 	return AddArc(State, ipoFocus, ipoStart, ipoEnd);
 }
 
+internal inline b32
+ShapeUsesPoint(shape Shape, uint ipo)
+{
+	b32 Result = 0;
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			if(Shape.Line.P1 == ipo || Shape.Line.P2 == ipo)
+			{ Result = 1; }
+		} break;
+
+		case SHAPE_Circle:
+		{
+			if(Shape.Circle.ipoFocus == ipo || Shape.Circle.ipoRadius == ipo)
+			{ Result = 1; }
+		} break;
+
+		case SHAPE_Arc:
+		{
+			if(Shape.Arc.ipoFocus == ipo ||
+			   Shape.Arc.ipoStart == ipo ||
+			   Shape.Arc.ipoEnd   == ipo)
+			{ Result = 1; }
+		} break;
+
+		case -SHAPE_Segment:
+		case -SHAPE_Circle:
+		case -SHAPE_Arc:
+		{} break;
+
+		default:
+		{ Assert(!"Unknown shape type"); }
+	}
+
+	return Result;
+}
+
+// TODO: allow user to make automatic point 'user-set' by overriding?
+internal inline b32
+InvalidatePointIfUnusedAndAutomatic(state *State, uint ipo)
+{
+	b32 Used = 0;
+	b32 Result = 0;
+	if(POINTSTATUS(ipo) != POINT_Free)
+	{
+		for(uint iShape = State->iLastShape; iShape > 0; --iShape)
+		{
+			if(ShapeUsesPoint(Pull(State->maShapes, iShape), ipo))
+			{ Used = 1; break; }
+		}
+		if( ! Used)
+		{
+			b32 PlacedByUser = 0;
+			for(uint iAction = State->iLastAction; iAction > 0; --iAction)
+			{
+				action Action = Pull(State->maActions, iAction);
+				if(Action.i == ipo && Action.Kind == ACTION_Point) // the user-intended variant
+				{ PlacedByUser = 1; break; }
+			}
+
+			Result = ! PlacedByUser;
+			if(Result)
+			{
+				action Action = InvalidatePointOnly(State, ipo, ACTION_NonUserRemovePt);
+				AddAction(State, Action);
+			}
+		}
+	}
+	return Result;
+}
+
 internal inline void
 InvalidateShapesAtPoint(state *State, uint ipo)
 {
 	BEGIN_TIMED_BLOCK;
 	shape *Shapes = State->maShapes.Items;
-	for(uint i = 1; i <= State->iLastShape; ++i)
+	for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
 	{ // NOTE: if any of the shape's points match, remove it
-		if(Shapes[i].P[0] == ipo || Shapes[i].P[1] == ipo || Shapes[i].P[2] == ipo)
-			Shapes[i].Kind = SHAPE_Free;
+		shape Shape = Shapes[iShape];
+		if(ShapeUsesPoint(Shape, ipo))
+		{
+			Assert(Shape.Kind > SHAPE_Free || !"Shape should be valid before invalidating it");
+			Shapes[iShape].Kind = Shape.Kind > SHAPE_Free ? -Shape.Kind : Shape.Kind;
+
+			switch(Shape.Kind)
+			{ // invalidate any points unused by other shapes and not user-placed
+				case SHAPE_Segment:
+				{
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Line.P1);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Line.P2);
+				} break;                     
+
+				case SHAPE_Circle:           
+				{                            
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Circle.ipoFocus);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Circle.ipoRadius);
+				} break;                     
+
+				case SHAPE_Arc:              
+				{                            
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoFocus);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoStart);
+					InvalidatePointIfUnusedAndAutomatic(State, Shape.Arc.ipoEnd);
+				} break;
+
+				default:
+				{ Assert(!"Unknown shape type"); }
+			}
+
+			action Action = {0};
+			Action.Kind = ACTION_NonUserRemoveShape;
+			Action.i = iShape;
+			AddAction(State, Action);
+		}
 	}
+
+// Should we reduce the shape array?
+/* 	Assert(State->iLastShape == Len(State->maShapes)-1); */
+/* 	for(uint i = State->iLastShape; i > 0 && Shapes[i].Kind == SHAPE_Free; --i) */
+/* 	{ */
+/* 		--State->iLastShape; */
+/* 		PopDiscard(&State->maShapes); */
+/* 	} */
 	END_TIMED_BLOCK;
+}
+
+internal aabb
+AABBFromShape(v2 *Points, shape Shape)
+{
+	aabb Result = {0};
+	switch(Shape.Kind)
+	{
+		case SHAPE_Segment:
+		{
+			v2 po1 = Points[Shape.Line.P1];
+			v2 po2 = Points[Shape.Line.P2];
+			minmaxf32 x = MinMaxF32(po1.X, po2.X);
+			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
+			Result.MinX = x.Min;
+			Result.MaxX = x.Max;
+			Result.MinY = y.Min;
+			Result.MaxY = y.Max;
+		} break;
+
+		// TODO (optimize): arc AABB may be smaller than circle
+		case SHAPE_Arc:
+		case SHAPE_Circle:
+		{
+			v2 Focus = Points[Shape.Circle.ipoFocus];
+			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
+			Result.MinX = Focus.X - Radius;
+			Result.MaxX = Focus.X + Radius;
+			Result.MinY = Focus.Y - Radius;
+			Result.MaxY = Focus.Y + Radius;
+		} break;
+
+		default:
+		{
+			Assert(0);
+		}
+	}
+	return Result;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 //  ACTIONS  //////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-#define DEBUG_LOG_ACTIONS 0
 #if INTERNAL && DEBUG_LOG_ACTIONS
 internal void
 LogActionsToFile(state *State, char *FilePath)
@@ -824,7 +953,14 @@ ApplyAction(state *State, action Action)
 		{ ResetNoAction(State, 0); } break;
 
 		case ACTION_RemovePt:
-		{ Assert(!"TODO: RemovePt"); } break;
+		{ Pull(State->maPointStatus, Action.i) = POINT_Free; } break;
+
+		case ACTION_RemoveShape:
+		{
+			shape *Shape = &Pull(State->maShapes, Action.i);
+			Assert(Shape->Kind > SHAPE_Free);
+			Shape->Kind = Shape->Kind > SHAPE_Free ? -Shape->Kind : Shape->Kind;
+		} break;
 
 		case ACTION_Basis:
 		{ SetBasis(State, Action.Basis); } break;

@@ -6,8 +6,9 @@
 // =====
 //
 // - Find (and colour) lines intersecting at a given point
-// - Unlimited undo states
-//  	- save to disk for lots of them? (temporary/pich up undos on load?)
+// Undos
+// -----
+//  	- should saves remove 'superfluous' actions - i.e. take out remove points/indirections?
 //  	- undo history (show overall/with layers)
 //  	- undo by absolute and layer order
 // - Change storage of intersections, so they don't all need to be recomputed on changes
@@ -19,6 +20,11 @@
 // - Constraint system? Macros? Paid version?
 // - Make custom cursors
 // - F keys to open toolbars (layers/minimap/action history/...)
+// - ... or have them pop up by 'slamming' mouse to canvas edge... or both
+// - Copy and paste (between running apps - clipboard?) without NEEDING clipboard
+// - What else between apps - lengths?
+// - Consolidate history
+// - Cancel actions with other mouseclick e.g. LMB while extending line with RMB
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -40,18 +46,16 @@
 // CONTROLS: ////////////////////////////
 #define C_Cancel       Keyboard.Esc
 #define CB_StartShape  LMB
-#define CB_FullShape   LMB
-#define CB_PointOnly   RMB
 #define CB_Arc         LMB
 #define CB_Line        RMB
 #define CB_Length      LMB
+#define CB_Select      RMB
 
 #define C_StartShape   Mouse.CB_StartShape
-#define C_FullShape    Mouse.CB_FullShape
-#define C_PointOnly    Mouse.CB_PointOnly
 #define C_Arc          Mouse.CB_Arc
 #define C_Line         Mouse.CB_Line
 #define C_Length       Mouse.CB_Length
+#define C_Select       Mouse.CB_Select
 // divide length       1-0
 // mult length         Alt + 1-0
 // get store length    a-z,A-Z
@@ -59,6 +63,9 @@
 
 #define C_NoSnap       Keyboard.Shift
 #define C_ShapeLock    Keyboard.Ctrl
+// IDEA (ui): would this be better as full stop? obvious semantic connection
+// further from resting position, but probably used infrequently..?
+#define C_PointOnly    Keyboard.Alt
 
 #define C_BasisSet     Mouse.RMB
 #define C_BasisMod     Keyboard.Space
@@ -149,7 +156,7 @@ SimpleUndo(state *State)
 	Assert(State->iCurrentAction > 0);
 	action *Actions = State->maActions.Items;
 	action Action = Actions[State->iCurrentAction];
-	switch(USERIFY_ACTION(Action.Kind))
+	switch(USERIFY_ACTION(Action.Kind)) // whether or not it is user-initiated is dealt with by UserUndo
 	{
 		case ACTION_Reset:
 		{ // reapply all actions from scratch
@@ -160,7 +167,16 @@ SimpleUndo(state *State)
 		} break;
 
 		case ACTION_RemovePt:
-		{ Assert(Action.i == AddPoint(State, Action.po, Action.PointStatus, 0, ACTION_Point)); } break;
+		{
+			POINTSTATUS(Action.i) = POINT_Extant;
+		} break;
+
+		case ACTION_RemoveShape:
+		{
+			shape *Shape = &Pull(State->maShapes, Action.i);
+			Assert(Shape->Kind < SHAPE_Free);
+			Shape->Kind = Shape->Kind < SHAPE_Free ? -Shape->Kind : Shape->Kind;
+		} break;
 
 		case ACTION_Basis:
 		{ // find the previous basis and apply that
@@ -220,23 +236,6 @@ SimpleUndo(state *State)
 }
 
 
-internal inline void
-UserUndo(state *State)
-{
-	do { SimpleUndo(State); }
-	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
-	// NOTE: shapes on screen need to be updated before this is called
-	// (or you can accept an occasional frame of lag for points near the edge)
-	RecalcNearScreenIntersects(State);
-}
-internal inline void
-UserRedo(state *State)
-{
-	do { SimpleRedo(State); }
-	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
-	RecalcNearScreenIntersects(State);
-}
-
 #if 0
 internal inline void
 OffsetDraw(state *State, int Offset)
@@ -269,9 +268,7 @@ ExtendSegment(v2 poStart, v2 poDir, v2 poLength)
 internal uint
 ClosestPtIntersectingCircle(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 TestFocus, f32 TestRadius, v2 *poClosest)
 {
-	// TODO: necessary?
-	*poClosest = TestFocus; 
-
+	b32 IsSet = 0;
 	v2 poIntersect1 = ZeroV2, poIntersect2 = ZeroV2;
 	uint cTotalIntersects = 0;
 	for(uint iShape = 1; iShape <= iLastShape; ++iShape)
@@ -281,41 +278,43 @@ ClosestPtIntersectingCircle(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2
 		switch(Shape.Kind)
 		{ // find the intersects with a circle from poSaved to mouse
 			case SHAPE_Circle:
-				{
-					v2 poFocus = Points[Shape.Circle.ipoFocus];
-					f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
-					cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius,
-							&poIntersect1, &poIntersect2);
-				} break;
+			{
+				v2 poFocus = Points[Shape.Circle.ipoFocus];
+				f32 Radius = Dist(poFocus, Points[Shape.Circle.ipoRadius]);
+				cIntersects = IntersectCircles(TestFocus, TestRadius, poFocus, Radius,
+						&poIntersect1, &poIntersect2);
+			} break;
 
 			case SHAPE_Arc:
-				{
-					v2 poFocus = Points[Shape.Arc.ipoFocus];
-					v2 poStart = Points[Shape.Arc.ipoStart];
-					v2 poEnd   = Points[Shape.Arc.ipoEnd];
-					f32 Radius = Dist(poFocus, poStart);
-					cIntersects = IntersectCircleArc(TestFocus, TestRadius, poFocus, Radius, poStart, poEnd,
-							&poIntersect1, &poIntersect2);
-				} break;
+			{
+				v2 poFocus = Points[Shape.Arc.ipoFocus];
+				v2 poStart = Points[Shape.Arc.ipoStart];
+				v2 poEnd   = Points[Shape.Arc.ipoEnd];
+				f32 Radius = Dist(poFocus, poStart);
+				cIntersects = IntersectCircleArc(TestFocus, TestRadius, poFocus, Radius, poStart, poEnd,
+						&poIntersect1, &poIntersect2);
+			} break;
 
 			case SHAPE_Segment:
-				{
-					v2 po = Points[Shape.Line.P1];
-					v2 Dir = V2Sub(Points[Shape.Line.P2], po);
-					cIntersects = IntersectSegmentCircle(po, Dir, TestFocus, TestRadius,
-							&poIntersect1, &poIntersect2);
-				} break;
+			{
+				v2 po = Points[Shape.Line.P1];
+				v2 Dir = V2Sub(Points[Shape.Line.P2], po);
+				cIntersects = IntersectSegmentCircle(po, Dir, TestFocus, TestRadius,
+						&poIntersect1, &poIntersect2);
+			} break;
 
 			default: { /* do nothing */ }
 		}
 		cTotalIntersects += cIntersects;
 
 		// update closest candidate
-		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
-		{ *poClosest = poIntersect1; }
+		if((cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest)) || !IsSet)
+		{ *poClosest = poIntersect1; IsSet = 1; }
 		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest))
 		{ *poClosest = poIntersect2; }
 	}
+	// only possibly true for first shape
+	if(!IsSet) { *poClosest = ClosestPtOnCircle(P, TestFocus, TestRadius); }
 	return cTotalIntersects;
 }
 
@@ -364,7 +363,7 @@ ClosestPtIntersectingLine(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 T
 		cTotalIntersects += cIntersects;
 
 		// update closest candidate
-		if(cIntersects	  && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
+		if(cIntersects      && DistSq(P, poIntersect1) < DistSq(P, *poClosest))
 		{ *poClosest = poIntersect1; }
 		if(cIntersects == 2 && DistSq(P, poIntersect2) < DistSq(P, *poClosest))
 		{ *poClosest = poIntersect2; }
@@ -452,7 +451,9 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 	{
 		uint cIntersects = ClosestPtIntersectingCircle(State->maPoints.Items, State->maShapes.Items,
 				State->iLastShape, MouseP, poFocus, Radius, &Result);
-		if(cIntersects == 0) { Result = ClosestPtOnCircle(MouseP, poFocus, Radius); }
+		// TODO: remove (inc assert)
+		/* if(cIntersects == 0) { Result = ClosestPtOnCircle(MouseP, poFocus, Radius); } */
+		Assert(cIntersects || V2WithinEpsilon(Result, ClosestPtOnCircle(MouseP, poFocus, Radius), POINT_EPSILON));
 		DebugReplace("cIntersects: %u\n", cIntersects);
 	}
 	else
@@ -460,12 +461,14 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 		v2 P = V2Equals(SnapMouseP, poFocus) ? MouseP : SnapMouseP;
 		Result = ClosestPtOnCircle(P, poFocus, Radius);
 	}
+	Assert( ! V2WithinEpsilon(Result, poFocus, POINT_EPSILON));
 	return Result;
 }
 
 internal void
 DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 {
+	// TODO (fix): missing pixel in bottom right
 	v2 TopLeft     = V2(AABB.MinX, AABB.MaxY);
 	v2 TopRight    = V2(AABB.MaxX, AABB.MaxY);
 	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
@@ -475,6 +478,23 @@ DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 	DEBUGDrawLine(ScreenBuffer, TopLeft,    BottomLeft,  Col);
 	DEBUGDrawLine(ScreenBuffer, TopRight,   BottomRight, Col);
 	DEBUGDrawLine(ScreenBuffer, BottomLeft, BottomRight, Col);
+}
+
+internal aabb
+AABBCanvasToScreen(basis Basis, aabb AABB, v2 ScreenCentre)
+{
+	aabb Result;
+	Result.Min = V2CanvasToScreen(Basis, AABB.Min, ScreenCentre);
+	Result.Max = V2CanvasToScreen(Basis, AABB.Max, ScreenCentre);
+	return Result;
+}
+
+internal b32
+CurrentActionIsByUser(state *State)
+{
+	action Action = Pull(State->maActions, State->iCurrentAction);
+	b32 Result = Action.Kind < ACTION_NON_USER;
+	return Result;
 }
 
 UPDATE_AND_RENDER(UpdateAndRender)
@@ -538,6 +558,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	b32 IsSnapped;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
+	uint ipoSnap = 0;
+	aabb SelectionAABB = {0};
+	b32 RecalcNeeded = 0;
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -613,7 +636,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				if(ipoClosest && ipoClosestIntersect)
 				{
 					if(ClosestDistSq <= ClosestIntersectDistSq)
-					{ poClosest = POINTS(ipoClosest); }
+					{
+						poClosest = POINTS(ipoClosest);
+						ipoSnap = ipoClosest;
+					}
 					else
 					{
 						poClosest = Pull(State->maIntersects, ipoClosestIntersect);
@@ -621,7 +647,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 				}
 				else if(ipoClosest)
-				{ poClosest = POINTS(ipoClosest); }
+				{
+					poClosest = POINTS(ipoClosest);
+					ipoSnap = ipoClosest;
+				}
 				else if(ipoClosestIntersect)
 				{
 					poClosest = Pull(State->maIntersects, ipoClosestIntersect);
@@ -639,6 +668,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						poClosest = State->poSelect;
 						DebugAdd("Adding poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
 						ClosestDistSq = SelectDistSq;
+						ipoSnap = 0;
 					}
 				}
 				if(IsDrawingArc(State))
@@ -652,6 +682,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						poClosest = State->poArcStart;
 						ClosestDistSq = ArcStartDistSq;
 						DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
+						ipoSnap = 0;
 					}
 				}
 				DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
@@ -669,6 +700,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					}
 				}
 			}
+			if(IsSnapped == 0) { ipoSnap = 0; }
+
 			if(C_ShapeLock.EndedDown)
 			{
 				for(uint iShape = 1; iShape <= State->iLastShape; ++iShape)
@@ -678,34 +711,34 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					switch(Shape.Kind)
 					{
 						case SHAPE_Circle:
-							{
-								circle Circle = Shape.Circle;
-								v2 poFocus = POINTS(Circle.ipoFocus);
-								f32 Radius = Dist(poFocus, POINTS(Circle.ipoRadius));
-								TestP = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius);
-							} break;
+						{
+							circle Circle = Shape.Circle;
+							v2 poFocus = POINTS(Circle.ipoFocus);
+							f32 Radius = Dist(poFocus, POINTS(Circle.ipoRadius));
+							TestP = ClosestPtOnCircle(CanvasMouseP, poFocus, Radius);
+						} break;
 
 						case SHAPE_Arc:
-							{
-								arc Arc = Shape.Arc;
-								v2 poFocus = POINTS(Arc.ipoFocus);
-								v2 poStart = POINTS(Arc.ipoStart);
-								v2 poEnd = POINTS(Arc.ipoEnd);
-								TestP = ClosestPtOnArc(CanvasMouseP, poFocus, poStart, poEnd);
-							} break;
+						{
+							arc Arc = Shape.Arc;
+							v2 poFocus = POINTS(Arc.ipoFocus);
+							v2 poStart = POINTS(Arc.ipoStart);
+							v2 poEnd = POINTS(Arc.ipoEnd);
+							TestP = ClosestPtOnArc(CanvasMouseP, poFocus, poStart, poEnd);
+						} break;
 
 						case SHAPE_Segment:
-							{
-								line Seg = Shape.Line;
-								v2 po1 = POINTS(Seg.P1);
-								v2 Dir = V2Sub(POINTS(Seg.P2), po1);
-								TestP = ClosestPtOnSegment(CanvasMouseP, po1, Dir);
-							} break;
+						{
+							line Seg = Shape.Line;
+							v2 po1 = POINTS(Seg.P1);
+							v2 Dir = V2Sub(POINTS(Seg.P2), po1);
+							TestP = ClosestPtOnSegment(CanvasMouseP, po1, Dir);
+						} break;
 
 						default:
-							{
-								// do nothing
-							}
+						{
+							// do nothing
+						}
 					}
 					if(iShape == 1 || DistSq(TestP, CanvasMouseP) < DistSq(CanvasMouseP, SnapMouseP))
 					{ SnapMouseP = TestP; }
@@ -800,39 +833,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #undef KEYBOARD_LENGTH_STORE
 #endif
 
-		{ // unwanted?
-			/* // TODO: Do I actually want to be able to drag points? */
-			/* else if(State->ipoDrag) */
-			/* { */
-			/*	 if(DEBUGClick(C_Drag)) */
-			/*	 { */
-			/*		 // Set point to mouse location and recompute intersections */
-			/*		 State->ipoDrag = 0; */
-			/*		 // TODO: this breaks lines attached to intersections... */
-			/*		 RemovePointsOfType(State, POINT_Intersection); */
-			/*		 for(uint i = 1; i <= State->iLastLinePoint; i+=2) */
-			/*		 { */
-			/*			 // TODO: this is wasteful */
-			/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
-			/*		 } */
-			/*	 } */
-
-			/*	 else if(DEBUGClick(RMB) || Keyboard.Esc.EndedDown) */
-			/*	 { */
-			/*		 // Cancel dragging, point returns to saved location */
-			/*		 State->Points[State->ipoDrag] = State->poSaved; */
-			/*		 State->ipoDrag = 0; */
-			/*	 } */
-
-			/*	 else */
-			/*	 { */
-			/*		 State->Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
-			/*	 } */
-			/*	 // Snapping is off while dragging; TODO: maybe change this when points can be combined */
-			/*	 ipoSnap = 0; */
-			/* } */
-		}
-
 		// TODO (UI): if panning, ignore input but still do preview
 		// TODO: fix needed for if started and space released part way?
 		if((C_PanMod.EndedDown && Mouse.LMB.EndedDown) || C_Pan.EndedDown)
@@ -843,26 +843,27 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			File.Pan = 1;
 		}
 
-		else if(DEBUGPress(C_Cancel) && State->InputMode != MODE_Normal)
-		{ State->InputMode = MODE_Normal; }
+		else if(DEBUGPress(C_Cancel))
+		{
+			State->maSelectedPoints.Used = 0;
+			State->InputMode = MODE_Normal;
+		}
 
 		else if(DEBUGPress(Keyboard.F1))
 		{ State->ShowHelpInfo = !State->ShowHelpInfo; }
 
 		else
 		{
-			uint InputButton = LMB;
-
 			// TODO (opt): jump straight to the right mode.
 			switch(State->InputMode)
 			{
 				case MODE_Normal:
 				{
 					if(State->iCurrentAction)
-					{ Assert(Pull(State->maActions, State->iCurrentAction).Kind < ACTION_NON_USER); }
+					{ Assert(CurrentActionIsByUser(State)); }
 
 					if(Keyboard.Ctrl.EndedDown)
-					{
+					{ // file actions
 						if(DEBUGPress(Keyboard.S))
 						{ // SAVE (AS)
 							File.Action = FILE_Save;
@@ -889,11 +890,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 							(State->iCurrentAction > 0))
-					{ UserUndo(State); } // UNDO
+					{ // UNDO
+						do { SimpleUndo(State); }
+						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						RecalcNeeded = 1;
+					}
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
 						(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
 						(State->iCurrentAction < State->iLastAction))
-					{ UserRedo(State); } // REDO
+					{ // REDO
+						do { SimpleRedo(State); }
+						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						RecalcNeeded = 1;
+					}
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
@@ -901,18 +910,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						State->InputMode = MODE_SetBasis;
 					}
 
-					else if(DEBUGClick(C_Arc))
+					else if(DEBUGClick(C_StartShape))
 					{ // start drawing arc
 						// NOTE: Starting a shape, save the first point
 						State->poSelect = SnapMouseP;
-						State->InputMode = MODE_SetLength;
-					}
-
-					else if(DEBUGClick(C_Line))
-					{ // start drawing line
-						// NOTE: Starting a shape, save the first point
-						State->poSelect = SnapMouseP;
-						State->InputMode = MODE_QuickSeg;
+						if(C_PointOnly.EndedDown)
+						{ State->InputMode = MODE_QuickPtOrSeg; }
+						else
+						{ State->InputMode = MODE_SetLength; }
 					}
 
 					else if(DEBUGPress(C_Reset))
@@ -925,18 +930,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						
 						DebugClear();
 					}
+
+					else if(DEBUGClick(C_Select))
+					{
+						State->poSaved = SnapMouseP;
+						State->InputMode = MODE_DragSelect;
+					}
+
 					{// unwanted?
-
-						// TODO: could skip check and just write to invalid point..?
-						/* else if(ipoSnap) */
-						/* { // point snapped to */
-						/*	 if(DEBUGPress(C_Delete)) */
-						/*	 { */
-						/*		 // TODO: deleting points */
-						/*		 InvalidatePoint(State, ipoSnap); */
-						/*	 } */
-						/* } */
-
 						/* if(DEBUGClick(MMB)) */
 						/* { */
 						// MOVE POINT
@@ -944,6 +945,71 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						/* State->ipoSelect = ipoSnap; */
 						/* State->ipoDrag = ipoSnap; */
 						/* } */ 
+
+						/* else if(State->ipoDrag) */
+						/* { */
+						/*	 if(DEBUGClick(C_Drag)) */
+						/*	 { */
+						/*		 // Set point to mouse location and recompute intersections */
+						/*		 State->ipoDrag = 0; */
+						/*		 // TODO: this breaks lines attached to intersections... */
+						/*		 RemovePointsOfType(State, POINT_Intersection); */
+						/*		 for(uint i = 1; i <= State->iLastLinePoint; i+=2) */
+						/*		 { */
+						/*			 // TODO: this is wasteful */
+						/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
+						/*		 } */
+						/*	 } */
+
+						/*	 else */
+						/*	 { */
+						/*		 State->Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
+						/*	 } */
+						/*	 // Snapping is off while dragging; TODO: maybe change this when points can be combined */
+						/*	 ipoSnap = 0; */
+						/* } */
+					}
+				} break;
+
+
+				case MODE_DragSelect:
+				{
+					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
+					State->maSelectedPoints.Used = 0;
+					for(uint i = 0; i < Len(State->maPointsOnScreen); ++i)
+					{ // add indexes of selected points to that array
+						uint ipo = Pull(State->maPointsOnScreen, i);
+						if(PointInAABB(POINTS(ipo), SelectionAABB))
+						{ Push(&State->maSelectedPoints, ipo); }
+					}
+
+					Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
+
+					if( ! C_Select.EndedDown) { State->InputMode = MODE_Selected; }
+				} break;
+
+
+				case MODE_Selected:
+				{
+					if(Len(State->maSelectedPoints) == 0) { State->InputMode = MODE_Normal; break; }
+					if(DEBUGPress(C_Delete))
+					{
+						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
+						// find in action list, see if the actions before were non-user points.
+						// If they were, check other shapes to see if they're used, if not, then delete.
+
+						uint cPointsSelected = (uint)Len(State->maSelectedPoints);
+						if(cPointsSelected)
+						{
+							uint iLastPoint = cPointsSelected-1;
+							for(uint i = 0; i < iLastPoint; ++i)
+							{ InvalidatePoint(State, Pull(State->maSelectedPoints, i), ACTION_NonUserRemovePt); }
+							InvalidatePoint  (State, Pull(State->maSelectedPoints, iLastPoint), ACTION_RemovePt);
+						}
+
+						RecalcNeeded = 1;
+						State->maSelectedPoints.Used = 0;
+						State->InputMode = MODE_Normal;
 					}
 				} break;
 
@@ -962,6 +1028,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 						State->InputMode = MODE_Normal;
 					}
+					Assert(CurrentActionIsByUser(State)); 
 				} break;
 
 
@@ -977,24 +1044,73 @@ UPDATE_AND_RENDER(UpdateAndRender)
 							State->Length = Length;
 						}
 						// TODO (UI): do I want it automatically continuing to draw here?
-						State->InputMode = MODE_DrawArc;
-						goto case_mode_drawarc;
+						State->InputMode = MODE_Draw;
+						goto case_mode_draw;
 					}
+					Assert(CurrentActionIsByUser(State)); 
 				} break;
 
 
-				case MODE_DrawArc:
+				case MODE_QuickPtOrSeg:
 				{
-case_mode_drawarc:
+					if( ! C_StartShape.EndedDown) // LMB released
+					{ // draw quick segment or point
+						if(V2WithinEpsilon(State->poSelect, SnapMouseP, POINT_EPSILON))
+						{ AddPoint(State, State->poSelect, POINT_Extant, 0, ACTION_Point); }
+						else // draw quick seg
+						{ AddSegmentAtPoints(State, State->poSelect, SnapMouseP); }
+						State->InputMode = MODE_Normal;
+					}
+					Assert(CurrentActionIsByUser(State)); 
+				} break;
+
+
+				case MODE_Draw:
+				{ // start drawing line
+case_mode_draw:
 					// TODO (opt): there is a 1 frame lag even if pressed and released within 1...
 					Assert(IsDrawing(State));
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
-					v2 poFocus = State->poSelect;
 
-					if(DEBUGClick(C_FullShape))
+					if(DEBUGClick(C_Line))
+					{
+						if(V2WithinEpsilon(State->poSelect, SnapMouseP, POINT_EPSILON))
+						// NOTE: don't  want to extend a line with no direction!
+						// leave a point and return to normal mode
+						{
+							if(C_PointOnly.EndedDown)
+							{
+								AddPoint(State, State->poSelect, POINT_Extant, 0, ACTION_Point); 
+								State->InputMode = MODE_Normal;
+							}
+							else
+							{ State->InputMode = MODE_SetPerp; }
+						}
+						else
+						{ // extend segment, possibly through perpendicular
+							// TODO (UI): this should be based on shape snapping rather than intersection
+							// otherwise can accidentally 'extend' to circumference near intended point
+							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, State->poSelect, State->Length);
+							AddIntersection(State, poAtLength);
+
+							if(V2Equals(State->PerpDir, ZeroV2)) // perpendicular not set
+							{ State->poSaved = SnapMouseP; }     // set current mouse as point to extend through
+							else                                 // extend through the perpendicular
+							{ State->poSaved = V2Add(State->poSelect, State->PerpDir); }
+							State->PerpDir = ZeroV2;
+
+							State->InputMode = MODE_ExtendSeg;
+						}
+						Assert(CurrentActionIsByUser(State)); 
+					}
+
+					else if(DEBUGClick(C_Arc))
 					{ // start drawing arc/circle
+						// TODO: REMOVE
+						poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
+						v2 poFocus = State->poSelect;
 						f32 Radius = State->Length;
-						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON))
+						if(V2WithinEpsilon(poAtDist, poFocus, POINT_EPSILON))
 						{
 							// TODO (UI): better point to default radius to? follow mouse direction?
 							v2 poRad = V2(poFocus.X + Radius, poFocus.Y);
@@ -1007,36 +1123,8 @@ case_mode_drawarc:
 							State->poArcStart = poAtDist;
 							State->InputMode = MODE_ExtendArc;
 						}
-					}
-
-					else if(DEBUGClick(C_PointOnly))
-					{ // add point intersecting shape 
-						// TODO IMPORTANT (fix): don't add when no shape intersected
-						AddPoint(State, poFocus,  POINT_Extant, 0, ACTION_NonUserPoint);
-						AddPoint(State, poAtDist, POINT_Extant, 0, ACTION_Point);
-						State->InputMode = MODE_Normal;
-					}
-				} break;
-
-
-				case MODE_ExtendArc:
-				{
-					Assert(IsDrawingArc(State));
-					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
-
-					// NOTE: Not using button released in case it's missed for some reason
-					// also possible this fires at a weird time when focus returns or something...
-					if(!C_Arc.EndedDown)
-					{ // finish drawing arc/circle
-						v2 poFocus = State->poSelect;
-						v2 poExtend = ClosestPtOnCircle(SnapMouseP, poFocus, State->Length);
-						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON) ||
-						   V2WithinEpsilon(poExtend, State->poArcStart, POINT_EPSILON))
-						// Same angle -> full circle
-						{ AddCircleAtPoints(State, poFocus, State->poArcStart); }
-						else
-						{ AddArcAtPoints(State, poFocus, State->poArcStart, poAtDist); }
-						State->InputMode = MODE_Normal;
+						State->PerpDir = ZeroV2;
+						Assert(CurrentActionIsByUser(State)); 
 					}
 				} break;
 
@@ -1048,78 +1136,59 @@ case_mode_drawarc:
 					else // set perpendicular
 					{ State->PerpDir = Perp(V2Sub(SnapMouseP, State->poSelect)); }
 
-					if( ! C_FullShape.EndedDown)
-					{ State->InputMode = MODE_DrawSeg; }
+					if( ! C_Line.EndedDown)
+					{ State->InputMode = MODE_Draw; }
+					Assert(CurrentActionIsByUser(State)); 
 				} break;
 
 
-				case MODE_QuickSeg:
+				// TODO: only draw the smaller arc if not gone around the focus
+				// use coord system based on focus to first point and its perp
+				case MODE_ExtendArc:
 				{
-					if( ! C_Line.EndedDown) // RMB released
-					{ // draw quick segment or move to full segment drawing
-						if(V2WithinEpsilon(State->poSelect, SnapMouseP, POINT_EPSILON))
-						 // mouse not moved, go to full seg drawing
-						{ State->InputMode = MODE_DrawSeg; }
-						else
-						{ // draw quick seg
-							AddSegmentAtPoints(State, State->poSelect, SnapMouseP);
-							State->InputMode = MODE_Normal;
-						}
-					}
-				} break;
+					Assert(IsDrawingArc(State));
+					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
 
-
-#define DRAW_PERP_OR_NORMAL \
-				if(V2Equals(State->PerpDir, ZeroV2)) /* perpendicular not set */ \
-				{ State->poSaved = SnapMouseP; } /* set current mouse as point to extend through */ \
-				else /* extend through the perpendicular */ \
-				{ State->poSaved = V2Add(State->poSelect, State->PerpDir); } \
-				State->PerpDir = ZeroV2;
-
-				case MODE_DrawSeg:
-				{ // start drawing line
-					if(DEBUGClick(C_FullShape))
-					{
-						if(V2WithinEpsilon(State->poSelect, SnapMouseP, POINT_EPSILON))
-						// NOTE: don't  want to extend a line with no direction!
-						// leave a point and return to normal mode
-						{ State->InputMode = MODE_SetPerp; }
-						else
-						{ // extend segment
-							// TODO (UI): should this be based on shape snapping?
-							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, State->poSelect, State->Length);
-							AddIntersection(State, poAtLength);
-							DRAW_PERP_OR_NORMAL
-							State->InputMode = MODE_ExtendSeg;
-						}
-					}
-
-					else if(DEBUGClick(C_PointOnly))
-					{ // continue to extending shape if valid
-						if(V2WithinEpsilon(State->poSelect, SnapMouseP, POINT_EPSILON))
+					// NOTE: Not using button released in case it's missed for some reason
+					// also possible this fires at a weird time when focus returns or something...
+					if(!C_Arc.EndedDown)
+					{ // finish drawing arc/circle
+						v2 poFocus    = State->poSelect;
+						v2 poArcStart = State->poArcStart;
+						// TODO IMPORTANT (fix): don't add when no shape intersected
+						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON) ||
+						   V2WithinEpsilon(poAtDist, State->poArcStart, POINT_EPSILON))
+						// Same angle -> full circle
 						{
-							AddPoint(State, State->poSelect, POINT_Extant, 0, ACTION_Point); 
-							State->InputMode = MODE_Normal;
+							if(C_PointOnly.EndedDown)
+							{ // add point intersecting shape 
+								AddPoint(State, poFocus,  POINT_Extant, 0, ACTION_NonUserPoint);
+								AddPoint(State, poAtDist, POINT_Extant, 0, ACTION_Point);
+							}
+							else
+							{ AddCircleAtPoints(State, poFocus, State->poArcStart); }
 						}
-
-						else // ClickPointOnly
-						{ // extend line point
-							// TODO (UI): should this be based on shape snapping?
-							v2 poAtLength = ClosestPtOnCircle(SnapMouseP, State->poSelect, State->Length);
-							AddIntersection(State, poAtLength);
-							DRAW_PERP_OR_NORMAL
-							State->InputMode = MODE_ExtendLinePt;
+						else
+						{
+							if(C_PointOnly.EndedDown)
+							{ // add point intersecting shape 
+								AddPoint(State, poFocus,    POINT_Extant, 0, ACTION_NonUserPoint);
+								AddPoint(State, poArcStart, POINT_Extant, 0, ACTION_NonUserPoint);
+								AddPoint(State, poAtDist,   POINT_Extant, 0, ACTION_Point);
+							}
+							else
+							{ AddArcAtPoints(State, poFocus, State->poArcStart, poAtDist); }
 						}
+						State->InputMode = MODE_Normal;
+						Assert(CurrentActionIsByUser(State)); 
 					}
 				} break;
-#undef DRAW_PERP
 
 
-				case MODE_ExtendLinePt: // fallthrough
-				InputButton = CB_PointOnly;
 				case MODE_ExtendSeg:
 				{ // find point on shape closest to mouse along line
-					// TODO (fix): preview point pulling away from shape
+					// TODO (fix): preview point pulling away from shape on shape snap
+					// TODO (fix): should be snapping to opposite side of circle
 					v2 TestStart = State->poSelect; 
 					v2 poExtend = State->poSaved;
 					v2 TestDir = V2Sub(poExtend, TestStart);
@@ -1134,19 +1203,20 @@ case_mode_drawarc:
 					else
 					{ poOnLine = ClosestPtOnLine(SnapMouseP, TestStart, TestDir); }
 
-					if( ! Mouse.Buttons[InputButton].EndedDown)
+					if( ! C_Line.EndedDown)
 					{ // add point along line (and maybe add segment)
 						// NOTE: remove temporary intersection at user length
 						PopDiscard(&State->maIntersects);
-						if(State->InputMode == MODE_ExtendSeg)
-						{ AddSegmentAtPoints(State, State->poSelect, poOnLine); }
-						else
+						if(C_PointOnly.EndedDown)
 						{
 							AddPoint(State, State->poSelect, POINT_Extant, 0, ACTION_NonUserPoint);
-							AddPoint(State, poOnLine, POINT_Extant, 0, ACTION_Point);
+							AddPoint(State, poOnLine,        POINT_Extant, 0, ACTION_Point);
 						}
+						else
+						{ AddSegmentAtPoints(State, State->poSelect, poOnLine); }
 						State->InputMode = MODE_Normal;
 					}
+					Assert(CurrentActionIsByUser(State)); 
 				} break;
 
 				default:
@@ -1198,6 +1268,7 @@ case_mode_drawarc:
 		Assert(tBasis <= 1.f);
 #endif
 
+#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 #if 1
 		Basis = BasisLerp(StartBasis, tBasis, EndBasis);
 #else
@@ -1206,7 +1277,8 @@ case_mode_drawarc:
 	}
 
 	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
-	v2_arena *maPointsOnScreen      = &State->maPointsOnScreen;
+	uint_arena  *maSelectedPoints   = &State->maSelectedPoints;
+	uint_arena  *maPointsOnScreen   = &State->maPointsOnScreen;
 	maShapesNearScreen->Used = 0;
 	maPointsOnScreen->Used = 0;
 	uint cShapesNearScreen = 0;
@@ -1236,44 +1308,51 @@ case_mode_drawarc:
 		for(uint iShape = 1; iShape <= iLastShape; ++iShape)
 		{
 			shape Shape = Shapes[iShape];
-			// create local copy of shape with basis applied
-			shape LocalShape = Shape;
-			v2 ShapePoints[NUM_SHAPE_POINTS];
-			for(uint i = 0; i < NUM_SHAPE_POINTS; ++i)
+			if(Shape.Kind > SHAPE_Free)
 			{
-				// TODO (opt): init all shape points to 0 so I don't need to check
-				// that point is inside mem bounds?
-				uint ipo = Shape.P[i];
-				v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
-				ShapePoints[i] = V2CanvasToScreen(Basis, P, ScreenCentre);
-				LocalShape.P[i] = i;
-			}
-			aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
-			/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
-			if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
-			{ // add shape to array of shapes on screen
-				Push(maShapesNearScreen, Shape);
-				++cShapesNearScreen;
+				// create local copy of shape with basis applied
+				shape LocalShape = Shape;
+				v2 ShapePoints[NUM_SHAPE_POINTS];
+				for(uint i = 0; i < NUM_SHAPE_POINTS; ++i)
+				{
+					// TODO (opt): init all shape points to 0 so I don't need to check
+					// that point is inside mem bounds?
+					uint ipo = Shape.P[i];
+					v2 P = ipo <= iLastPoint ? Points[ipo] : ZeroV2;
+					ShapePoints[i] = ToScreen(P);
+					LocalShape.P[i] = i;
+				}
+				aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
+				/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
+				if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
+				{ // add shape to array of shapes on screen
+					Push(maShapesNearScreen, Shape);
+					++cShapesNearScreen;
+				}
 			}
 		}
-		Assert(cShapesNearScreen == State->maShapesNearScreen.Used/sizeof(shape));
+		if(RecalcNeeded)
+		{ RecalcNearScreenIntersects(State); }
+		Assert(cShapesNearScreen == maShapesNearScreen->Used/sizeof(*maShapesNearScreen->Items));
 
 		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
 		{
-			v2 P = V2CanvasToScreen(Basis, Points[ipo], ScreenCentre);
-			if(PointInAABB(P, ScreenBB) && POINTSTATUS(ipo) != POINT_Free)
+			// NOTE: needed in canvas form later
+			v2 P = Points[ipo];
+			if(POINTSTATUS(ipo) != POINT_Free &&
+			   PointInAABB(ToScreen(P), ScreenBB))
 			{
-				Push(maPointsOnScreen, P);
+				Push(maPointsOnScreen, ipo);
 				++cPointsOnScreen;
 			}
 		}
-		Assert(cPointsOnScreen == State->maPointsOnScreen.Used/sizeof(v2));
+		Assert(cPointsOnScreen == maPointsOnScreen->Used/sizeof(*maPointsOnScreen->Items));
 	}
 
 	{ LOG("RENDER");
 	////////////////
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
-		v2 SSSnapMouseP = V2CanvasToScreen(Basis, SnapMouseP, ScreenCentre);
+		v2 SSSnapMouseP = ToScreen(SnapMouseP);
 
 #if 0
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
@@ -1290,8 +1369,8 @@ case_mode_drawarc:
 			{
 				case SHAPE_Segment:
 				{
-					v2 poA = V2CanvasToScreen(Basis, Points[Shape.Line.P1], ScreenCentre);
-					v2 poB = V2CanvasToScreen(Basis, Points[Shape.Line.P2], ScreenCentre);
+					v2 poA = ToScreen(Points[Shape.Line.P1]);
+					v2 poB = ToScreen(Points[Shape.Line.P2]);
 					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
@@ -1299,8 +1378,8 @@ case_mode_drawarc:
 				
 				case SHAPE_Circle:
 				{
-					v2 poFocus  = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoFocus], ScreenCentre);
-					v2 poRadius = V2CanvasToScreen(Basis, Points[Shape.Circle.ipoRadius], ScreenCentre);
+					v2 poFocus  = ToScreen(Points[Shape.Circle.ipoFocus]);
+					v2 poRadius = ToScreen(Points[Shape.Circle.ipoRadius]);
 					f32 Radius = Dist(poFocus, poRadius);
 					Assert(Radius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
@@ -1310,13 +1389,16 @@ case_mode_drawarc:
 
 				case SHAPE_Arc:
 				{
-					v2 poFocus = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoFocus], ScreenCentre);
-					v2 poStart = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoStart], ScreenCentre);
-					v2 poEnd   = V2CanvasToScreen(Basis, Points[Shape.Arc.ipoEnd],   ScreenCentre);
+					v2 poFocus = ToScreen(Points[Shape.Arc.ipoFocus]);
+					v2 poStart = ToScreen(Points[Shape.Arc.ipoStart]);
+					v2 poEnd   = ToScreen(Points[Shape.Arc.ipoEnd]);
 					DrawArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
 				} break;
+
+				default:
+				{ Assert(!"Tried to draw unknown shape"); }
 			}
 		}
 
@@ -1324,11 +1406,14 @@ case_mode_drawarc:
 		for(uint i = 0; i < cPointsOnScreen; ++i)
 		{
 			// NOTE: basis already applied
-			DrawCircleFill(ScreenBuffer, Pull(*maPointsOnScreen, i), 3.f, LIGHT_GREY);
+			DrawCircleFill(ScreenBuffer, ToScreen(POINTS(Pull(*maPointsOnScreen, i))), 3.f, LIGHT_GREY);
 		}
 
-		v2 poSSClosest = V2CanvasToScreen(Basis, poClosest, ScreenCentre);
-		if(State->iLastPoint)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
+		v2 poSSClosest = ToScreen(poClosest);
+		b32 ValidPointExists = 0; // TODO: may be able to determine at calculation of poClosest
+		for(uint i = 1; i <= State->iLastPoint; ++i)
+		{ if(POINTSTATUS(i) != POINT_Free) { ValidPointExists = 1; break; } }
+		if(ValidPointExists)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
 		if(IsSnapped)
 		{ // draw snapped point
 			DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); 
@@ -1343,7 +1428,8 @@ case_mode_drawarc:
 		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
 		f32 SSLength = State->Length/BASIS.Zoom; 
 		v2 poSelect = State->poSelect;
-		v2 poSSSelect = V2CanvasToScreen(Basis, State->poSelect, ScreenCentre);
+		v2 poSSSelect = ToScreen(State->poSelect);
+		v2 poSSSaved  = ToScreen(State->poSaved);
 		switch(State->InputMode)
 		{
 			case MODE_Normal:
@@ -1357,7 +1443,6 @@ case_mode_drawarc:
 
 			case MODE_SetBasis:
 			{
-				v2 poSSSaved = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
 				DEBUGDrawLine(ScreenBuffer, poSSSaved, SSSnapMouseP, RED);
 			} break;
 
@@ -1371,15 +1456,38 @@ case_mode_drawarc:
 			} break;
 
 
-			case MODE_DrawArc:
+			case MODE_QuickPtOrSeg:
 			{
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, BLUE);
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
-				// preview circle at given length
+			} break;
+
+			case MODE_DragSelect:
+			case MODE_Selected:
+			{
+				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
+				for(uint i = 0; i < Len(*maSelectedPoints); ++i)
+				{
+					v2 P = POINTS(Pull(*maSelectedPoints, i));
+					if(State->InputMode == MODE_Selected || PointInAABB(P, SelectionAABB))
+					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+				}
+			} break;
+
+			case MODE_Draw:
+			{
+				v2 poSSEnd = SSSnapMouseP;
+				v2 poSSAtDist = ToScreen(poAtDist);
+				if( ! V2Equals(State->PerpDir, ZeroV2))
+				{ // draw perpendicular segment
+					v2 poSSDir = ToScreen(V2Add(poSelect, State->PerpDir));
+					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
+				}
+				// preview circle at given length and segment
 				CircleLine(ScreenBuffer, poSSSelect, SSLength, BLUE);
-				// preview new point dist and position
-				v2 poSSAtDist = V2CanvasToScreen(Basis, poAtDist, ScreenCentre);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSAtDist, LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSAtDist, RED);
+				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
+				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, BLUE);
 			} break;
 
 
@@ -1388,7 +1496,7 @@ case_mode_drawarc:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
-				v2 poSSStart = V2CanvasToScreen(Basis, poStart, ScreenCentre);
+				v2 poSSStart = ToScreen(poStart);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSStart, LIGHT_GREY);
 				if(V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
 				{
@@ -1396,10 +1504,22 @@ case_mode_drawarc:
 				}
 				else
 				{
-					v2 poSSAtDist = V2CanvasToScreen(Basis, poAtDist, ScreenCentre);
+					v2 poSSAtDist = ToScreen(poAtDist);
 					DrawArcFromPoints(ScreenBuffer, poSSSelect, poSSStart, poSSAtDist, BLACK);
 					DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSAtDist, LIGHT_GREY);
 				}
+			} break;
+
+
+			case MODE_ExtendSeg:
+			{ // preview extending a line
+				v2 poSSDir = ToScreen(State->poSaved);
+				v2 poSSOnLine = ToScreen(poOnLine);
+				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
+				if(State->InputMode == MODE_ExtendSeg)
+				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
+				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
+				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
 
 
@@ -1408,53 +1528,14 @@ case_mode_drawarc:
 				v2 PerpDir = State->PerpDir;
 				if( ! V2Equals(PerpDir, ZeroV2))
 				{
-					v2 poSSStart = V2CanvasToScreen(Basis, poSelect, ScreenCentre);
-					v2 poSSPerp = V2CanvasToScreen(Basis, V2Add(poSelect, PerpDir), ScreenCentre);
-					v2 poSSNPerp = V2CanvasToScreen(Basis, V2Add(poSelect, V2Neg(PerpDir)), ScreenCentre);
+					v2 poSSStart = ToScreen(poSelect);
+					v2 poSSPerp  = ToScreen(V2Add(poSelect, PerpDir));
+					v2 poSSNPerp = ToScreen(V2Add(poSelect, V2Neg(PerpDir)));
 					DEBUGDrawLine(ScreenBuffer, poSSStart, SSSnapMouseP, LIGHT_GREY);
 					DEBUGDrawLine(ScreenBuffer, poSSNPerp, poSSPerp, LIGHT_GREY);
 				}
 			} break;
-
-
-			case MODE_QuickSeg:
-			case MODE_DrawSeg:
-			{
-				v2 poSSEnd;
-				if(V2Equals(State->PerpDir, ZeroV2))
-				{
-					poSSEnd = SSSnapMouseP;
-				}
-				else
-				{ // draw perpendicular segment
-					v2 poSSDir = V2CanvasToScreen(Basis, V2Add(poSelect, State->PerpDir), ScreenCentre);
-					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
-				}
-				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, BLUE);
-			} break;
-
-
-			case MODE_ExtendSeg:
-			case MODE_ExtendLinePt:
-			{ // preview extending a line
-				v2 poSSDir = V2CanvasToScreen(Basis, State->poSaved, ScreenCentre);
-				v2 poSSOnLine = V2CanvasToScreen(Basis, poOnLine, ScreenCentre);
-				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
-				if(State->InputMode == MODE_ExtendSeg)
-				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
-				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
-				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
-			} break;
 		}
-
-		uint LastIntersect = (uint)ArenaCount(State->maIntersects, v2) - 1;
-		for(uint i = 1; i <= LastIntersect; ++i)
-		{
-			/* v2 poSS = V2CanvasToScreen(Basis, *PullEl(State->maIntersects, i, v2), ScreenCentre); */
-			/* DrawActivePoint(ScreenBuffer, poSS, ORANGE); */
-		}
-
 
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{ // draw debug vector
@@ -1463,7 +1544,7 @@ case_mode_drawarc:
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
 			if(IsDrawing(State))
-				DrawActivePoint(ScreenBuffer, V2CanvasToScreen(Basis, gDebugPoint, ScreenCentre), ORANGE);
+				DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE);
 		}
 	}
 
@@ -1560,33 +1641,24 @@ case_mode_drawarc:
 		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame time: %.2fms, "
 				"Mouse: (%3.f, %3.f), "
-				/* "Request: {As: %u, Action: %s, Pan: %u}" */
-				/* "Basis: (%.2f, %.2f), " */
-				/* "Char: %d (%c), " */
-				/* "Mode: %s, " */
+				"Mode: %s, "
+				"poSaved: (%3.f, %3.f), "
+				"Selected Points: %u, "
+				"cPtOnScreen: %u, "
+				"cShapesNear: %u, "
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
-				"actions (iC/iL/iS): %u/%u/%u, "
-				/* "pBasis: (%.2f, %.2f)" */
-				/* "Draw Index: %u" */
-				/* "Offset: (%.2f, %.2f), " */
-				"iLastPoint: %u, "
-				"iLastShape: %u"
+				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
-				/* State->cLinePoints, */
-				/* NumPointsOfType(State->PointStatus, State->iLastPoint, POINT_Line), */
-				/* C_Cancel.EndedDown, */
 				State->dt*1000.f,
 				Mouse.P.X, Mouse.P.Y,
-				/* File.NewWindow, FileActionText[File.Action], File.Pan, */
-				/* BASIS->XAxis.X, BASIS->XAxis.Y, */
-				/* testcharindex + 65, testcharindex + 65, */
-				/* InputModeText[State->InputMode], */
-				/* State->pBasis.XAxis.X, State->pBasis.XAxis.Y, */
+				InputModeText[State->InputMode],
+				State->poSaved.X, State->poSaved.Y,
+				Len(State->maSelectedPoints),
+				Len(State->maPointsOnScreen),
+				Len(State->maShapesNearScreen)
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
-				State->iCurrentAction, State->iLastAction, State->iSaveAction,
+				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
 				/* BASIS->Offset.X, BASIS->Offset.Y, */
-				State->iLastPoint,
-				State->iLastShape
 				);
 		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
 
@@ -1669,3 +1741,4 @@ DECLARE_DEBUG_FUNCTION
 		DrawString(Buffer, Font, DebugTextBuffer, TextHeight, 0, 2.f*(f32)Buffer->Height/3.f /*- ((HitI+2)*TextHeight)*/, 0, GREY);
 	}
 }
+#undef ToScreen

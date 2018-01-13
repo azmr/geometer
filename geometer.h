@@ -5,6 +5,7 @@
 #define POINTSTATUS(i) Pull(State->maPointStatus, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
+#define DEBUG_LOG_ACTIONS 1
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 
@@ -37,8 +38,9 @@ static debug_text DebugText;
 #include <input.h>
 #include <misc.h>
 
-typedef arena_type(v2); typedef union v2_arena v2_arena; // repeated from macro - just for syntax highlighting
-typedef arena_type(u8); typedef union u8_arena u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(v2);   typedef union v2_arena   v2_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(u8);   typedef union u8_arena   u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(uint); typedef union uint_arena uint_arena; // repeated from macro - just for syntax highlighting
 
 #define POINT_EPSILON 0.02f
 
@@ -94,6 +96,7 @@ typedef struct arc
 
 typedef enum shape_types
 {
+	SHAPE_ToggleActive = -1, // ensure negatives allowed
 	SHAPE_Free = 0,
 	SHAPE_Line,
 	SHAPE_Ray,
@@ -111,15 +114,18 @@ typedef enum shape_types
 	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"             ) \
 	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"                ) \
 	ACTION_TYPE(ACTION_Point,                   "Add point"              ) \
-	ACTION_TYPE(ACTION_RemovePt,                "Remove Pt"              ) \
-	ACTION_TYPE(ACTION_Basis,                   "Change Basis"           ) \
+	ACTION_TYPE(ACTION_RemovePt,                "Remove point"           ) \
+	ACTION_TYPE(ACTION_RemoveShape,             "Remove shape"           ) \
+	ACTION_TYPE(ACTION_Basis,                   "Change basis"           ) \
 	ACTION_TYPE(ACTION_NON_USER,                "**NON-USER**"           ) \
 	ACTION_TYPE(ACTION_NonUserLine,             "Add line (non-user)"    ) \
 	ACTION_TYPE(ACTION_NonUserRay,              "Add ray (non-user)"     ) \
 	ACTION_TYPE(ACTION_NonUserSegment,          "Add segment (non-user)" ) \
 	ACTION_TYPE(ACTION_NonUserCircle,           "Add circle (non-user)"  ) \
 	ACTION_TYPE(ACTION_NonUserArc,              "Add arc (non-user)"     ) \
-	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   )
+	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   ) \
+	ACTION_TYPE(ACTION_NonUserRemovePt,         "Remove point (non-user)") \
+	ACTION_TYPE(ACTION_NonUserRemoveShape,      "Remove shape (non-user)")
 
 #define USERIFY_ACTION(a) ((a) < ACTION_NON_USER ? (a) : (a) - ACTION_NON_USER)
 
@@ -146,26 +152,26 @@ typedef enum input_mode
 	MODE_Normal = 0,
 	MODE_SetBasis,
 	MODE_SetLength,
-		MODE_DrawArc,
-			MODE_ExtendArc,
-	MODE_QuickSeg,
-		MODE_DrawSeg,
-			MODE_SetPerp,
-			MODE_ExtendSeg,
-			MODE_ExtendLinePt,
+	MODE_QuickPtOrSeg,
+	MODE_DragSelect,
+	MODE_Selected,
+	MODE_Draw,
+		MODE_ExtendArc,
+		MODE_ExtendSeg,
+		MODE_SetPerp,
 } input_mode;
 char *InputModeText[] =
 {
 	"MODE_Normal",
 	"MODE_SetBasis",
 	"MODE_SetLength",
-		"MODE_DrawArc",
-			"MODE_ExtendArc",
-	"MODE_QuickSeg",
-		"MODE_DrawSeg",
-			"MODE_SetPerp",
-			"MODE_ExtendSeg",
-			"MODE_ExtendLinePt",
+	"MODE_QuickPtOrSeg",
+	"MODE_DragSelect",
+	"MODE_Selected",
+	"MODE_Draw",
+		"MODE_ExtendArc",
+		"MODE_ExtendSeg",
+		"MODE_SetPerp",
 };
 
 typedef union shape_union
@@ -202,16 +208,18 @@ ShapeEq(shape S1, shape S2)
 typedef struct action
 {
 	// TODO: choose size for this instead of action_types, otherwise serializing will be unpredictable
-	action_types Kind;
-	u32 i;
+	action_types Kind; // MSVC thinks this is 4 bytes
+	u32 i;             // 4 bytes
 	union {
-		shape_union;
-		basis Basis;
-		struct
+		shape_union;   // 12 bytes
+		basis Basis;   // 20 bytes - could compress to 16 by combining XAxis and Zoom
+		struct         // 12?
 		{
 			v2 po;
 			u8 PointStatus;
 		};
+		// TODO: add char array the size of this union... or I could have ACTION_TextStart and ACTION_TextContinue,
+		// just waste the Kind each time (I think I want to be able to look at any individual action and see what it is
 	};
 } action;
 typedef arena_type(action); typedef union action_arena action_arena;
@@ -250,7 +258,8 @@ typedef struct state
 	// could use bit vector? NaN in the point values?
 	v2_arena maPoints;
 	v2_arena maIntersects;
-	v2_arena maPointsOnScreen;
+	uint_arena maPointsOnScreen;
+	uint_arena maSelectedPoints;
 	shape_arena maShapesNearScreen;
 	shape_arena maShapes;
 	u8_arena maPointStatus;
@@ -291,44 +300,6 @@ typedef struct state
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;
 } state;
-
-internal aabb
-AABBFromShape(v2 *Points, shape Shape)
-{
-	aabb Result = {0};
-	switch(Shape.Kind)
-	{
-		case SHAPE_Segment:
-		{
-			v2 po1 = Points[Shape.Line.P1];
-			v2 po2 = Points[Shape.Line.P2];
-			minmaxf32 x = MinMaxF32(po1.X, po2.X);
-			minmaxf32 y = MinMaxF32(po1.Y, po2.Y);
-			Result.MinX = x.Min;
-			Result.MaxX = x.Max;
-			Result.MinY = y.Min;
-			Result.MaxY = y.Max;
-		} break;
-
-		// TODO (optimize): arc AABB may be smaller than circle
-		case SHAPE_Arc:
-		case SHAPE_Circle:
-		{
-			v2 Focus = Points[Shape.Circle.ipoFocus];
-			f32 Radius = Dist(Focus, Points[Shape.Circle.ipoRadius]);
-			Result.MinX = Focus.X - Radius;
-			Result.MaxX = Focus.X + Radius;
-			Result.MinY = Focus.Y - Radius;
-			Result.MaxY = Focus.Y + Radius;
-		} break;
-
-		default:
-		{
-			Assert(0);
-		}
-	}
-	return Result;
-}
 
 #include "geometer_core.c"
 

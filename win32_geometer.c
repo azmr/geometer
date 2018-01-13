@@ -31,8 +31,8 @@ typedef enum cursor_type
 	CURSOR_Normal = 0,
 	CURSOR_Basis,
 	CURSOR_Pan,
-	CURSOR_Arc,
-	CURSOR_Seg,
+	CURSOR_Select,
+	CURSOR_Draw,
 	CURSOR_Count
 } cursor_type;
 
@@ -348,13 +348,14 @@ ReallocateArenas(state *State, HWND WindowHandle)
 { LOG("REALLOCATION")
 #define ArenaAssert(arena) Assert(arena->Used <= arena->Size)
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
-	v2_arena *maPoints              = &State->maPoints;
-	u8_arena *maPointStatus         = &State->maPointStatus;
-	shape_arena *maShapes           = &State->maShapes;
-	v2_arena *maPointsOnScreen      = &State->maPointsOnScreen;
-	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
-	v2_arena *maIntersects          = &State->maIntersects;
-	action_arena *maActions         = &State->maActions;
+	v2_arena     *maPoints           = &State->maPoints;
+	v2_arena     *maIntersects       = &State->maIntersects;
+	u8_arena     *maPointStatus      = &State->maPointStatus;
+	uint_arena   *maPointsOnScreen   = &State->maPointsOnScreen;
+	uint_arena   *maSelectedPoints   = &State->maSelectedPoints;
+	shape_arena  *maShapes           = &State->maShapes;
+	shape_arena  *maShapesNearScreen = &State->maShapesNearScreen;
+	action_arena *maActions          = &State->maActions;
 
 	// NOTE: Can add multiple points per frame (intersections), but can't double
 	// NOTE: Realloc the next undo state if needed
@@ -363,11 +364,14 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	ArenaAssert(maPointsOnScreen);
 	if(maPoints->Used >= maPoints->Size / 2)
 	{ LOG("Adding to points arena");
-		// NOTE: points and pointstatus should have exactly the same number of members
-		Assert(maPointStatus->Used/sizeof(u8) == maPoints->Used/sizeof(v2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size * 2));
+		// NOTE: should all have exactly the same number of members
+		Assert(maPointStatus->Used/sizeof(u8)      == maPoints->Used/sizeof(v2));
+		Assert(maPointsOnScreen->Used/sizeof(uint) == maPoints->Used/sizeof(v2));
+		Assert(maSelectedPoints->Used/sizeof(uint) == maPoints->Used/sizeof(v2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size         * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size    * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointsOnScreen->Arena, maPointsOnScreen->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maSelectedPoints->Arena, maSelectedPoints->Size * 2));
 	}
 
 	// NOTE: Can only create 1 shape per frame
@@ -375,10 +379,10 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	ArenaAssert(maShapesNearScreen);
 	ArenaAssert(maIntersects);
 	if(maIntersects->Used >= maIntersects->Size / 2)
-	{ MemErrorOnFail(WindowHandle, ArenaRealloc(&maIntersects->Arena,         maIntersects->Size * 2)); }
+	{ MemErrorOnFail(WindowHandle, ArenaRealloc(&maIntersects->Arena,         maIntersects->Size       * 2)); }
 	if(maShapes->Used >= maShapes->Size)
 	{ LOG("Adding to shapes arena");
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&maShapes->Arena,           maShapes->Size * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maShapes->Arena,           maShapes->Size           * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maShapesNearScreen->Arena, maShapesNearScreen->Size * 2));
 	}
 	ArenaAssert(maActions);
@@ -646,13 +650,14 @@ FreeStateArenas(state *State)
 internal void
 AllocStateArenas(state *State)
 {
-	State->maPointStatus.Arena      = ArenaCalloc(sizeof(u8    ) * cSTART_POINTS);
-	State->maPoints.Arena           = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
-	State->maShapes.Arena           = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
-	State->maActions.Arena          = ArenaCalloc(sizeof(action) * cSTART_POINTS);
-	State->maIntersects.Arena       = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
-	State->maPointsOnScreen.Arena   = ArenaCalloc(sizeof(v2    ) * cSTART_POINTS);
-	State->maShapesNearScreen.Arena = ArenaCalloc(sizeof(shape ) * cSTART_POINTS);
+	State->maPointStatus.Arena      = ArenaCalloc(sizeof(*State->maPointStatus.Items     ) * cSTART_POINTS);
+	State->maPoints.Arena           = ArenaCalloc(sizeof(*State->maPoints.Items          ) * cSTART_POINTS);
+	State->maShapes.Arena           = ArenaCalloc(sizeof(*State->maShapes.Items          ) * cSTART_POINTS);
+	State->maActions.Arena          = ArenaCalloc(sizeof(*State->maActions.Items         ) * cSTART_POINTS);
+	State->maIntersects.Arena       = ArenaCalloc(sizeof(*State->maIntersects.Items      ) * cSTART_POINTS);
+	State->maPointsOnScreen.Arena   = ArenaCalloc(sizeof(*State->maPointsOnScreen.Items  ) * cSTART_POINTS);
+	State->maSelectedPoints.Arena   = ArenaCalloc(sizeof(*State->maSelectedPoints.Items  ) * cSTART_POINTS);
+	State->maShapesNearScreen.Arena = ArenaCalloc(sizeof(*State->maShapesNearScreen.Items) * cSTART_POINTS);
 }
 
 internal void
@@ -757,8 +762,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	Cursors[CURSOR_Normal] = LoadCursor(0, IDC_ARROW);
 	Cursors[CURSOR_Basis]  = LoadCursor(0, IDC_UPARROW);
 	Cursors[CURSOR_Pan]    = LoadCursor(0, IDC_SIZEALL);
-	Cursors[CURSOR_Arc]    = LoadCursor(0, IDC_CROSS);
-	Cursors[CURSOR_Seg]    = LoadCursor(0, IDC_CROSS);
+	Cursors[CURSOR_Select] = LoadCursor(0, IDC_CROSS);
+	Cursors[CURSOR_Draw]   = LoadCursor(0, IDC_CROSS);
 	//////////
 
 	win32_frame_timing FrameTimer = Win32InitFrameTimer(Window.TargetSecondsPerFrame);
@@ -927,16 +932,16 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					{ SetCursor(Cursors[CURSOR_Normal]); } break;
 					case MODE_SetBasis:
 					{ SetCursor(Cursors[CURSOR_Basis]); } break;
+					case MODE_DragSelect:
+					case MODE_Selected:
+					{ SetCursor(Cursors[CURSOR_Select]); } break;
 					case MODE_SetLength:
-					case MODE_DrawArc:
+					case MODE_QuickPtOrSeg:
+					case MODE_Draw:
 					case MODE_ExtendArc:
-					{ SetCursor(Cursors[CURSOR_Arc]); } break;
-					case MODE_QuickSeg:
-					case MODE_DrawSeg:
-					case MODE_SetPerp:
 					case MODE_ExtendSeg:
-					case MODE_ExtendLinePt:
-					{ SetCursor(Cursors[CURSOR_Seg]); } break;
+					case MODE_SetPerp:
+					{ SetCursor(Cursors[CURSOR_Draw]); } break;
 					default:
 					{ Assert(0); }
 				}

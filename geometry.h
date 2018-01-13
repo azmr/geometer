@@ -1,12 +1,18 @@
 #ifndef GEOMETRY_H
 #include <maths.h>
 
-typedef struct aabb
+typedef union aabb
 {
-	f32 MinX;
-	f32 MinY;
-	f32 MaxX;
-	f32 MaxY;
+	struct {
+		f32 MinX;
+		f32 MinY;
+		f32 MaxX;
+		f32 MaxY;
+	};
+	struct {
+		v2 Min;
+		v2 Max;
+	};
 } aabb;
 
 // TODO: Should these be f32?
@@ -562,6 +568,19 @@ IntersectArcs(v2 poFocus1, f32 R1, v2 poArcStart1, v2 poArcEnd1, v2 poFocus2, f3
 	END_TIMED_BLOCK;
 	return Result;
 }
+
+internal aabb
+AABBFromPoints(v2 A, v2 B)
+{
+	aabb Result = {0};
+	if(A.X < B.X) { Result.MinX = A.X; Result.MaxX = B.X; }
+	else		  { Result.MinX = B.X; Result.MaxX = A.X; }
+	if(A.Y < B.Y) { Result.MinY = A.Y; Result.MaxY = B.Y; }
+	else		  { Result.MinY = B.Y; Result.MaxY = A.Y; }
+	return Result;
+}
+
+// TODO: AABBFromPointArray
 
 internal aabb
 AABBExpand(aabb Expandee, aabb Expander)
