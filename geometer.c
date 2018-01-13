@@ -236,23 +236,6 @@ SimpleUndo(state *State)
 }
 
 
-internal inline void
-UserUndo(state *State)
-{
-	do { SimpleUndo(State); }
-	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
-	// NOTE: shapes on screen need to be updated before this is called
-	// (or you can accept an occasional frame of lag for points near the edge)
-	RecalcNearScreenIntersects(State);
-}
-internal inline void
-UserRedo(state *State)
-{
-	do { SimpleRedo(State); }
-	while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
-	RecalcNearScreenIntersects(State);
-}
-
 #if 0
 internal inline void
 OffsetDraw(state *State, int Offset)
@@ -577,6 +560,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoClosestIntersect = 0;
 	uint ipoSnap = 0;
 	aabb SelectionAABB = {0};
+	b32 RecalcNeeded = 0;
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -906,11 +890,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 							(State->iCurrentAction > 0))
-					{ UserUndo(State); } // UNDO
+					{ // UNDO
+						do { SimpleUndo(State); }
+						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						RecalcNeeded = 1;
+					}
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
 						(Keyboard.Ctrl.EndedDown && Keyboard.Shift.EndedDown && DEBUGPress(Keyboard.Z))) &&
 						(State->iCurrentAction < State->iLastAction))
-					{ UserRedo(State); } // REDO
+					{ // REDO
+						do { SimpleRedo(State); }
+						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						RecalcNeeded = 1;
+					}
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
@@ -1015,7 +1007,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 							InvalidatePoint  (State, Pull(State->maSelectedPoints, iLastPoint), ACTION_RemovePt);
 						}
 
-						RecalcNearScreenIntersects(State);
+						RecalcNeeded = 1;
 						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_Normal;
 					}
@@ -1339,6 +1331,8 @@ case_mode_draw:
 				}
 			}
 		}
+		if(RecalcNeeded)
+		{ RecalcNearScreenIntersects(State); }
 		Assert(cShapesNearScreen == maShapesNearScreen->Used/sizeof(*maShapesNearScreen->Items));
 
 		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)

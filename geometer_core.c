@@ -527,8 +527,7 @@ RecalcNearScreenIntersects(state *State)
 {
 	shape_arena Arena = State->maShapesNearScreen;
 	uint ArenaLen = (uint)Len(Arena);
-	ArenaLen = ArenaLen > 0 ? ArenaLen - 1 : 0; // NOTE: avoid an underflow
-	uint Result = RecalcIntersects(State, Arena.Items + 1, ArenaLen);
+	uint Result = RecalcIntersects(State, Arena.Items, ArenaLen);
 	return Result;
 }
 
