@@ -1533,7 +1533,7 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 			} break;
 
-			case MODE_RmFromSelection:
+
 			case MODE_DragSelect:
 			case MODE_AddToSelection:
 			{
@@ -1548,6 +1548,7 @@ case_mode_draw:
 					}
 				}
 			}
+			case MODE_RmFromSelection:
 			case MODE_Selected:
 			{
 				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
@@ -1557,6 +1558,9 @@ case_mode_draw:
 					if(ipo)
 					{
 						v2 P = POINTS(ipo);
+						if(State->InputMode == MODE_RmFromSelection && PointInAABB(P, SelectionAABB))
+						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+						else
 						{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 					}
 				}
