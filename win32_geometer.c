@@ -933,6 +933,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					case MODE_SetBasis:
 					{ SetCursor(Cursors[CURSOR_Basis]); } break;
 					case MODE_DragSelect:
+					case MODE_AddToSelection:
+					case MODE_RmFromSelection:
 					case MODE_Selected:
 					{ SetCursor(Cursors[CURSOR_Select]); } break;
 					case MODE_SetLength:
@@ -943,7 +945,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					case MODE_SetPerp:
 					{ SetCursor(Cursors[CURSOR_Draw]); } break;
 					default:
-					{ Assert(0); }
+					{ Assert(!"No cursor set for this input mode"); }
 				}
 			}
 		}
