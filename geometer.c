@@ -860,6 +860,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			State->maSelectedPoints.Used = 0;
 			State->PerpDir = ZeroV2;
+			// TODO: this is a bit hacky, will go when basing length intersection on shape
+			if(State->InputMode == MODE_ExtendSeg)
+			{ PopDiscard(&State->maIntersects); }
 			State->InputMode = MODE_Normal;
 		}
 
