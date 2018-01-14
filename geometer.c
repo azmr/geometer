@@ -859,6 +859,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		else if(DEBUGPress(C_Cancel))
 		{
 			State->maSelectedPoints.Used = 0;
+			State->PerpDir = ZeroV2;
 			State->InputMode = MODE_Normal;
 		}
 
