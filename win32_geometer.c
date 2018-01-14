@@ -365,9 +365,9 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	if(maPoints->Used >= maPoints->Size / 2)
 	{ LOG("Adding to points arena");
 		// NOTE: should all have exactly the same number of members
-		Assert(maPointStatus->Used/sizeof(u8)      == maPoints->Used/sizeof(v2));
-		Assert(maPointsOnScreen->Used/sizeof(uint) == maPoints->Used/sizeof(v2));
-		Assert(maSelectedPoints->Used/sizeof(uint) == maPoints->Used/sizeof(v2));
+		Assert(Len(*maPointStatus)    == Len(*maPoints));
+		Assert(Cap(*maPointsOnScreen) == Cap(*maPoints));
+		Assert(Cap(*maSelectedPoints) == Cap(*maPoints));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size         * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size    * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointsOnScreen->Arena, maPointsOnScreen->Size * 2));

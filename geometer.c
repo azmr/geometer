@@ -923,6 +923,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if(C_BasisMod.EndedDown && DEBUGClick(C_BasisSet))
 					{
+						// TODO: should basis be settable during selection?
 						State->poSaved = SnapMouseP;
 						State->InputMode = MODE_SetBasis;
 					}
@@ -1717,8 +1718,7 @@ case_mode_draw:
 			" Ctrl+O    - open file\n"
 			" Ctrl+Sh+O - open file in new window\n"
 			" Ctrl+N    - new file\n"
-			" Ctrl+Sh+N - new file in new window"
-			;
+			" Ctrl+Sh+N - new file in new window" ;
 
 		DrawString(ScreenBuffer, &State->DefaultFont, LeftHelpBuffer,  TextSize, 10.f, ScreenSize.Y-2.f*TextSize, 0, BLACK);
 		DrawString(ScreenBuffer, &State->DefaultFont, RightHelpBuffer, TextSize, ScreenSize.X - 32.f*TextSize, ScreenSize.Y-2.f*TextSize, 0, BLACK);
