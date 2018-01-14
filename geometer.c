@@ -25,6 +25,7 @@
 // - What else between apps - lengths?
 // - Consolidate history
 // - Cancel actions with other mouseclick e.g. LMB while extending line with RMB
+// - Select shapes, then move that shape's points - extend/arc
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -501,9 +502,9 @@ internal inline b32
 PointIsSelected(state *State, uint ipo)
 {
 	b32 Result = 0;
-	for(int i = 0; i < Len(State->maSelectedPoints); ++i)
+	foreachf(uint, ipoSelect, State->maSelectedPoints)
 	{
-		if(Pull(State->maSelectedPoints, i) == ipo)
+		if(ipoSelect == ipo)
 		{ Result = 1; break; }
 	}
 	return Result;
@@ -633,12 +634,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
 		{
 			f32 ClosestDistSq;
-			f32 ClosestIntersectDistSq;
+			f32 ClosestIntersectDistSq = 0.f;
 			b32 ClosestPtOrIntersect = 0;
 			SnapMouseP = CanvasMouseP;
 			poClosest = CanvasMouseP;
 			ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
-			ipoClosestIntersect = ClosestIntersectIndex(State, CanvasMouseP, &ClosestIntersectDistSq);
+			// TODO (ui): consider ignoring intersections while selecting
+			/* if( ! (MODE_START_Select <= State->InputMode && State->InputMode <= MODE_END_Select)) */
+			{ ipoClosestIntersect = ClosestIntersectIndex(State, CanvasMouseP, &ClosestIntersectDistSq); }
 			IsSnapped = 0;
 			
 			ClosestPtOrIntersect = ipoClosest || ipoClosestIntersect;
@@ -997,25 +1000,23 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if( ! C_Select.EndedDown)
 					{
-						for(uint iipoScreen = 0; iipoScreen < Len(State->maPointsOnScreen); ++iipoScreen)
+						foreachf(uint,ipoScreen, State->maPointsOnScreen)
 						{ // add indexes of selected points to that array
-							uint ipoTest = Pull(State->maPointsOnScreen, iipoScreen);
-							if(PointInAABB(POINTS(ipoTest), SelectionAABB))
+							if(PointInAABB(POINTS(ipoScreen), SelectionAABB))
 							{
-								for(uint iipoSelected = 0; iipoSelected < Len(State->maSelectedPoints); ++iipoSelected)
+								foreachf(uint,ipoSelected, State->maSelectedPoints)
 								{ // insert into array, keeping it in ascending order
-									uint ipoSelected = Pull(State->maSelectedPoints, iipoSelected);
 									Assert(ipoSelected);
-									if(ipoTest == ipoSelected) { goto dont_append_selection; } // already in array
-									else if(ipoSelected > ipoTest)
+									if(ipoScreen == ipoSelected) { goto dont_append_selection; } // already in array
+									else if(ipoSelected > ipoScreen)
 									{ // found larger element, insert before it
-										Insert(&State->maSelectedPoints, iipoSelected, ipoTest);
+										Insert(&State->maSelectedPoints, iipoSelected, ipoScreen);
 										goto dont_append_selection;
 									}
 								}
-								Push(&State->maSelectedPoints, ipoTest);
-dont_append_selection:;
+								Push(&State->maSelectedPoints, ipoScreen);
 							}
+dont_append_selection:;
 						}
 
 						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
@@ -1031,12 +1032,11 @@ dont_append_selection:;
 					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
 					if( ! C_Select.EndedDown)
 					{
-						for(uint iipo = 0; iipo < Len(State->maSelectedPoints); ++iipo)
+						foreach(uint,ipoTest, State->maSelectedPoints)
 						{ // add indexes of selected points to that array
-							uint ipoTest = Pull(State->maSelectedPoints, iipo);
 							if(PointInAABB(POINTS(ipoTest), SelectionAABB))
 							{ // point inside box. If already selected, remove it.
-								Remove(&State->maSelectedPoints, iipo--);
+								Remove(&State->maSelectedPoints, iipoTest--);
 							}
 						}
 
@@ -1051,7 +1051,7 @@ dont_append_selection:;
 case_mode_selected:
 					if(Len(State->maSelectedPoints) == 0) { State->InputMode = MODE_Normal; break; }
 
-					if(DEBUGClick(C_Select))
+					else if(DEBUGClick(C_Select))
 					{ // add or remove points to/from selected array
 						State->poSaved = SnapMouseP;
 						if(C_SelectMod.EndedDown) // remove points from selected array
@@ -1059,6 +1059,7 @@ case_mode_selected:
 						else // add points to selected array
 						{ State->InputMode = MODE_AddToSelection; }
 					}
+
 					else if(DEBUGPress(C_Delete))
 					{
 						// TODO: UI: to determine whether or not to keep the other point(s) in a shape:
@@ -1413,7 +1414,7 @@ case_mode_draw:
 				++cPointsOnScreen;
 			}
 		}
-		Assert(cPointsOnScreen == maPointsOnScreen->Used/sizeof(*maPointsOnScreen->Items));
+		Assert(cPointsOnScreen == Len(*maPointsOnScreen));
 	}
 
 	{ LOG("RENDER");
@@ -1470,10 +1471,8 @@ case_mode_draw:
 		}
 
 		LOG("\tDRAW POINTS");
-		for(uint iipo = 0; iipo < cPointsOnScreen; ++iipo)
+		foreachf(uint, ipo, *maPointsOnScreen) 
 		{
-			// NOTE: basis already applied
-			uint ipo = Pull(*maPointsOnScreen, iipo);
 			v2 SSPoint = ToScreen(POINTS(ipo));
 			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);
 
@@ -1542,32 +1541,24 @@ case_mode_draw:
 			case MODE_DragSelect:
 			case MODE_AddToSelection:
 			{
-				for(uint iipo = 0; iipo < Len(*maPointsOnScreen); ++iipo)
+				foreachf(uint, ipo, *maPointsOnScreen)    if(ipo)
 				{
-					uint ipo = Pull(*maPointsOnScreen, iipo);
-					if(ipo)
-					{
-						v2 P = POINTS(ipo);
-						if(PointInAABB(P, SelectionAABB))
-						{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
-					}
+					v2 P = POINTS(ipo);
+					if(PointInAABB(P, SelectionAABB))
+					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 				}
 			}
 			case MODE_RmFromSelection:
 			case MODE_Selected:
 			{
 				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
-				for(uint iipo = 0; iipo < Len(*maSelectedPoints); ++iipo)
+				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
 				{
-					uint ipo = Pull(*maSelectedPoints, iipo);
-					if(ipo)
-					{
-						v2 P = POINTS(ipo);
-						if(State->InputMode == MODE_RmFromSelection && PointInAABB(P, SelectionAABB))
-						{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
-						else
-						{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
-					}
+					v2 P = POINTS(ipo);
+					if(State->InputMode == MODE_RmFromSelection && PointInAABB(P, SelectionAABB))
+					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+					else
+					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 				}
 			} break;
 
