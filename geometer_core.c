@@ -118,6 +118,25 @@ V2CanvasToScreen(basis Basis, v2 V, v2 ScreenCentre)
 }
 
 
+internal inline compressed_basis
+CompressBasis(basis Basis)
+{
+	compressed_basis Result = {0};
+	Result.XAxis = V2Mult(Basis.Zoom, Basis.XAxis);
+	Result.Offset = Basis.Offset;
+	return Result;
+}
+
+internal inline basis
+DecompressBasis(compressed_basis Basis)
+{
+	basis Result = {0};
+	Result.XAxis = Norm(Basis.XAxis);
+	Result.Offset = Basis.Offset;
+	Result.Zoom = V2Len(Basis.XAxis);
+	return Result;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //  POINTS  ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
@@ -862,7 +881,7 @@ LogActionsToFile(state *State, char *FilePath)
 		{
 			case ACTION_Basis:
 			{
-				basis B = Action.Basis;
+				basis B = DecompressBasis(Action.Basis);
 				fprintf(ActionFile,
 						"\tx-axis: (%.3f, %.3f)\n"
 						"\toffset: (%.3f, %.3f)\n"
@@ -964,7 +983,7 @@ ApplyAction(state *State, action Action)
 		} break;
 
 		case ACTION_Basis:
-		{ SetBasis(State, Action.Basis); } break;
+		{ SetBasis(State, DecompressBasis(Action.Basis)); } break;
 
 		case ACTION_Segment:
 		case ACTION_Circle:

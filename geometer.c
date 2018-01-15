@@ -187,7 +187,7 @@ SimpleUndo(state *State)
 			{
 				if(Actions[i].Kind == ACTION_Basis)
 				{
-					PrevBasis = Actions[i].Basis;
+					PrevBasis = DecompressBasis(Actions[i].Basis);
 					break;
 				}
 			}

@@ -69,6 +69,11 @@ typedef struct basis
 	// TODO: include in XAxis
 	f32 Zoom;
 } basis;
+typedef struct compressed_basis
+{
+	v2 XAxis; // NOTE: Y-axis is the perp. Length is Zoom.
+	v2 Offset;
+} compressed_basis;
 #define INITIAL_ZOOM 0.1f
 #define DefaultBasis (basis){ (v2){1.f, 0.f}, (v2){0.f, 0.f}, INITIAL_ZOOM }
 
@@ -218,7 +223,8 @@ typedef struct action
 	u32 i;             // 4 bytes
 	union {
 		shape_union;   // 12 bytes
-		basis Basis;   // 20 bytes - could compress to 16 by combining XAxis and Zoom
+		// basis Basis;   // 20 bytes
+		compressed_basis Basis;   // 16 bytes - combines XAxis and Zoom
 		struct         // 12?
 		{
 			v2 po;
