@@ -35,7 +35,7 @@ internal void
 Reset(state *State, uint iAction)
 {
 	ResetNoAction(State, iAction);
-	action Action;
+	action Action = {0};
 	Action.Kind = ACTION_Reset;
 	Action.i = iAction;
 	AddAction(State, Action);
@@ -253,7 +253,7 @@ AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types Po
 	uint Result = 0;
 	if(AddPointNoAction(State, po, PointStatus, PriorStatus, &Result))
 	{
-		action Action;
+		action Action = {0};
 		Action.Kind = PointType;
 		Action.i = Result;
 		Action.po = po;
@@ -941,7 +941,15 @@ LogActionsToFile(state *State, char *FilePath)
 						Types, Status);
 			} break;
 
-			default: {}
+			case ACTION_Move:
+			{
+				fprintf(ActionFile,
+						"\tDrag direction: (%f, %f)\n",
+						Action.Dir.X, Action.Dir.Y);
+			} break;
+
+			default:
+			{ Assert(!"Unknown action type"); }
 		}
 
 		fprintf(ActionFile, "\n");
@@ -1002,6 +1010,11 @@ ApplyAction(state *State, action Action)
 			uint ipo = 0;
 			AddPointNoAction(State, Action.po, Action.PointStatus, 0, &ipo);
 			Assert(Action.i == ipo);
+		} break;
+
+		case ACTION_Move:
+		{
+			POINTS(Action.i) = V2Add(POINTS(Action.i), Action.Dir);
 		} break;
 
 		default:

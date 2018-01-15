@@ -223,6 +223,11 @@ SimpleUndo(state *State)
 			// does anything actually need to be done?
 		} break;
 
+		case ACTION_Move:
+		{
+			POINTS(Action.i) = V2Sub(POINTS(Action.i), Action.Dir);
+		} break;
+
 		default:
 		{
 			Assert(!"Unknown/invalid action type");
@@ -508,6 +513,18 @@ PointIsSelected(state *State, uint ipo)
 		if(ipoSelect == ipo)
 		{ Result = 1; break; }
 	}
+	return Result;
+}
+
+internal inline v2
+PreparePointForScreen(state *State, basis Basis, uint ipo, v2 ScreenCentre, v2 DragDir)
+{
+	BEGIN_TIMED_BLOCK;
+	v2 P = POINTS(ipo);
+	if(State->InputMode == MODE_DragMove && PointIsSelected(State, ipo))
+	{ P = V2Add(P, DragDir); }
+	v2 Result = V2CanvasToScreen(Basis, P, ScreenCentre);
+	END_TIMED_BLOCK;
 	return Result;
 }
 
@@ -957,7 +974,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Select))
 					{
 						State->poSaved = SnapMouseP;
-						State->InputMode = MODE_DragSelect;
+						State->InputMode = MODE_BoxSelect;
 					}
 
 					{// unwanted?
@@ -995,7 +1012,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				} break;
 
 
-				case MODE_DragSelect:
+				case MODE_BoxSelect:
 				case MODE_AddToSelection:
 				{
 					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
@@ -1057,7 +1074,7 @@ case_mode_selected:
 					{
 						// TODO (feature): move to SnapMouseP (and combine coincident points)
 						State->poSaved = CanvasMouseP;
-						State->InputMode = MODE_DragPoints;
+						State->InputMode = MODE_DragMove;
 					}
 
 					else if(DEBUGClick(C_Select))
@@ -1091,18 +1108,25 @@ case_mode_selected:
 				} break;
 
 
-				case MODE_DragPoints:
+				case MODE_DragMove:
 				{
 					// TODO: change to SnapMouseP (after point consolidation)
 					DragDir = V2Sub(CanvasMouseP, State->poSaved);
 
 					if( ! C_Drag.EndedDown)
 					{
-						// TODO: add actions for move points (del and add or 'move'?)
+						// TODO: include multiple moves in one action
 						foreachf(uint, ipo, State->maSelectedPoints)
-						{
+						{ // set action to non user move
 							POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
-						}
+							action Action = {0};
+							Action.Kind = -ACTION_Move;
+							Action.i = ipo;
+							Action.Dir = DragDir;
+							AddAction(State, Action);
+						} // change the last one to a user move
+						Pull(State->maActions, State->iCurrentAction).Kind = ACTION_Move;
+
 						// TODO (opt): could buffer the move until returning to normal mode
 						// so lots of partial moves look like only one
 						RecalcNearScreenIntersects(State);
@@ -1457,17 +1481,16 @@ case_mode_draw:
 			V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
 #endif
 
-		v2 *Points = State->maPoints.Items;
 		LOG("\tDRAW SHAPES");
 		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)
-		{
+		{ // DRAW SHAPES
 			shape Shape = Pull(*maShapesNearScreen, iShape);
 			switch(Shape.Kind)
 			{
 				case SHAPE_Segment:
 				{
-					v2 poA = ToScreen(Points[Shape.Line.P1]);
-					v2 poB = ToScreen(Points[Shape.Line.P2]);
+					v2 poA = PreparePointForScreen(State, Basis, Shape.Line.P1, ScreenCentre, DragDir);
+					v2 poB = PreparePointForScreen(State, Basis, Shape.Line.P2, ScreenCentre, DragDir);
 					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
@@ -1475,8 +1498,8 @@ case_mode_draw:
 				
 				case SHAPE_Circle:
 				{
-					v2 poFocus  = ToScreen(Points[Shape.Circle.ipoFocus]);
-					v2 poRadius = ToScreen(Points[Shape.Circle.ipoRadius]);
+					v2 poFocus  = PreparePointForScreen(State, Basis, Shape.Circle.ipoFocus,  ScreenCentre, DragDir);
+					v2 poRadius = PreparePointForScreen(State, Basis, Shape.Circle.ipoRadius, ScreenCentre, DragDir);
 					f32 Radius = Dist(poFocus, poRadius);
 					Assert(Radius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
@@ -1486,9 +1509,9 @@ case_mode_draw:
 
 				case SHAPE_Arc:
 				{
-					v2 poFocus = ToScreen(Points[Shape.Arc.ipoFocus]);
-					v2 poStart = ToScreen(Points[Shape.Arc.ipoStart]);
-					v2 poEnd   = ToScreen(Points[Shape.Arc.ipoEnd]);
+					v2 poFocus = PreparePointForScreen(State, Basis, Shape.Arc.ipoFocus, ScreenCentre, DragDir);
+					v2 poStart = PreparePointForScreen(State, Basis, Shape.Arc.ipoStart, ScreenCentre, DragDir);
+					v2 poEnd   = PreparePointForScreen(State, Basis, Shape.Arc.ipoEnd,   ScreenCentre, DragDir);
 					DrawArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
@@ -1500,6 +1523,7 @@ case_mode_draw:
 		}
 
 		LOG("\tDRAW POINTS");
+		char PointIndex[8] = {0};
 		foreachf(uint, ipo, *maPointsOnScreen) 
 		{
 			v2 SSPoint = ToScreen(POINTS(ipo));
@@ -1507,22 +1531,36 @@ case_mode_draw:
 
 			if(State->ShowDebugInfo)
 			{
-				char PointIndex[8] = {0};
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", ipo);
 				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
 			}
 		}
+		if(State->ShowDebugInfo)
+		{
+			foreachf(v2, P, State->maIntersects)    if(iP)
+			{
+				v2 SSP = ToScreen(P);
+				ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
+				DrawCrosshair(ScreenBuffer, SSP, 6.f, GREEN);
+				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, GREEN);
+			}
+		}
 
-		v2 poSSClosest = ToScreen(poClosest);
-		b32 ValidPointExists = 0; // TODO: may be able to determine at calculation of poClosest
-		for(uint i = 1; i <= State->iLastPoint; ++i)
-		{ if(POINTSTATUS(i) != POINT_Free) { ValidPointExists = 1; break; } }
-		if(ValidPointExists)  { CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
-		if(IsSnapped)
-		{ // draw snapped point
-			DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); 
-			// NOTE: Overdraws...
-			DrawActivePoint(ScreenBuffer, poSSClosest, BLUE);
+		if(State->InputMode != MODE_DragMove)
+		{ // snapping preview
+			v2 poSSClosest = ToScreen(poClosest);
+			b32 ValidPointExists = 0; // TODO: may be able to determine at calculation of poClosest
+			for(uint i = 1; i <= State->iLastPoint; ++i)
+			{ if(POINTSTATUS(i) != POINT_Free) { ValidPointExists = 1; break; } }
+			if(ValidPointExists)
+			{ CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); }
+
+			if(IsSnapped)
+			{ // draw snapped point
+				DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); 
+				// NOTE: Overdraws...
+				DrawActivePoint(ScreenBuffer, poSSClosest, BLUE);
+			}
 		}
 
 
@@ -1535,7 +1573,7 @@ case_mode_draw:
 		v2 poSSSelect = ToScreen(State->poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);
 		switch(State->InputMode)
-		{
+		{ // draw mode-dependent preview
 			case MODE_Normal:
 			{
 				// TODO (UI): animate when (un)snapping
@@ -1566,7 +1604,7 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 			} break;
 
-			case MODE_DragSelect:
+			case MODE_BoxSelect:
 			case MODE_AddToSelection:
 			{
 				foreachf(uint, ipo, *maPointsOnScreen)    if(ipo)
@@ -1590,12 +1628,16 @@ case_mode_draw:
 				}
 			} break;
 
-			case MODE_DragPoints:
+			case MODE_DragMove:
 			{
 				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
 				{
-					v2 SSPoint = ToScreen(V2Add(POINTS(ipo), DragDir));
-					DrawCircleFill(ScreenBuffer, SSPoint, 3.f, BLUE);
+					v2 P = POINTS(ipo);
+					v2 PMoved = V2Add(P, DragDir);
+					v2 SSP = ToScreen(P);
+					v2 SSPMoved = ToScreen(PMoved);
+					DEBUGDrawLine(ScreenBuffer, SSP, SSPMoved, LIGHT_GREY);
+					DrawCircleFill(ScreenBuffer, SSPMoved, 3.f, BLUE);
 				}
 			} break;
 

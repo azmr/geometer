@@ -113,16 +113,17 @@ typedef enum shape_types
 // TODO (opt): define the statements to redo each action here?
 // IMPORTANT: append only
 #define ACTION_TYPES \
-	ACTION_TYPE(ACTION_Reset   = 0,             "Reset"                  ) \
-	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add line"               ) \
-	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add ray"                ) \
-	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add segment"            ) \
-	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"             ) \
-	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"                ) \
-	ACTION_TYPE(ACTION_Point,                   "Add point"              ) \
-	ACTION_TYPE(ACTION_RemovePt,                "Remove point"           ) \
-	ACTION_TYPE(ACTION_RemoveShape,             "Remove shape"           ) \
-	ACTION_TYPE(ACTION_Basis,                   "Change basis"           ) \
+	ACTION_TYPE(ACTION_Reset   = 0,             "Reset"        ) \
+	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add line"     ) \
+	ACTION_TYPE(ACTION_Ray     = SHAPE_Ray,     "Add ray"      ) \
+	ACTION_TYPE(ACTION_Segment = SHAPE_Segment, "Add segment"  ) \
+	ACTION_TYPE(ACTION_Circle  = SHAPE_Circle,  "Add circle"   ) \
+	ACTION_TYPE(ACTION_Arc     = SHAPE_Arc,     "Add arc"      ) \
+	ACTION_TYPE(ACTION_Point,                   "Add point"    ) \
+	ACTION_TYPE(ACTION_RemovePt,                "Remove point" ) \
+	ACTION_TYPE(ACTION_RemoveShape,             "Remove shape" ) \
+	ACTION_TYPE(ACTION_Basis,                   "Change basis" ) \
+	ACTION_TYPE(ACTION_Move,                    "Move point"   ) \
 
 #define IsUserAction(a) ((a) >= 0)
 #define USERIFY_ACTION(a) (IsUserAction(a) ? (a) : -(a))
@@ -151,10 +152,10 @@ typedef enum input_mode
 	MODE_Normal = 0,
 	MODE_SetBasis,
 	MODE_SetLength,
-	MODE_DragSelect,
+	MODE_BoxSelect,
 	MODE_Selected,
 		MODE_AddToSelection,
-		MODE_DragPoints,
+		MODE_DragMove,
 		MODE_RmFromSelection,
 	MODE_QuickPtOrSeg,
 	MODE_Draw,
@@ -173,10 +174,10 @@ char *InputModeText[] =
 	"MODE_Normal",
 	"MODE_SetBasis",
 	"MODE_SetLength",
-	"MODE_DragSelect",
+	"MODE_BoxSelect",
 	"MODE_Selected",
 		"MODE_AddToSelection",
-		"MODE_DragPoints",
+		"MODE_DragMove",
 		"MODE_RmFromSelection",
 	"MODE_QuickPtOrSeg",
 	"MODE_Draw",
@@ -220,6 +221,7 @@ typedef struct action
 {
 	// TODO: choose size for this instead of action_types, otherwise serializing will be unpredictable
 	action_types Kind; // MSVC thinks this is 4 bytes
+	// TODO: add multiple indexes
 	u32 i;             // 4 bytes
 	union {
 		shape_union;   // 12 bytes
@@ -230,6 +232,7 @@ typedef struct action
 			v2 po;
 			u8 PointStatus;
 		};
+		v2 Dir;
 		// TODO: add char array the size of this union... or I could have ACTION_TextStart and ACTION_TextContinue,
 		// just waste the Kind each time (I think I want to be able to look at any individual action and see what it is
 	};

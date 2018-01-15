@@ -936,7 +936,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					{ SetCursor(Cursors[CURSOR_Normal]); } break;
 					case MODE_SetBasis:
 					{ SetCursor(Cursors[CURSOR_Basis]); } break;
-					case MODE_DragSelect:
+					case MODE_BoxSelect:
+					case MODE_DragMove:
 					case MODE_AddToSelection:
 					case MODE_RmFromSelection:
 					case MODE_Selected:
