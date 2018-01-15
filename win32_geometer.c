@@ -758,11 +758,12 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	State->DefaultFont = Bitstream;
 #endif
 
+	// TODO: better cursors
 	HCURSOR Cursors[CURSOR_Count];
 	Cursors[CURSOR_Normal] = LoadCursor(0, IDC_ARROW);
 	Cursors[CURSOR_Basis]  = LoadCursor(0, IDC_UPARROW);
 	Cursors[CURSOR_Pan]    = LoadCursor(0, IDC_SIZEALL);
-	Cursors[CURSOR_Select] = LoadCursor(0, IDC_CROSS);
+	Cursors[CURSOR_Select] = LoadCursor(0, IDC_HAND);
 	Cursors[CURSOR_Draw]   = LoadCursor(0, IDC_CROSS);
 	//////////
 
