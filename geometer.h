@@ -106,6 +106,7 @@ typedef enum shape_types
 } shape_types;
 
 // TODO (opt): define the statements to redo each action here?
+// IMPORTANT: append only
 #define ACTION_TYPES \
 	ACTION_TYPE(ACTION_Reset   = 0,             "Reset"                  ) \
 	ACTION_TYPE(ACTION_Line    = SHAPE_Line,    "Add line"               ) \
@@ -117,17 +118,10 @@ typedef enum shape_types
 	ACTION_TYPE(ACTION_RemovePt,                "Remove point"           ) \
 	ACTION_TYPE(ACTION_RemoveShape,             "Remove shape"           ) \
 	ACTION_TYPE(ACTION_Basis,                   "Change basis"           ) \
-	ACTION_TYPE(ACTION_NON_USER,                "**NON-USER**"           ) \
-	ACTION_TYPE(ACTION_NonUserLine,             "Add line (non-user)"    ) \
-	ACTION_TYPE(ACTION_NonUserRay,              "Add ray (non-user)"     ) \
-	ACTION_TYPE(ACTION_NonUserSegment,          "Add segment (non-user)" ) \
-	ACTION_TYPE(ACTION_NonUserCircle,           "Add circle (non-user)"  ) \
-	ACTION_TYPE(ACTION_NonUserArc,              "Add arc (non-user)"     ) \
-	ACTION_TYPE(ACTION_NonUserPoint,            "Add point (non-user)"   ) \
-	ACTION_TYPE(ACTION_NonUserRemovePt,         "Remove point (non-user)") \
-	ACTION_TYPE(ACTION_NonUserRemoveShape,      "Remove shape (non-user)")
 
-#define USERIFY_ACTION(a) ((a) < ACTION_NON_USER ? (a) : (a) - ACTION_NON_USER)
+#define IsUserAction(a) ((a) >= 0)
+#define USERIFY_ACTION(a) (IsUserAction(a) ? (a) : -(a))
+#define NONUSER_ACTION(a) (IsUserAction(a) ? -(a) : (a))
 
 typedef enum action_types
 {
@@ -152,26 +146,34 @@ typedef enum input_mode
 	MODE_Normal = 0,
 	MODE_SetBasis,
 	MODE_SetLength,
-	MODE_QuickPtOrSeg,
 	MODE_DragSelect,
 	MODE_Selected,
 		MODE_AddToSelection,
+		MODE_DragPoints,
 		MODE_RmFromSelection,
+	MODE_QuickPtOrSeg,
 	MODE_Draw,
 		MODE_ExtendArc,
 		MODE_ExtendSeg,
 		MODE_SetPerp,
+
+	MODE_Count,
+	/* MODE_START_Select = MODE_DragSelect, */
+	/* MODE_END_Select   = MODE_RmFromSelection, */
+	/* MODE_START_Draw   = MODE_QuickPtOrSeg, */
+	/* MODE_END_Draw     = MODE_SetPerp, */
 } input_mode;
 char *InputModeText[] =
 {
 	"MODE_Normal",
 	"MODE_SetBasis",
 	"MODE_SetLength",
-	"MODE_QuickPtOrSeg",
 	"MODE_DragSelect",
 	"MODE_Selected",
 		"MODE_AddToSelection",
+		"MODE_DragPoints",
 		"MODE_RmFromSelection",
+	"MODE_QuickPtOrSeg",
 	"MODE_Draw",
 		"MODE_ExtendArc",
 		"MODE_ExtendSeg",

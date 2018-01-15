@@ -65,6 +65,7 @@
 // further from resting position, but probably used infrequently..?
 #define C_PointOnly    Keyboard.Alt
 
+#define C_Drag         Mouse.LMB
 #define C_Select       Mouse.RMB
 #define C_SelectMod    Keyboard.Alt
 
@@ -494,7 +495,7 @@ internal inline b32
 CurrentActionIsByUser(state *State)
 {
 	action Action = Pull(State->maActions, State->iCurrentAction);
-	b32 Result = Action.Kind < ACTION_NON_USER;
+	b32 Result = Action.Kind >= 0;
 	return Result;
 }
 
@@ -569,6 +570,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 SnapMouseP, poClosest;
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
+	v2 DragDir = ZeroV2;
 	b32 IsSnapped;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
@@ -912,7 +914,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 							(State->iCurrentAction > 0))
 					{ // UNDO
 						do { SimpleUndo(State); }
-						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						while( ! IsUserAction(Pull(State->maActions, State->iCurrentAction).Kind));
 						RecalcNeeded = 1;
 					}
 					if(((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Y)) ||
@@ -920,7 +922,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						(State->iCurrentAction < State->iLastAction))
 					{ // REDO
 						do { SimpleRedo(State); }
-						while(Pull(State->maActions, State->iCurrentAction).Kind > ACTION_NON_USER);
+						while( ! IsUserAction(Pull(State->maActions, State->iCurrentAction).Kind));
 						RecalcNeeded = 1;
 					}
 
@@ -1051,6 +1053,13 @@ dont_append_selection:;
 case_mode_selected:
 					if(Len(State->maSelectedPoints) == 0) { State->InputMode = MODE_Normal; break; }
 
+					if(DEBUGClick(C_Drag))
+					{
+						// TODO (feature): move to SnapMouseP (and combine coincident points)
+						State->poSaved = CanvasMouseP;
+						State->InputMode = MODE_DragPoints;
+					}
+
 					else if(DEBUGClick(C_Select))
 					{ // add or remove points to/from selected array
 						State->poSaved = SnapMouseP;
@@ -1071,13 +1080,33 @@ case_mode_selected:
 						{
 							uint iLastPoint = cPointsSelected-1;
 							for(uint i = 0; i < iLastPoint; ++i)
-							{ InvalidatePoint(State, Pull(State->maSelectedPoints, i), ACTION_NonUserRemovePt); }
+							{ InvalidatePoint(State, Pull(State->maSelectedPoints, i), -ACTION_RemovePt); }
 							InvalidatePoint  (State, Pull(State->maSelectedPoints, iLastPoint), ACTION_RemovePt);
 						}
 
 						RecalcNeeded = 1;
 						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_Normal;
+					}
+				} break;
+
+
+				case MODE_DragPoints:
+				{
+					// TODO: change to SnapMouseP (after point consolidation)
+					DragDir = V2Sub(CanvasMouseP, State->poSaved);
+
+					if( ! C_Drag.EndedDown)
+					{
+						// TODO: add actions for move points (del and add or 'move'?)
+						foreachf(uint, ipo, State->maSelectedPoints)
+						{
+							POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
+						}
+						// TODO (opt): could buffer the move until returning to normal mode
+						// so lots of partial moves look like only one
+						RecalcNearScreenIntersects(State);
+						State->InputMode = MODE_Selected;
 					}
 				} break;
 
@@ -1230,7 +1259,7 @@ case_mode_draw:
 						{
 							if(C_PointOnly.EndedDown)
 							{ // add point intersecting shape 
-								AddPoint(State, poFocus,  POINT_Extant, 0, ACTION_NonUserPoint);
+								AddPoint(State, poFocus,  POINT_Extant, 0, -ACTION_Point);
 								AddPoint(State, poAtDist, POINT_Extant, 0, ACTION_Point);
 							}
 							else
@@ -1240,8 +1269,8 @@ case_mode_draw:
 						{
 							if(C_PointOnly.EndedDown)
 							{ // add point intersecting shape 
-								AddPoint(State, poFocus,    POINT_Extant, 0, ACTION_NonUserPoint);
-								AddPoint(State, poArcStart, POINT_Extant, 0, ACTION_NonUserPoint);
+								AddPoint(State, poFocus,    POINT_Extant, 0, -ACTION_Point);
+								AddPoint(State, poArcStart, POINT_Extant, 0, -ACTION_Point);
 								AddPoint(State, poAtDist,   POINT_Extant, 0, ACTION_Point);
 							}
 							else
@@ -1277,7 +1306,7 @@ case_mode_draw:
 						PopDiscard(&State->maIntersects);
 						if(C_PointOnly.EndedDown)
 						{
-							AddPoint(State, State->poSelect, POINT_Extant, 0, ACTION_NonUserPoint);
+							AddPoint(State, State->poSelect, POINT_Extant, 0, -ACTION_Point);
 							AddPoint(State, poOnLine,        POINT_Extant, 0, ACTION_Point);
 						}
 						else
@@ -1537,7 +1566,6 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 			} break;
 
-
 			case MODE_DragSelect:
 			case MODE_AddToSelection:
 			{
@@ -1559,6 +1587,15 @@ case_mode_draw:
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
 					else
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
+				}
+			} break;
+
+			case MODE_DragPoints:
+			{
+				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
+				{
+					v2 SSPoint = ToScreen(V2Add(POINTS(ipo), DragDir));
+					DrawCircleFill(ScreenBuffer, SSPoint, 3.f, BLUE);
 				}
 			} break;
 

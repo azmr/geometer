@@ -451,12 +451,12 @@ AddIntersectionsAsPoints(state *State, v2 po1, v2 po2, uint cIntersections)
 	BEGIN_TIMED_BLOCK;
 	if(cIntersections == 1)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0, ACTION_NonUserPoint);
+		AddPoint(State, po1, POINT_Intersection, 0, -ACTION_Point);
 	}
 	else if(cIntersections == 2)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0, ACTION_NonUserPoint);
-		AddPoint(State, po2, POINT_Intersection, 0, ACTION_NonUserPoint);
+		AddPoint(State, po1, POINT_Intersection, 0, -ACTION_Point);
+		AddPoint(State, po2, POINT_Intersection, 0, -ACTION_Point);
 	}
 	else { Assert(!cIntersections); }
 	END_TIMED_BLOCK;
@@ -606,8 +606,8 @@ AddSegment(state *State, uint P1, uint P2)
 internal inline uint
 AddSegmentAtPoints(state *State, v2 po1, v2 po2)
 {
-	uint ipo1 = AddPoint(State, po1, POINT_Line, 0, ACTION_NonUserPoint);
-	uint ipo2 = AddPoint(State, po2, POINT_Line, 0, ACTION_NonUserPoint);
+	uint ipo1 = AddPoint(State, po1, POINT_Line, 0, -ACTION_Point);
+	uint ipo2 = AddPoint(State, po2, POINT_Line, 0, -ACTION_Point);
 	return AddSegment(State, ipo1, ipo2);
 }
 
@@ -626,8 +626,8 @@ AddCircle(state *State, uint ipoFocus, uint ipoRadius)
 internal inline uint
 AddCircleAtPoints(state *State, v2 poFocus, v2 poRadius)
 {
-	uint ipoFocus  = AddPoint(State, poFocus,  POINT_Focus,  0, ACTION_NonUserPoint);
-	uint ipoRadius = AddPoint(State, poRadius, POINT_Radius, 0, ACTION_NonUserPoint);
+	uint ipoFocus  = AddPoint(State, poFocus,  POINT_Focus,  0, -ACTION_Point);
+	uint ipoRadius = AddPoint(State, poRadius, POINT_Radius, 0, -ACTION_Point);
 	return AddCircle(State, ipoFocus, ipoRadius);
 }
 
@@ -647,9 +647,9 @@ AddArc(state *State, uint ipoFocus, uint ipoStart, uint ipoEnd)
 internal inline uint
 AddArcAtPoints(state *State, v2 poFocus, v2 poStart, v2 poEnd)
 {
-	uint ipoFocus = AddPoint(State, poFocus, POINT_Focus,  0, ACTION_NonUserPoint);
-	uint ipoStart = AddPoint(State, poStart, POINT_Radius, 0, ACTION_NonUserPoint);
-	uint ipoEnd   = AddPoint(State, poEnd,   POINT_Radius, 0, ACTION_NonUserPoint);
+	uint ipoFocus = AddPoint(State, poFocus, POINT_Focus,  0, -ACTION_Point);
+	uint ipoStart = AddPoint(State, poStart, POINT_Radius, 0, -ACTION_Point);
+	uint ipoEnd   = AddPoint(State, poEnd,   POINT_Radius, 0, -ACTION_Point);
 	return AddArc(State, ipoFocus, ipoStart, ipoEnd);
 }
 
@@ -717,7 +717,7 @@ InvalidatePointIfUnusedAndAutomatic(state *State, uint ipo)
 			Result = ! PlacedByUser;
 			if(Result)
 			{
-				action Action = InvalidatePointOnly(State, ipo, ACTION_NonUserRemovePt);
+				action Action = InvalidatePointOnly(State, ipo, -ACTION_RemovePt);
 				AddAction(State, Action);
 			}
 		}
@@ -764,7 +764,7 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 			}
 
 			action Action = {0};
-			Action.Kind = ACTION_NonUserRemoveShape;
+			Action.Kind = -ACTION_RemoveShape;
 			Action.i = iShape;
 			AddAction(State, Action);
 		}
@@ -839,9 +839,10 @@ LogActionsToFile(state *State, char *FilePath)
 		action Action = Pull(maActions, iAction);
 
 		fprintf(ActionFile,
-				"Action %2u: %s",
+				"Action %2u: %s%s",
 				iAction,
-				ActionTypesStrings[Action.Kind]);
+				ActionTypesStrings[USERIFY_ACTION(Action.Kind)],
+				IsUserAction(Action.Kind) ? "" : " (non-user)");
 
 		if(Action.i)
 		{ fprintf(ActionFile, " -> [%u]", Action.i); }
