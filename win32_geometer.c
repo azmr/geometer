@@ -288,6 +288,16 @@ internal u32
 SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 {
 	BEGIN_TIMED_BLOCK;
+#define PROCESS_DATA_ARRAY() \
+	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->maPoints.Items + 1) \
+	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1) \
+	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->maShapes.Items + 1) \
+	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, State->maActions.Items + 1) \
+	DATA_PROCESS(HEAD_Lengths_v1,     cLengthStores,      State->LengthStores) \
+	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
+	//           elementType          cElements           arraybase
+
+#define DATA_PROCESS(a, b, c) +1
 	FILE *SaveFile = fopen(FilePath, "wb");
 	FileErrorOnFail(WindowHandle, SaveFile, FilePath); 
 	file_header Header = {0};
@@ -300,18 +310,11 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	Header.ID[6] = 'e';
 	Header.ID[7] = 'r';
 	Header.FormatVersion = 1;
-	Header.cArrays = 6; // IMPORTANT: Keep updated when adding new arrays!
+	Header.cArrays = 0 PROCESS_DATA_ARRAY(); // IMPORTANT: Keep updated when adding new arrays!
 	Header.CRC32 = 0;  // edited in following macros
 	Header.cBytes = 0; // edited in following macros
-
-#define PROCESS_DATA_ARRAY() \
-	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->maPoints.Items + 1); \
-	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1); \
-	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->maShapes.Items + 1); \
-	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, State->maActions.Items + 1); \
-	DATA_PROCESS(HEAD_Lengths_v1,     cLengthStores,      State->LengthStores); \
-	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
-	//           elementType          cElements           arraybase
+	Assert(Header.cArrays == 6);
+#undef DATA_PROCESS
 
 	u32 Tag; 
 	u32 One = 1; // To make it addressable
@@ -319,7 +322,7 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	// CRC processing and byte count
 #define DATA_PROCESS(tag, count, arraybase) \
 	Header.CRC32 = CRC32FileArray(Header.CRC32, tag, count, arraybase, sizeof(*(arraybase))); \
-	Header.cBytes += 2*sizeof(u32) + (count)*sizeof(*(arraybase))
+	Header.cBytes += 2*sizeof(u32) + (count)*sizeof(*(arraybase));
 
 	PROCESS_DATA_ARRAY();
 #undef DATA_PROCESS
@@ -332,7 +335,7 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	Tag = tag; \
 	fwrite(&Tag, sizeof(Tag), 1, SaveFile); \
 	fwrite(&count, sizeof(count), 1, SaveFile); \
-	fwrite((arraybase), sizeof((arraybase)[0]), count, SaveFile)
+	fwrite((arraybase), sizeof((arraybase)[0]), count, SaveFile);
 
 	PROCESS_DATA_ARRAY();
 #undef DATA_PROCESS
