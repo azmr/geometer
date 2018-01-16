@@ -184,7 +184,7 @@ SimpleUndo(state *State)
 		{ // find the previous basis and apply that
 			basis PrevBasis = DefaultBasis; // in case no previous basis found
 			for(uint i = State->iCurrentAction; i > 0; --i)
-			{
+			{ // find previous basis
 				if(Actions[i].Kind == ACTION_Basis)
 				{
 					PrevBasis = DecompressBasis(Actions[i].Basis);
@@ -225,7 +225,9 @@ SimpleUndo(state *State)
 
 		case ACTION_Move:
 		{
-			POINTS(Action.Move.ipo[0]) = V2Sub(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
+			POINTS(Action.Move.ipo[0])   = V2Sub(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
+			if(Action.Move.ipo[1])
+			{ POINTS(Action.Move.ipo[1]) = V2Sub(POINTS(Action.Move.ipo[1]), Action.Move.Dir); }
 		} break;
 
 		default:
@@ -1115,14 +1117,23 @@ case_mode_selected:
 
 					if( ! C_Drag.EndedDown)
 					{
-						// TODO: include multiple moves in one action
-						foreachf(uint, ipo, State->maSelectedPoints)
+						for(uint iipo = 0, iipoMax = (uint)Len(State->maSelectedPoints);
+							iipo < iipoMax;
+							iipo += 2)
 						{ // set action to non user move
-							POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
+							uint ipo[2] = {0};
+							ipo[0] = Pull(State->maSelectedPoints, iipo);
+							POINTS(ipo[0]) = V2Add(POINTS(ipo[0]), DragDir);
 							action Action      = {0};
 							Action.Kind        = -ACTION_Move;
-							Action.Move.ipo[0] = ipo;
+							Action.Move.ipo[0] = ipo[0];
 							Action.Move.Dir    = DragDir;
+							if(iipo + 1 < iipoMax)
+							{
+								ipo[1] = Pull(State->maSelectedPoints, iipo+1);
+								POINTS(ipo[1]) = V2Add(POINTS(ipo[1]), DragDir);
+								Action.Move.ipo[1] = ipo[1];
+							}
 							AddAction(State, Action);
 						} // change the last one to a user move
 						Pull(State->maActions, State->iCurrentAction).Kind = ACTION_Move;

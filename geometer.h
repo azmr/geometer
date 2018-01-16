@@ -225,8 +225,8 @@ struct shape_action {
 // 	u32 i[4]; // could be indices of shapes or points
 // };
 struct move_action {
-	u32 ipo[2]; // could add any number more points...
 	v2 Dir;
+	u32 ipo[2]; // could add any number more points...
 };
 struct pt_action {
 	u32 ipo;

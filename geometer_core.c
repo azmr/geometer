@@ -862,7 +862,13 @@ LogActionsToFile(state *State, char *FilePath)
 				ActionTypesStrings[USERIFY_ACTION(Action.Kind)],
 				IsUserAction(Action.Kind) ? "" : " (non-user)");
 
-		if(Action.Shape.i)
+		if(USERIFY_ACTION(Action.Kind) == ACTION_Move)
+		{
+			Action.Move.ipo[1] ?
+				fprintf(ActionFile, " -> [%u, %u]", Action.Move.ipo[0], Action.Move.ipo[1]) :
+				fprintf(ActionFile, " -> [%u]", Action.Move.ipo[0]);
+		}
+		else if(Action.Shape.i)
 		{ fprintf(ActionFile, " -> [%u]", Action.Shape.i); }
 
 		if(iAction == iCurrentAction)
@@ -1007,7 +1013,9 @@ ApplyAction(state *State, action Action)
 
 		case ACTION_Move:
 		{
-			POINTS(Action.Move.ipo[0]) = V2Add(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
+			POINTS(Action.Move.ipo[0])   = V2Add(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
+			if(Action.Move.ipo[1])
+			{ POINTS(Action.Move.ipo[1]) = V2Add(POINTS(Action.Move.ipo[1]), Action.Move.Dir); }
 		} break;
 
 		default:
