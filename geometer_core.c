@@ -37,7 +37,7 @@ Reset(state *State, uint iAction)
 	ResetNoAction(State, iAction);
 	action Action = {0};
 	Action.Kind = ACTION_Reset;
-	Action.i = iAction;
+	Action.Reset.i = iAction;
 	AddAction(State, Action);
 }
 
@@ -255,9 +255,8 @@ AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types Po
 	{
 		action Action = {0};
 		Action.Kind = PointType;
-		Action.i = Result;
-		Action.po = po;
-		Action.PointStatus = POINTSTATUS(Result);
+		Action.Point.ipo = Result;
+		Action.Point.po  = po;
 		AddAction(State, Action);
 	}
 	DebugReplace("AddPoint => %u\n", Result);
@@ -271,8 +270,8 @@ InvalidatePointOnly(state *State, uint ipo, action_types ActionType)
 {
 	action Action = {0};
 	Action.Kind = ActionType;
-	Action.i = ipo;
-	Action.po = POINTS(ipo);
+	Action.Point.ipo = ipo;
+	Action.Point.po  = POINTS(ipo);
 	POINTSTATUS(ipo) = POINT_Free;
 	return Action;
 }
@@ -602,10 +601,10 @@ AddShape(state *State, shape Shape)
 	{
 		action Action = {0};
 		Action.Kind = Shape.Kind;
-		Action.i = Result;
-		Action.P[0] = Shape.P[0];
-		Action.P[1] = Shape.P[1];
-		Action.P[2] = Shape.P[2];
+		Action.Shape.i = Result;
+		Action.Shape.P[0] = Shape.P[0];
+		Action.Shape.P[1] = Shape.P[1];
+		Action.Shape.P[2] = Shape.P[2];
 		AddAction(State, Action);
 	}
 	return Result;
@@ -729,7 +728,7 @@ InvalidatePointIfUnusedAndAutomatic(state *State, uint ipo)
 			for(uint iAction = State->iLastAction; iAction > 0; --iAction)
 			{
 				action Action = Pull(State->maActions, iAction);
-				if(Action.i == ipo && Action.Kind == ACTION_Point) // the user-intended variant
+				if(Action.Point.ipo == ipo && Action.Kind == ACTION_Point) // the user-intended variant
 				{ PlacedByUser = 1; break; }
 			}
 
@@ -784,7 +783,7 @@ InvalidateShapesAtPoint(state *State, uint ipo)
 
 			action Action = {0};
 			Action.Kind = -ACTION_RemoveShape;
-			Action.i = iShape;
+			Action.Shape.i = iShape;
 			AddAction(State, Action);
 		}
 	}
@@ -863,8 +862,8 @@ LogActionsToFile(state *State, char *FilePath)
 				ActionTypesStrings[USERIFY_ACTION(Action.Kind)],
 				IsUserAction(Action.Kind) ? "" : " (non-user)");
 
-		if(Action.i)
-		{ fprintf(ActionFile, " -> [%u]", Action.i); }
+		if(Action.Shape.i)
+		{ fprintf(ActionFile, " -> [%u]", Action.Shape.i); }
 
 		if(iAction == iCurrentAction)
 		{ fprintf(ActionFile, "\t\t<-- CURRENT"); }
@@ -874,9 +873,9 @@ LogActionsToFile(state *State, char *FilePath)
 
 		// NOTE: not doing boundary checks (i.e. `Pull`) as I'm accessing
 		// outside the Len - this is only because this is for debugging!
-		uint ipo1 = Action.P[0];
-		uint ipo2 = Action.P[1];
-		uint ipo3 = Action.P[2];
+		uint ipo1 = Action.Shape.P[0];
+		uint ipo2 = Action.Shape.P[1];
+		uint ipo3 = Action.Shape.P[2];
 		switch(USERIFY_ACTION(Action.Kind))
 		{
 			case ACTION_Basis:
@@ -929,23 +928,17 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Point:
 			{
-				char Types[] = "DARTFILE";
-				char Status[sizeof(Types)];
-				ssprintf(Status, "%08b", Action.PointStatus);
-				v2 po1 = Action.po;
+				v2 po1 = Action.Point.po;
 				fprintf(ActionFile,
-						"\t(%f, %f)\n"
-						"\t        %s\n"
-						"\tStatus: %s\n",
-						po1.X, po1.Y,
-						Types, Status);
+						"\t(%f, %f)\n",
+						po1.X, po1.Y);
 			} break;
 
 			case ACTION_Move:
 			{
 				fprintf(ActionFile,
 						"\tDrag direction: (%f, %f)\n",
-						Action.Dir.X, Action.Dir.Y);
+						Action.Move.Dir.X, Action.Move.Dir.Y);
 			} break;
 
 			default:
@@ -981,11 +974,11 @@ ApplyAction(state *State, action Action)
 		{ ResetNoAction(State, 0); } break;
 
 		case ACTION_RemovePt:
-		{ Pull(State->maPointStatus, Action.i) = POINT_Free; } break;
+		{ Pull(State->maPointStatus, Action.Point.ipo) = POINT_Free; } break;
 
 		case ACTION_RemoveShape:
 		{
-			shape *Shape = &Pull(State->maShapes, Action.i);
+			shape *Shape = &Pull(State->maShapes, Action.Shape.i);
 			Assert(Shape->Kind > SHAPE_Free);
 			Shape->Kind = Shape->Kind > SHAPE_Free ? -Shape->Kind : Shape->Kind;
 		} break;
@@ -999,22 +992,22 @@ ApplyAction(state *State, action Action)
 		{
 			shape Shape;
 			Shape.Kind = Action.Kind;
-			Shape.AllPoints = Action.AllPoints;
+			Shape.AllPoints = Action.Shape.AllPoints;
 			uint iShape = 0;
 			AddShapeNoAction(State, Shape, &iShape);
-			Assert(Action.i == iShape);
+			Assert(Action.Shape.i == iShape);
 		} break;
 
 		case ACTION_Point:
 		{
 			uint ipo = 0;
-			AddPointNoAction(State, Action.po, Action.PointStatus, 0, &ipo);
-			Assert(Action.i == ipo);
+			AddPointNoAction(State, Action.Point.po, POINT_Extant, 0, &ipo);
+			Assert(Action.Point.ipo == ipo);
 		} break;
 
 		case ACTION_Move:
 		{
-			POINTS(Action.i) = V2Add(POINTS(Action.i), Action.Dir);
+			POINTS(Action.Move.ipo[0]) = V2Add(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
 		} break;
 
 		default:

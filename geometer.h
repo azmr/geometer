@@ -217,24 +217,48 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
+struct shape_action {
+	u32 i;
+	shape_union;
+};
+// struct remove_action {
+// 	u32 i[4]; // could be indices of shapes or points
+// };
+struct move_action {
+	u32 ipo[2]; // could add any number more points...
+	v2 Dir;
+};
+struct pt_action {
+	u32 ipo;
+	u32 Empty_Space_To_Fill; // need another v2 to be useful
+	v2 po;
+};
+struct reset_action {
+	u32 i;
+	u32 cPoints; // maybe needed
+	u32 cShapes; // maybe needed
+	u32 Empty_Space_To_Fill; // not needed
+};
+// TODO: add text to action
+// just waste the Kind each time (I think I want to be able to look at any individual action and see what it is
+// struct text_action {
+// 	u32 ipo;
+// 	char Text[12];
+// };
+// struct more_text_action {
+// 	char Text[16];
+// };
+
 typedef struct action
 {
-	// TODO: choose size for this instead of action_types, otherwise serializing will be unpredictable
-	action_types Kind; // MSVC thinks this is 4 bytes
-	// TODO: add multiple indexes
-	u32 i;             // 4 bytes
+	// Is there any way of tagging an enum AND having consistent base type?
+	i32 Kind; // 4 bytes  ->  smaller type?
 	union {
-		shape_union;   // 12 bytes
-		// basis Basis;   // 20 bytes
+		struct reset_action Reset;
+		struct shape_action Shape;
+		struct move_action Move;
+		struct pt_action Point;
 		compressed_basis Basis;   // 16 bytes - combines XAxis and Zoom
-		struct         // 12?
-		{
-			v2 po;
-			u8 PointStatus;
-		};
-		v2 Dir;
-		// TODO: add char array the size of this union... or I could have ACTION_TextStart and ACTION_TextContinue,
-		// just waste the Kind each time (I think I want to be able to look at any individual action and see what it is
 	};
 } action;
 typedef arena_type(action); typedef union action_arena action_arena;

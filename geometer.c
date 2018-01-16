@@ -164,18 +164,18 @@ SimpleUndo(state *State)
 		{ // reapply all actions from scratch
 			// TODO: add checkpoints so it doesn't have to start right from beginning
 			uint iCurrentAction = State->iCurrentAction;
-			for(uint i = Action.i; i < iCurrentAction; ++i)
+			for(uint i = Action.Reset.i; i < iCurrentAction; ++i)
 			{ ApplyAction(State, Actions[i]); }
 		} break;
 
 		case ACTION_RemovePt:
 		{
-			POINTSTATUS(Action.i) = POINT_Extant;
+			POINTSTATUS(Action.Point.ipo) = POINT_Extant;
 		} break;
 
 		case ACTION_RemoveShape:
 		{
-			shape *Shape = &Pull(State->maShapes, Action.i);
+			shape *Shape = &Pull(State->maShapes, Action.Shape.i);
 			Assert(Shape->Kind < SHAPE_Free);
 			Shape->Kind = Shape->Kind < SHAPE_Free ? -Shape->Kind : Shape->Kind;
 		} break;
@@ -198,8 +198,8 @@ SimpleUndo(state *State)
 		case ACTION_Circle:
 		case ACTION_Arc:
 		{
-			Pull(State->maShapes, Action.i).Kind = SHAPE_Free;
-			if(Action.i == State->iLastShape)
+			Pull(State->maShapes, Action.Shape.i).Kind = SHAPE_Free;
+			if(Action.Shape.i == State->iLastShape)
 			{
 				--State->iLastShape;
 				PopDiscard(&State->maShapes);
@@ -211,8 +211,8 @@ SimpleUndo(state *State)
 
 		case ACTION_Point:
 		{
-			Pull(State->maPointStatus, Action.i) = POINT_Free;
-			if(Action.i == State->iLastPoint)
+			Pull(State->maPointStatus, Action.Point.ipo) = POINT_Free;
+			if(Action.Point.ipo == State->iLastPoint)
 			{
 				--State->iLastPoint;
 				PopDiscard(&State->maPoints);
@@ -225,7 +225,7 @@ SimpleUndo(state *State)
 
 		case ACTION_Move:
 		{
-			POINTS(Action.i) = V2Sub(POINTS(Action.i), Action.Dir);
+			POINTS(Action.Move.ipo[0]) = V2Sub(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
 		} break;
 
 		default:
@@ -1119,10 +1119,10 @@ case_mode_selected:
 						foreachf(uint, ipo, State->maSelectedPoints)
 						{ // set action to non user move
 							POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
-							action Action = {0};
-							Action.Kind = -ACTION_Move;
-							Action.i = ipo;
-							Action.Dir = DragDir;
+							action Action      = {0};
+							Action.Kind        = -ACTION_Move;
+							Action.Move.ipo[0] = ipo;
+							Action.Move.Dir    = DragDir;
 							AddAction(State, Action);
 						} // change the last one to a user move
 						Pull(State->maActions, State->iCurrentAction).Kind = ACTION_Move;
@@ -1802,6 +1802,7 @@ case_mode_draw:
 		/* CycleCountersInfo(ScreenBuffer, &State->DefaultFont); */
 
 		// TODO: Highlight status for currently selected/hovered points
+		f32 Zero = 0;
 
 		char Message[512];
 		TextSize = 15.f;
@@ -1811,6 +1812,7 @@ case_mode_draw:
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
 				"Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], "
+				"IsNaN: %f, "
 				/* "cPtOnScreen: %u, " */
 				/* "cShapesNear: %u, " */
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
@@ -1820,7 +1822,8 @@ case_mode_draw:
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
 				Len(State->maSelectedPoints),
-				SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7]
+				SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7],
+				(1.f/Zero)
 				/* Len(State->maPointsOnScreen), */
 				/* Len(State->maShapesNearScreen) */
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
