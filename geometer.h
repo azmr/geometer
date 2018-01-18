@@ -316,6 +316,7 @@ typedef struct state
 
 	u64 FrameCount;
 	f32 dt;
+	f32 dtWork;
 	f32 tBasis;
 	f32 Length;
 	f32 pLength;

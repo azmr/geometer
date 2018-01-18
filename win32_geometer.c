@@ -851,8 +851,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 #endif // !SINGLE_EXECUTABLE
 
 		platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
-		// TODO (fix): frame timing
-		State->dt = FrameTimer.SecondsElapsedForFrame;
 
 		switch(PlatRequest.Action)
 		{
@@ -989,6 +987,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);
+		State->dtWork = FrameTimer.SecondsElapsedForWork;
+		State->dt = FrameTimer.SecondsElapsedForFlip;
 		++State->FrameCount;
 
 		// NOTE: while should allow for cancels part way through the save

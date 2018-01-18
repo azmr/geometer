@@ -1114,6 +1114,8 @@ case_mode_selected:
 				case MODE_DragMove:
 				{
 					// TODO: change to SnapMouseP (after point consolidation)
+					// TODO (fix): decide what to do with arc endpoint dragging
+					// probably worth asserting that their DistSq from the focus never differs (+/- eps)
 					DragDir = V2Sub(CanvasMouseP, State->poSaved);
 
 					if( ! C_Drag.EndedDown)
@@ -1820,7 +1822,7 @@ case_mode_draw:
 		TextSize = 15.f;
 		uint *SelP = State->maSelectedPoints.Items;
 		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
-				"\nFrame time: %.2fms, "
+				"\nFrame work: %.2fms, "
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
 				"Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], "
@@ -1830,7 +1832,7 @@ case_mode_draw:
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
 				/* "actions (iC/iL/iS): %u/%u/%u, " */
 				,
-				State->dt*1000.f,
+				State->dtWork*1000.f,
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
 				Len(State->maSelectedPoints),
