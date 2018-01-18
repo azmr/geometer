@@ -23,7 +23,7 @@ static debug_text DebugText;
 					 for(unsigned int i = 0; i < DebugText.Length; ++i)  DebugText.Text[i] = 0
 #define DebugReplace(txt, ...) DebugClear(); DebugAdd(txt, __VA_ARGS__)
 
-// no prefix
+// minimal prefix to prevent collision with stdio
 #define STB_SPRINTF_DECORATE(fn) s##fn
 #include <stb_sprintf.h>
 #include <maths.h>

@@ -324,17 +324,18 @@ ClosestIntersectIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 {
 	BEGIN_TIMED_BLOCK;
 	// TODO (opt): look at only those on screen
-	v2 *Intersects = State->maIntersects.Items;
-	uint iLast = (uint)ArenaCount(State->maIntersects, v2) - 1;
+	v2_arena Intersects = State->maIntersects;
+	uint iLast = (uint)Len(State->maIntersects);
 	uint Result = 0;
 	f32 Closest = 0;
-	if(iLast)
+	if(iLast > 1)
 	{
+		--iLast;
 		Result = 1;
-		Closest = DistSq(Intersects[1], Comp);
+		Closest = DistSq(Pull(Intersects, 1), Comp);
 		for(uint i = 2; i <= iLast; ++i)
 		{
-			f32 Test = DistSq(Intersects[i], Comp);
+			f32 Test = DistSq(Pull(Intersects, i), Comp);
 			if(Test < Closest)
 			{
 				Closest = Test;

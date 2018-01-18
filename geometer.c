@@ -460,9 +460,10 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 	{
 		uint cIntersects = ClosestPtIntersectingCircle(State->maPoints.Items, State->maShapes.Items,
 				State->iLastShape, MouseP, poFocus, Radius, &Result);
-		// TODO: remove (inc assert)
-		/* if(cIntersects == 0) { Result = ClosestPtOnCircle(MouseP, poFocus, Radius); } */
-		Assert(cIntersects || V2WithinEpsilon(Result, ClosestPtOnCircle(MouseP, poFocus, Radius), POINT_EPSILON));
+		// TODO: remove? (inc assert)
+		if(cIntersects == 0) { Result = ClosestPtOnCircle(MouseP, poFocus, Radius); }
+		/* v2 TestPoint = ClosestPtOnCircle(MouseP, poFocus, Radius); */
+		/* Assert(cIntersects || V2WithinEpsilon(Result, TestPoint, POINT_EPSILON)); */
 		DebugReplace("cIntersects: %u\n", cIntersects);
 	}
 	else

@@ -675,6 +675,7 @@ HardReset(state *State, FILE *OpenFile)
 	ChangeFilePath(&NewState, calloc(1, 1), 1); // 1 byte set to 0 (empty string)
 	NewState.DefaultFont = State->DefaultFont;
 	NewState.maActions.Used = sizeof(action);
+	NewState.pLength = NewState.Length = DEFAULT_LENGTH;
 	
 	ResetNoAction(&NewState, 0);
 	*State = NewState;
