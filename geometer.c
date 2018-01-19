@@ -519,43 +519,6 @@ PointIsSelected(state *State, uint ipo)
 	return Result;
 }
 
-internal inline v2
-PreparePointForScreen(state *State, basis Basis, uint ipo, v2 ScreenCentre, v2 DragDir)
-{
-	BEGIN_TIMED_BLOCK;
-	v2 P = POINTS(ipo);
-	if(State->InputMode == MODE_DragMove)
-	{
-		if(PointIsSelected(State, ipo))
-		{ P = V2Add(P, DragDir); }
-		else
-		{
-			// TODO (opt): this is getting quite expensive...
-			// can I alter the state of PointsOnScreen?
-			/* TODO Finish off altering point if arc point has been moved */
-			foreachf(shape, Shape, State->maShapes)
-			{
-				if(Shape.Kind == SHAPE_Arc)
-				{
-					if(Shape.Arc.ipoStart == ipo)
-					{
-						v2 Focus = POINTS(Shape.Arc.ipoFocus);
-						P = ClosestPtOnCircle(P, Focus, Dist(Focus, POINTS(Shape.Arc.ipoEnd)));
-					}
-					else if(Shape.Arc.ipoEnd == ipo)
-					{
-						v2 Focus = POINTS(Shape.Arc.ipoFocus);
-						P = ClosestPtOnCircle(P, Focus, Dist(Focus, POINTS(Shape.Arc.ipoStart)));
-					}
-				}
-			}
-		}
-	}
-	v2 Result = V2CanvasToScreen(Basis, P, ScreenCentre);
-	END_TIMED_BLOCK;
-	return Result;
-}
-
 internal void
 AdjustMatchingArcPoint(shape_arena Shapes, v2_arena Points, uint ipo)
 {
@@ -1506,6 +1469,33 @@ case_mode_draw:
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
 		v2 SSSnapMouseP = ToScreen(SnapMouseP);
 
+		if(State->InputMode == MODE_DragMove)
+		{ // offset dragged points and arc counterparts
+			foreachf(uint, ipo, *maSelectedPoints)
+			{
+				v2 *P = &Pull(*maPointsOnScreen, ipo);
+				*P = V2Add(*P, DragDir);
+			}
+			foreachf(shape, Shape, State->maShapes)
+			{ // ensure arc lengths are always consistent
+				if(Shape.Kind == SHAPE_Arc)
+				{
+					if(PointIsSelected(State, Shape.Arc.ipoStart))
+					{
+						v2 Focus = POINTS_OS(Shape.Arc.ipoFocus);
+						v2 *P = &Pull(*maPointsOnScreen, Shape.Arc.ipoEnd);
+						*P = ClosestPtOnCircle(*P, Focus, Dist(Focus, POINTS_OS(Shape.Arc.ipoStart)));
+					}
+					else if(PointIsSelected(State, Shape.Arc.ipoEnd))
+					{
+						v2 Focus = POINTS_OS(Shape.Arc.ipoFocus);
+						v2 *P = &Pull(*maPointsOnScreen, Shape.Arc.ipoStart);
+						*P = ClosestPtOnCircle(*P, Focus, Dist(Focus, POINTS_OS(Shape.Arc.ipoEnd)));
+					}
+				}
+			}
+		}
+
 #if 0
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
 		DEBUGDrawLine(ScreenBuffer, ScreenCentre,
@@ -1520,8 +1510,8 @@ case_mode_draw:
 			{
 				case SHAPE_Segment:
 				{
-					v2 poA = PreparePointForScreen(State, Basis, Shape.Line.P1, ScreenCentre, DragDir);
-					v2 poB = PreparePointForScreen(State, Basis, Shape.Line.P2, ScreenCentre, DragDir);
+					v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
+					v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
 					DEBUGDrawLine(ScreenBuffer, poA, poB, BLACK);
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
@@ -1529,8 +1519,8 @@ case_mode_draw:
 				
 				case SHAPE_Circle:
 				{
-					v2 poFocus  = PreparePointForScreen(State, Basis, Shape.Circle.ipoFocus,  ScreenCentre, DragDir);
-					v2 poRadius = PreparePointForScreen(State, Basis, Shape.Circle.ipoRadius, ScreenCentre, DragDir);
+					v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
+					v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
 					f32 Radius = Dist(poFocus, poRadius);
 					Assert(Radius);
 					CircleLine(ScreenBuffer, poFocus, Radius, BLACK);
@@ -1540,9 +1530,9 @@ case_mode_draw:
 
 				case SHAPE_Arc:
 				{
-					v2 poFocus = PreparePointForScreen(State, Basis, Shape.Arc.ipoFocus, ScreenCentre, DragDir);
-					v2 poStart = PreparePointForScreen(State, Basis, Shape.Arc.ipoStart, ScreenCentre, DragDir);
-					v2 poEnd   = PreparePointForScreen(State, Basis, Shape.Arc.ipoEnd,   ScreenCentre, DragDir);
+					v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
+					v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
+					v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
 					DrawArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, BLACK); 
 					if(State->ShowDebugInfo)
 					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }

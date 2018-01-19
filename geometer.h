@@ -2,6 +2,7 @@
 #define BASIS State->Basis
 #define pBASIS State->pBasis
 #define POINTS(i)      Pull(State->maPoints, i)
+#define POINTS_OS(i)   Pull(State->maPointsOnScreen, i)
 #define POINTSTATUS(i) Pull(State->maPointStatus, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
