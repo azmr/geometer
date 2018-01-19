@@ -366,7 +366,7 @@ ClosestPtIntersectingLine(v2 *Points, shape *Shapes, uint iLastShape, v2 P, v2 T
 				cIntersects = IntersectLineSegment(TestStart, TestDir, po, Dir, &poIntersect1);
 			} break;
 
-			default: { /* do nothing */ }
+			default: { Assert(!"Unknown shape type"); }
 		}
 
 		cTotalIntersects += cIntersects;
@@ -524,11 +524,61 @@ PreparePointForScreen(state *State, basis Basis, uint ipo, v2 ScreenCentre, v2 D
 {
 	BEGIN_TIMED_BLOCK;
 	v2 P = POINTS(ipo);
-	if(State->InputMode == MODE_DragMove && PointIsSelected(State, ipo))
-	{ P = V2Add(P, DragDir); }
+	if(State->InputMode == MODE_DragMove)
+	{
+		if(PointIsSelected(State, ipo))
+		{ P = V2Add(P, DragDir); }
+		else
+		{
+			// TODO (opt): this is getting quite expensive...
+			// can I alter the state of PointsOnScreen?
+			/* TODO Finish off altering point if arc point has been moved */
+			foreachf(shape, Shape, State->maShapes)
+			{
+				if(Shape.Kind == SHAPE_Arc)
+				{
+					if(Shape.Arc.ipoStart == ipo)
+					{
+						v2 Focus = POINTS(Shape.Arc.ipoFocus);
+						P = ClosestPtOnCircle(P, Focus, Dist(Focus, POINTS(Shape.Arc.ipoEnd)));
+					}
+					else if(Shape.Arc.ipoEnd == ipo)
+					{
+						v2 Focus = POINTS(Shape.Arc.ipoFocus);
+						P = ClosestPtOnCircle(P, Focus, Dist(Focus, POINTS(Shape.Arc.ipoStart)));
+					}
+				}
+			}
+		}
+	}
 	v2 Result = V2CanvasToScreen(Basis, P, ScreenCentre);
 	END_TIMED_BLOCK;
 	return Result;
+}
+
+internal void
+AdjustMatchingArcPoint(shape_arena Shapes, v2_arena Points, uint ipo)
+{
+	foreachf(shape, Shape, Shapes)
+	{
+		if(Shape.Kind == SHAPE_Arc)
+		{
+			if(Shape.Arc.ipoStart == ipo)
+			{
+				v2 Focus  =  Pull(Points,Shape.Arc.ipoFocus); 
+				v2 Start  =  Pull(Points,Shape.Arc.ipoStart); 
+				v2 *End   = &Pull(Points,Shape.Arc.ipoEnd); 
+				*End = ClosestPtOnCircle(*End, Focus, Dist(Focus, Start));
+			}
+			else if(Shape.Arc.ipoEnd == ipo)
+			{
+				v2 Focus  =  Pull(Points, Shape.Arc.ipoFocus); 
+				v2 *Start = &Pull(Points, Shape.Arc.ipoStart); 
+				v2 End    =  Pull(Points, Shape.Arc.ipoEnd); 
+				*Start = ClosestPtOnCircle(*Start, Focus, Dist(Focus, End));
+			}
+		}
+	}
 }
 
 
@@ -979,39 +1029,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						State->poSaved = SnapMouseP;
 						State->InputMode = MODE_BoxSelect;
 					}
-
-					{// unwanted?
-						/* if(DEBUGClick(MMB)) */
-						/* { */
-						// MOVE POINT
-						/* State->SavedPoint = State->Points[ipoSnap]; */
-						/* State->ipoSelect = ipoSnap; */
-						/* State->ipoDrag = ipoSnap; */
-						/* } */ 
-
-						/* else if(State->ipoDrag) */
-						/* { */
-						/*	 if(DEBUGClick(C_Drag)) */
-						/*	 { */
-						/*		 // Set point to mouse location and recompute intersections */
-						/*		 State->ipoDrag = 0; */
-						/*		 // TODO: this breaks lines attached to intersections... */
-						/*		 RemovePointsOfType(State, POINT_Intersection); */
-						/*		 for(uint i = 1; i <= State->iLastLinePoint; i+=2) */
-						/*		 { */
-						/*			 // TODO: this is wasteful */
-						/*			 AddLineIntersections(State, State->LinePoints[i], i, 0); */
-						/*		 } */
-						/*	 } */
-
-						/*	 else */
-						/*	 { */
-						/*		 State->Points[State->ipoDrag] = Mouse.P; // Update dragged point to mouse location */
-						/*	 } */
-						/*	 // Snapping is off while dragging; TODO: maybe change this when points can be combined */
-						/*	 ipoSnap = 0; */
-						/* } */
-					}
 				} break;
 
 
@@ -1021,24 +1038,25 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
 
 					if( ! C_Select.EndedDown)
-					{
-						foreachf(uint,ipoScreen, State->maPointsOnScreen)
+					{ // add points in selection box to selection
+						foreachf(v2,P, State->maPoints) // TODO: skip first
 						{ // add indexes of selected points to that array
-							if(PointInAABB(POINTS(ipoScreen), SelectionAABB))
+							if(PointInAABB(P, SelectionAABB) && iP)
 							{
 								foreachf(uint,ipoSelected, State->maSelectedPoints)
 								{ // insert into array, keeping it in ascending order
+									// TODO: make InsertSorted macro
 									Assert(ipoSelected);
-									if(ipoScreen == ipoSelected) { goto dont_append_selection; } // already in array
-									else if(ipoSelected > ipoScreen)
+									if(iP == ipoSelected) { goto dont_append_selection; } // already in array
+									else if(ipoSelected > iP)
 									{ // found larger element, insert before it
-										Insert(&State->maSelectedPoints, iipoSelected, ipoScreen);
+										Insert(&State->maSelectedPoints, iipoSelected, iP);
 										goto dont_append_selection;
 									}
 								}
-								Push(&State->maSelectedPoints, ipoScreen);
-							}
+								Push(&State->maSelectedPoints, iP);
 dont_append_selection:;
+							}
 						}
 
 						Assert(Len(State->maSelectedPoints) <= Len(State->maPoints));
@@ -1120,22 +1138,21 @@ case_mode_selected:
 
 					if( ! C_Drag.EndedDown)
 					{
-						for(uint iipo = 0, iipoMax = (uint)Len(State->maSelectedPoints);
-							iipo < iipoMax;
-							iipo += 2)
+						foreachf(uint, ipo, State->maSelectedPoints)
 						{ // set action to non user move
-							uint ipo[2] = {0};
-							ipo[0] = Pull(State->maSelectedPoints, iipo);
-							POINTS(ipo[0]) = V2Add(POINTS(ipo[0]), DragDir);
+							POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
+							AdjustMatchingArcPoint(State->maShapes, State->maPoints, ipo);
+
 							action Action      = {0};
 							Action.Kind        = -ACTION_Move;
-							Action.Move.ipo[0] = ipo[0];
+							Action.Move.ipo[0] = ipo;
 							Action.Move.Dir    = DragDir;
-							if(iipo + 1 < iipoMax)
+							if(++iipo < (uint)Len(State->maSelectedPoints))
 							{
-								ipo[1] = Pull(State->maSelectedPoints, iipo+1);
-								POINTS(ipo[1]) = V2Add(POINTS(ipo[1]), DragDir);
-								Action.Move.ipo[1] = ipo[1];
+								ipo = Pull(State->maSelectedPoints, iipo);
+								POINTS(ipo) = V2Add(POINTS(ipo), DragDir);
+								AdjustMatchingArcPoint(State->maShapes, State->maPoints, ipo);
+								Action.Move.ipo[1] = ipo;
 							}
 							AddAction(State, Action);
 						} // change the last one to a user move
@@ -1413,11 +1430,12 @@ case_mode_draw:
 
 	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
 	uint_arena  *maSelectedPoints   = &State->maSelectedPoints;
-	uint_arena  *maPointsOnScreen   = &State->maPointsOnScreen;
+	// provides temporary buffer so that points can be dragged around
+	// and the shapes that rely on them will follow live.
+	v2_arena    *maPointsOnScreen   = &State->maPointsOnScreen;
 	maShapesNearScreen->Used = 0;
-	maPointsOnScreen->Used = 0;
+	maPointsOnScreen->Used = State->maPoints.Used;
 	uint cShapesNearScreen = 0;
-	uint cPointsOnScreen = 0;
 	{ LOG("CULL");
 	/////////////////////
 		uint iLastShape = State->iLastShape;
@@ -1470,18 +1488,17 @@ case_mode_draw:
 		{ RecalcNearScreenIntersects(State); }
 		Assert(cShapesNearScreen == maShapesNearScreen->Used/sizeof(*maShapesNearScreen->Items));
 
-		for(uint ipo = 1; ipo <= iLastPoint; ++ipo)
-		{
+		// TODO (opt): probably don't need to do every frame
+		// alternatively, could get maShapesNearScreen to change their indices...
+		foreachf(v2, po, State->maPoints)
+		{ 
 			// NOTE: needed in canvas form later
-			v2 P = Points[ipo];
-			if(POINTSTATUS(ipo) != POINT_Free &&
-			   PointInAABB(ToScreen(P), ScreenBB))
+			/* if(POINTSTATUS(ipo) != POINT_Free && */
+			/*    PointInAABB(ToScreen(po), ScreenBB)) */
 			{
-				Push(maPointsOnScreen, ipo);
-				++cPointsOnScreen;
+				Pull(*maPointsOnScreen, ipo) = po;
 			}
 		}
-		Assert(cPointsOnScreen == Len(*maPointsOnScreen));
 	}
 
 	{ LOG("RENDER");
@@ -1538,19 +1555,20 @@ case_mode_draw:
 
 		LOG("\tDRAW POINTS");
 		char PointIndex[8] = {0};
-		foreachf(uint, ipo, *maPointsOnScreen) 
-		{
-			v2 SSPoint = ToScreen(POINTS(ipo));
+		foreachf(v2, po, *maPointsOnScreen) if(ipo)
+		{ // draw on-screen points
+			v2 SSPoint = ToScreen(po);
 			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);
+		}
 
-			if(State->ShowDebugInfo)
+		if(State->ShowDebugInfo)
+		{ // write index number next to points and intersections
+			foreachf(v2, po, State->maPoints)
 			{
+				v2 SSPoint = ToScreen(po);
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", ipo);
 				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
 			}
-		}
-		if(State->ShowDebugInfo)
-		{
 			foreachf(v2, P, State->maIntersects)    if(iP)
 			{
 				v2 SSP = ToScreen(P);
@@ -1560,6 +1578,7 @@ case_mode_draw:
 			}
 		}
 
+		// TODO: consider separating dragmove's logic entirely
 		if(State->InputMode != MODE_DragMove)
 		{ // snapping preview
 			v2 poSSClosest = ToScreen(poClosest);
@@ -1621,9 +1640,8 @@ case_mode_draw:
 			case MODE_BoxSelect:
 			case MODE_AddToSelection:
 			{
-				foreachf(uint, ipo, *maPointsOnScreen)    if(ipo)
+				foreachf(v2, P, State->maPoints)
 				{
-					v2 P = POINTS(ipo);
 					if(PointInAABB(P, SelectionAABB))
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
 				}

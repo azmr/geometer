@@ -352,9 +352,9 @@ ReallocateArenas(state *State, HWND WindowHandle)
 #define ArenaAssert(arena) Assert(arena->Used <= arena->Size)
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
 	v2_arena     *maPoints           = &State->maPoints;
+	v2_arena     *maPointsOnScreen   = &State->maPointsOnScreen;
 	v2_arena     *maIntersects       = &State->maIntersects;
 	u8_arena     *maPointStatus      = &State->maPointStatus;
-	uint_arena   *maPointsOnScreen   = &State->maPointsOnScreen;
 	uint_arena   *maSelectedPoints   = &State->maSelectedPoints;
 	shape_arena  *maShapes           = &State->maShapes;
 	shape_arena  *maShapesNearScreen = &State->maShapesNearScreen;

@@ -298,7 +298,7 @@ typedef struct state
 	v2_arena maPoints;
 	v2_arena maIntersects;
 	// Could optimize by keeping sorted
-	uint_arena maPointsOnScreen;
+	v2_arena maPointsOnScreen;
 	uint_arena maSelectedPoints;
 	shape_arena maShapesNearScreen;
 	shape_arena maShapes;
