@@ -933,6 +933,7 @@ LogActionsToFile(state *State, char *FilePath)
 						ipo3, po3.X, po3.Y);
 			} break;
 
+			case ACTION_RemovePt:
 			case ACTION_Point:
 			{
 				v2 po1 = Action.Point.po;
@@ -947,6 +948,9 @@ LogActionsToFile(state *State, char *FilePath)
 						"\tDrag direction: (%f, %f)\n",
 						Action.Move.Dir.X, Action.Move.Dir.Y);
 			} break;
+
+			case ACTION_Reset:
+			break;
 
 			default:
 			{ Assert(!"Unknown action type"); }
