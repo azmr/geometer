@@ -1006,9 +1006,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if( ! C_Select.EndedDown)
 					{ // add points in selection box to selection
-						foreachf(v2,P, State->maPoints) // TODO: skip first
+						foreachf1(v2,P, State->maPoints)
 						{ // add indexes of selected points to that array
-							if(PointInAABB(P, SelectionAABB) && iP)
+							if(PointInAABB(P, SelectionAABB))
 							{
 								foreachf(uint,ipoSelected, State->maSelectedPoints)
 								{ // insert into array, keeping it in ascending order
@@ -1281,6 +1281,7 @@ case_mode_extend_arc:
 						b32 IsLeft     = Dot(ArcDirY, RelMouse)  >= 0;
 						b32 WasLeft    = Dot(ArcDirY, pRelMouse) >= 0;
 
+						// TODO (ui): modifier to reverse direction?
 						if( ! IsForward && WasLeft != IsLeft)
 						{ State->ArcSwapDirection = !State->ArcSwapDirection; }
 
@@ -1484,7 +1485,7 @@ case_mode_extend_arc:
 
 		// TODO (opt): probably don't need to do every frame
 		// alternatively, could get maShapesNearScreen to change their indices...
-		foreachf(v2, po, State->maPoints)
+		foreachf1(v2, po, State->maPoints)
 		{ 
 			// NOTE: needed in canvas form later
 			/* if(POINTSTATUS(ipo) != POINT_Free && */
@@ -1576,7 +1577,7 @@ case_mode_extend_arc:
 
 		LOG("\tDRAW POINTS");
 		char PointIndex[8] = {0};
-		foreachf(v2, po, *maPointsOnScreen) if(ipo)
+		foreachf1(v2, po, *maPointsOnScreen)
 		{ // draw on-screen points
 			v2 SSPoint = ToScreen(po);
 			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);
@@ -1584,13 +1585,13 @@ case_mode_extend_arc:
 
 		if(State->ShowDebugInfo)
 		{ // write index number next to points and intersections
-			foreachf(v2, po, State->maPoints)
+			foreachf1(v2, po, State->maPoints)
 			{
 				v2 SSPoint = ToScreen(po);
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", ipo);
 				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
 			}
-			foreachf(v2, P, State->maIntersects)    if(iP)
+			foreachf1(v2, P, State->maIntersects)
 			{
 				v2 SSP = ToScreen(P);
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
@@ -1661,7 +1662,7 @@ case_mode_extend_arc:
 			case MODE_BoxSelect:
 			case MODE_AddToSelection:
 			{
-				foreachf(v2, P, State->maPoints)
+				foreachf1(v2, P, State->maPoints)
 				{
 					if(PointInAABB(P, SelectionAABB))
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
