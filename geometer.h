@@ -329,6 +329,7 @@ typedef struct state
 	// TODO: turn bools into flags?
 	b32 ShowDebugInfo;
 	b32 ShowHelpInfo;
+	b32 ArcSwapDirection;
 	input_mode InputMode;
 
 	// TODO: Consolidate to 2 points used as determined by flags
@@ -337,6 +338,7 @@ typedef struct state
 	v2 poSelect;
 	v2 poSaved;
 	v2 PerpDir;
+	v2 pSnapMouseP; // TODO (opt): remove?
 
 	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:

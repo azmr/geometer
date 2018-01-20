@@ -26,6 +26,7 @@
 // - Consolidate history
 // - Cancel actions with other mouseclick e.g. LMB while extending line with RMB
 // - Select shapes, then move that shape's points - extend/arc
+// - Add arc creation behaviour to dragging
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -604,6 +605,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 poAtDist = ZeroV2;
 	v2 poOnLine = ZeroV2;
 	v2 DragDir = ZeroV2;
+	v2 poArcStart = ZeroV2;
+	v2 poArcEnd   = ZeroV2;
 	b32 IsSnapped;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
@@ -970,6 +973,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{ // start drawing arc
 						// NOTE: Starting a shape, save the first point
 						State->poSelect = SnapMouseP;
+						State->ArcSwapDirection = 0;
 						if(C_PointOnly.EndedDown)
 						{ State->InputMode = MODE_QuickPtOrSeg; }
 						else
@@ -1237,6 +1241,7 @@ case_mode_draw:
 						{
 							State->poArcStart = poAtDist;
 							State->InputMode = MODE_ExtendArc;
+							goto case_mode_extend_arc;
 						}
 						State->PerpDir = ZeroV2;
 						Assert(CurrentActionIsByUser(State)); 
@@ -1261,38 +1266,64 @@ case_mode_draw:
 				// use coord system based on focus to first point and its perp
 				case MODE_ExtendArc:
 				{
+case_mode_extend_arc:
 					Assert(IsDrawingArc(State));
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
+
+					v2 poFocus = State->poSelect;
+					v2 poArcInit = State->poArcStart;
+					{ // arc is smallest, unless goes round the back of focus
+						v2 RelMouse  = V2Sub(SnapMouseP,  poFocus);
+						v2 pRelMouse = V2Sub(State->pSnapMouseP, poFocus);
+						v2 ArcDirX   = V2Sub(poArcInit, poFocus);
+						v2 ArcDirY   = Perp(ArcDirX);
+						b32 IsForward  = Dot(ArcDirX, RelMouse)  >= 0; // mouse is forward of focus
+						b32 IsLeft     = Dot(ArcDirY, RelMouse)  >= 0;
+						b32 WasLeft    = Dot(ArcDirY, pRelMouse) >= 0;
+
+						if( ! IsForward && WasLeft != IsLeft)
+						{ State->ArcSwapDirection = !State->ArcSwapDirection; }
+
+						b32 DrawCW = IsLeft != State->ArcSwapDirection;
+						if(DrawCW)
+						{
+							poArcStart = poArcInit;
+							poArcEnd   = poAtDist;
+						}
+						else
+						{
+							poArcStart = poAtDist;
+							poArcEnd   = poArcInit;
+						}
+					}
 
 					// NOTE: Not using button released in case it's missed for some reason
 					// also possible this fires at a weird time when focus returns or something...
 					if(!C_Arc.EndedDown)
 					{ // finish drawing arc/circle
-						v2 poFocus    = State->poSelect;
-						v2 poArcStart = State->poArcStart;
 						// TODO IMPORTANT (fix): don't add when no shape intersected
 						if(V2WithinEpsilon(SnapMouseP, poFocus, POINT_EPSILON) ||
 						   V2WithinEpsilon(poAtDist, State->poArcStart, POINT_EPSILON))
-						// Same angle -> full circle
-						{
+						{ // Same angle -> full circle
 							if(C_PointOnly.EndedDown)
 							{ // add point intersecting shape 
 								AddPoint(State, poFocus,  POINT_Extant, 0, -ACTION_Point);
-								AddPoint(State, poAtDist, POINT_Extant, 0, ACTION_Point);
+								AddPoint(State, poAtDist, POINT_Extant, 0,  ACTION_Point);
 							}
 							else
 							{ AddCircleAtPoints(State, poFocus, State->poArcStart); }
 						}
+
 						else
-						{
+						{ // set points for arc
 							if(C_PointOnly.EndedDown)
 							{ // add point intersecting shape 
-								AddPoint(State, poFocus,    POINT_Extant, 0, -ACTION_Point);
+								AddPoint(State, poFocus,   POINT_Extant, 0, -ACTION_Point);
 								AddPoint(State, poArcStart, POINT_Extant, 0, -ACTION_Point);
-								AddPoint(State, poAtDist,   POINT_Extant, 0, ACTION_Point);
+								AddPoint(State, poArcEnd,  POINT_Extant, 0,  ACTION_Point);
 							}
 							else
-							{ AddArcAtPoints(State, poFocus, State->poArcStart, poAtDist); }
+							{ AddArcAtPoints(State, poFocus, poArcStart, poArcEnd); }
 						}
 						State->InputMode = MODE_Normal;
 						Assert(CurrentActionIsByUser(State)); 
@@ -1593,7 +1624,7 @@ case_mode_draw:
 		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
 		f32 SSLength = State->Length/BASIS.Zoom; 
 		v2 poSelect = State->poSelect;
-		v2 poSSSelect = ToScreen(State->poSelect);
+		v2 poSSSelect = ToScreen(poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);
 		switch(State->InputMode)
 		{ // draw mode-dependent preview
@@ -1685,17 +1716,15 @@ case_mode_draw:
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
-				v2 poSSStart = ToScreen(poStart);
+				v2 poSSStart = ToScreen(poArcStart);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSStart, LIGHT_GREY);
 				if(V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
-				{
-					CircleLine(ScreenBuffer, poSSSelect, SSLength, BLACK);
-				}
+				{ CircleLine(ScreenBuffer, poSSSelect, SSLength, BLACK); }
 				else
 				{
-					v2 poSSAtDist = ToScreen(poAtDist);
-					DrawArcFromPoints(ScreenBuffer, poSSSelect, poSSStart, poSSAtDist, BLACK);
-					DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSAtDist, LIGHT_GREY);
+					v2 poSSEnd   = ToScreen(poArcEnd);
+					DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, LIGHT_GREY);
+					DrawArcFromPoints(ScreenBuffer, poSSSelect, poSSStart, poSSEnd, BLACK);
 				}
 			} break;
 
@@ -1824,7 +1853,7 @@ case_mode_draw:
 		/* CycleCountersInfo(ScreenBuffer, &State->DefaultFont); */
 
 		// TODO: Highlight status for currently selected/hovered points
-		f32 Zero = 0;
+		/* f32 Zero = 0; */
 
 		char Message[512];
 		TextSize = 15.f;
@@ -1834,7 +1863,8 @@ case_mode_draw:
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
 				"Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], "
-				"IsNaN: %f, "
+				"SwapDir: %u, "
+				/* "IsNaN: %f, " */
 				/* "cPtOnScreen: %u, " */
 				/* "cShapesNear: %u, " */
 				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
@@ -1845,7 +1875,8 @@ case_mode_draw:
 				InputModeText[State->InputMode],
 				Len(State->maSelectedPoints),
 				SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7],
-				(1.f/Zero)
+				State->ArcSwapDirection
+				/* (1.f/Zero) */
 				/* Len(State->maPointsOnScreen), */
 				/* Len(State->maShapesNearScreen) */
 				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
@@ -1884,6 +1915,8 @@ case_mode_draw:
 				ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
 #endif
 	}
+
+	State->pSnapMouseP = SnapMouseP;
 
 	CLOSE_LOG();
 	END_TIMED_BLOCK;
