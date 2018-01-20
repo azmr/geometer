@@ -683,7 +683,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			ClosestPtOrIntersect = ipoClosest || ipoClosestIntersect;
 			DebugReplace("Pt: %u, Isct: %u, Drawing: %u\n", ipoClosest, ipoClosestIntersect, IsDrawing(State));
-			if(ClosestPtOrIntersect || IsDrawing(State))
+			if(State->iLastPoint && (ClosestPtOrIntersect || IsDrawing(State)))
 			{
 				// decide whether to use point or intersect
 				if(ipoClosest && ipoClosestIntersect)
@@ -716,19 +716,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 				// compare against state-based temporary points
 				// assumes that IsDrawingArc is implied by IsDrawing
-				if(IsDrawing(State))
-				{
-					f32 SelectDistSq = DistSq(State->poSelect, CanvasMouseP);
-					DebugAdd("Test: %f, Current: %f\n", SelectDistSq, ClosestDistSq);
-					if( ! ClosestPtOrIntersect || SelectDistSq < ClosestDistSq)
-					{
-						poClosest = State->poSelect;
-						DebugAdd("Adding poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
-						ClosestDistSq = SelectDistSq;
-						ipoSnap = 0;
-					}
-				}
-				if(IsDrawingArc(State))
+				if(State->InputMode == MODE_ExtendArc)
 				{
 					f32 ArcStartDistSq = DistSq(State->poArcStart, CanvasMouseP);
 					DebugAdd("Test: %f, Current: %f\n", ArcStartDistSq, ClosestDistSq);
@@ -739,6 +727,19 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						poClosest = State->poArcStart;
 						ClosestDistSq = ArcStartDistSq;
 						DebugAdd("poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
+						ipoSnap = 0;
+					}
+				}
+				// don't snap to focus while extending arc
+				else if(IsDrawing(State))
+				{
+					f32 SelectDistSq = DistSq(State->poSelect, CanvasMouseP);
+					DebugAdd("Test: %f, Current: %f\n", SelectDistSq, ClosestDistSq);
+					if( ! ClosestPtOrIntersect || SelectDistSq < ClosestDistSq)
+					{
+						poClosest = State->poSelect;
+						DebugAdd("Adding poClosest: %.2f, %.2f\n", poClosest.X, poClosest.Y);
+						ClosestDistSq = SelectDistSq;
 						ipoSnap = 0;
 					}
 				}
@@ -1283,6 +1284,7 @@ case_mode_extend_arc:
 					{ // arc is smallest, unless goes round the back of focus
 						v2 RelMouse  = V2Sub(SnapMouseP,  poFocus);
 						v2 pRelMouse = V2Sub(State->pSnapMouseP, poFocus);
+
 						v2 ArcDirX   = V2Sub(poArcInit, poFocus);
 						v2 ArcDirY   = Perp(ArcDirX);
 						b32 IsForward  = Dot(ArcDirX, RelMouse)  >= 0; // mouse is forward of focus
