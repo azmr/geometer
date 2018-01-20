@@ -607,7 +607,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	v2 DragDir = ZeroV2;
 	v2 poArcStart = ZeroV2;
 	v2 poArcEnd   = ZeroV2;
-	b32 IsSnapped;
+	b32 IsSnapped = 0;
 	uint ipoClosest = 0;
 	uint ipoClosestIntersect = 0;
 	uint ipoSnap = 0;
@@ -670,18 +670,18 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// SNAPPING
 		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
+		SnapMouseP = CanvasMouseP;
+		poClosest = CanvasMouseP;
+		if(State->iLastPoint) // there have to be points for anything to be snapped to
 		{
 			f32 ClosestDistSq;
 			f32 ClosestIntersectDistSq = 0.f;
 			b32 ClosestPtOrIntersect = 0;
-			SnapMouseP = CanvasMouseP;
-			poClosest = CanvasMouseP;
 			ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
 			// TODO (ui): consider ignoring intersections while selecting
 			/* if( ! (MODE_START_Select <= State->InputMode && State->InputMode <= MODE_END_Select)) */
 			{ ipoClosestIntersect = ClosestIntersectIndex(State, CanvasMouseP, &ClosestIntersectDistSq); }
-			IsSnapped = 0;
-			
+
 			ClosestPtOrIntersect = ipoClosest || ipoClosestIntersect;
 			DebugReplace("Pt: %u, Isct: %u, Drawing: %u\n", ipoClosest, ipoClosestIntersect, IsDrawing(State));
 			if(ClosestPtOrIntersect || IsDrawing(State))
@@ -693,22 +693,26 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{
 						poClosest = POINTS(ipoClosest);
 						ipoSnap = ipoClosest;
+						DebugAdd("PI - Point\n");
 					}
 					else
 					{
 						poClosest = Pull(State->maIntersects, ipoClosestIntersect);
 						ClosestDistSq = ClosestIntersectDistSq;
+						DebugAdd("PI - Intersect\n");
 					}
 				}
 				else if(ipoClosest)
 				{
 					poClosest = POINTS(ipoClosest);
 					ipoSnap = ipoClosest;
+					DebugAdd("Point\n");
 				}
 				else if(ipoClosestIntersect)
 				{
 					poClosest = Pull(State->maIntersects, ipoClosestIntersect);
 					ClosestDistSq = ClosestIntersectDistSq;
+					DebugAdd("Intersect\n");
 				}
 
 				// compare against state-based temporary points
@@ -751,10 +755,10 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						SnapMouseP = poClosest;
 						DebugAdd("SnapMouseP: %.2f, %.2f\n", SnapMouseP.X, SnapMouseP.Y);
 						IsSnapped = 1;
+						DebugAdd("Closest! %u\n", IsSnapped);
 					}
 				}
 			}
-			if(IsSnapped == 0) { ipoSnap = 0; }
 
 			if(C_ShapeLock.EndedDown)
 			{
@@ -795,9 +799,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						}
 					}
 					if(iShape == 1 || DistSq(TestP, CanvasMouseP) < DistSq(CanvasMouseP, SnapMouseP))
+						// TODO: IsSnapped == 0? bring
 					{ SnapMouseP = TestP; }
 				}
 			}
+			if(IsSnapped == 0) { ipoSnap = 0; }
 		}
 
 		// TODO IMPORTANT (fix): stop unwanted clicks from registering. e.g. on open/save
@@ -1585,13 +1591,13 @@ case_mode_extend_arc:
 
 		if(State->ShowDebugInfo)
 		{ // write index number next to points and intersections
-			foreachf1(v2, po, State->maPoints)
+			foreachf(v2, po, State->maPoints)
 			{
 				v2 SSPoint = ToScreen(po);
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", ipo);
 				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
 			}
-			foreachf1(v2, P, State->maIntersects)
+			foreachf(v2, P, State->maIntersects)
 			{
 				v2 SSP = ToScreen(P);
 				ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
