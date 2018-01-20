@@ -684,12 +684,12 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// SNAPPING
 		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
-		SnapMouseP = CanvasMouseP;
-		poClosest = CanvasMouseP;
 		{
 			f32 ClosestDistSq;
 			f32 ClosestIntersectDistSq = 0.f;
 			b32 ClosestPtOrIntersect = 0;
+			SnapMouseP = CanvasMouseP;
+			poClosest = CanvasMouseP;
 			ipoClosest = ClosestPointIndex(State, CanvasMouseP, &ClosestDistSq);
 			// TODO (ui): consider ignoring intersections while selecting
 			/* if( ! (MODE_START_Select <= State->InputMode && State->InputMode <= MODE_END_Select)) */
@@ -697,7 +697,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 			ClosestPtOrIntersect = ipoClosest || ipoClosestIntersect;
 			DebugReplace("Pt: %u, Isct: %u, Drawing: %u\n", ipoClosest, ipoClosestIntersect, IsDrawing(State));
-			if(State->iLastPoint && (ClosestPtOrIntersect || IsDrawing(State)))
+			if(ClosestPtOrIntersect || IsDrawing(State))
 			{
 				// decide whether to use point or intersect
 				if(ipoClosest && ipoClosestIntersect)
@@ -762,14 +762,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 #define POINT_SNAP_DIST 5000.f
 				// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
-				if(ClosestDistSq/(BASIS.Zoom * BASIS.Zoom) < POINT_SNAP_DIST)
-				{ // closest point within range
-					if( ! C_NoSnap.EndedDown)
-					{ // point snapping still on
-						SnapMouseP = poClosest;
-						DebugAdd("SnapMouseP: %.2f, %.2f\n", SnapMouseP.X, SnapMouseP.Y);
-						IsSnapped = 1;
-					}
+				if(ClosestDistSq/(BASIS.Zoom * BASIS.Zoom) < POINT_SNAP_DIST && // closest point is within range
+				   ! C_NoSnap.EndedDown && // point snapping is still on
+				   ! V2Equals(poClosest, CanvasMouseP)) // found something to snap to
+				{
+					SnapMouseP = poClosest;
+					DebugAdd("SnapMouseP: %.2f, %.2f\n", SnapMouseP.X, SnapMouseP.Y);
+					IsSnapped = 1;
 				}
 			}
 
