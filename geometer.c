@@ -1000,6 +1000,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					else if(DEBUGClick(C_Select))
 					{
 						State->poSaved = SnapMouseP;
+						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_BoxSelect;
 					}
 				} break;
@@ -1134,7 +1135,10 @@ case_mode_selected:
 						// TODO (opt): could buffer the move until returning to normal mode
 						// so lots of partial moves look like only one
 						RecalcNearScreenIntersects(State);
-						State->InputMode = MODE_Selected;
+						if(C_SelectMod.EndedDown)
+						{ State->InputMode = MODE_Selected; }
+						else
+						{ State->InputMode = MODE_Normal; }
 					}
 				} break;
 
