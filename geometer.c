@@ -545,6 +545,20 @@ AdjustMatchingArcPoint(shape_arena Shapes, v2_arena Points, uint ipo)
 	}
 }
 
+// this is for the occasions when an arc/circle is fully around the screen
+// trying to draw the massive shape is very expensive, and nothing gets drawn
+internal b32
+ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
+{
+	b32 Result = 0;
+	if( DistSq(poSSFocus, ScreenBB.Min) < SSRadiusSq &&
+		DistSq(poSSFocus, ScreenBB.Max) < SSRadiusSq &&
+		DistSq(poSSFocus, V2(ScreenBB.MinX, ScreenBB.MaxY)) < SSRadiusSq &&
+		DistSq(poSSFocus, V2(ScreenBB.MaxX, ScreenBB.MinY)) < SSRadiusSq)
+	{ Result = 1; }
+	return Result;
+}
+
 
 UPDATE_AND_RENDER(UpdateAndRender)
 {
@@ -1441,11 +1455,11 @@ case_mode_extend_arc:
 	maShapesNearScreen->Used = 0;
 	maPointsOnScreen->Used = State->maPoints.Used;
 	uint cShapesNearScreen = 0;
+	aabb ScreenBB;
 	{ LOG("CULL");
 	/////////////////////
 		uint iLastShape = State->iLastShape;
 		uint iLastPoint = State->iLastPoint;
-		aabb ScreenBB;
 #if 1
 		ScreenBB.MinX = 0.f;
 		ScreenBB.MinY = 0.f;
@@ -1482,7 +1496,15 @@ case_mode_extend_arc:
 				}
 				aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
 				/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
-				if(AABBOverlaps(ScreenBB, ShapeBB)) // shape BB on screen
+				b32 ScreenIsInsideShape = 0;
+				if(Shape.Kind == SHAPE_Arc || Shape.Kind == SHAPE_Circle)
+				{
+					v2 SSFocus = ShapePoints[LocalShape.Circle.ipoFocus];
+					f32 SSRadiusSq = DistSq(SSFocus, ShapePoints[LocalShape.Circle.ipoRadius]);
+					ScreenIsInsideShape = ScreenIsInsideCircle(ScreenBB, SSFocus, SSRadiusSq);
+				}
+
+				if(AABBOverlaps(ScreenBB, ShapeBB) && ! ScreenIsInsideShape)
 				{ // add shape to array of shapes on screen
 					Push(maShapesNearScreen, Shape);
 					++cShapesNearScreen;
@@ -1637,12 +1659,13 @@ case_mode_extend_arc:
 		v2 poSelect = State->poSelect;
 		v2 poSSSelect = ToScreen(poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);
+		b32 DrawPreviewCircle = ! ScreenIsInsideCircle(ScreenBB, poSSSelect, SSLength * SSLength);
 		switch(State->InputMode)
 		{ // draw mode-dependent preview
 			case MODE_Normal:
 			{
 				// TODO (UI): animate when (un)snapping
-				CircleLine(ScreenBuffer, SSSnapMouseP, SSLength, LIGHT_GREY);
+				if(DrawPreviewCircle) CircleLine(ScreenBuffer, SSSnapMouseP, SSLength, LIGHT_GREY);
 				if(C_ShapeLock.EndedDown)
 				{ CircleLine(ScreenBuffer, SSSnapMouseP, 3.f, LIGHT_GREY); }
 			} break;
@@ -1658,7 +1681,7 @@ case_mode_extend_arc:
 			{
 				if( ! V2WithinEpsilon(SnapMouseP, poSelect, POINT_EPSILON) && ! C_PanMod.EndedDown)
 				{ SSLength = Dist(poSSSelect, SSSnapMouseP); }
-				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
+				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, LIGHT_GREY);
 			} break;
 
@@ -1715,7 +1738,7 @@ case_mode_extend_arc:
 					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				}
 				// preview circle at given length and segment
-				CircleLine(ScreenBuffer, poSSSelect, SSLength, BLUE);
+				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, BLUE);
 				DrawActivePoint(ScreenBuffer, poSSAtDist, RED);
 				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, BLUE);
@@ -1729,7 +1752,7 @@ case_mode_extend_arc:
 				v2 poStart = State->poArcStart;
 				v2 poSSStart = ToScreen(poArcStart);
 				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSStart, LIGHT_GREY);
-				if(V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
+				if(DrawPreviewCircle && V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
 				{ CircleLine(ScreenBuffer, poSSSelect, SSLength, BLACK); }
 				else
 				{
@@ -1747,7 +1770,7 @@ case_mode_extend_arc:
 				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				if(State->InputMode == MODE_ExtendSeg)
 				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
-				CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
+				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
 				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
 			} break;
 
@@ -1861,7 +1884,7 @@ case_mode_extend_arc:
 		DebugPrint();
 		/* DrawSuperSlowCircleLine(ScreenBuffer, ScreenCentre, 50.f, RED); */
 
-		/* CycleCountersInfo(ScreenBuffer, &State->DefaultFont); */
+		CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
 
 		// TODO: Highlight status for currently selected/hovered points
 		/* f32 Zero = 0; */
