@@ -672,7 +672,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
 		SnapMouseP = CanvasMouseP;
 		poClosest = CanvasMouseP;
-		if(State->iLastPoint) // there have to be points for anything to be snapped to
 		{
 			f32 ClosestDistSq;
 			f32 ClosestIntersectDistSq = 0.f;
@@ -755,7 +754,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						SnapMouseP = poClosest;
 						DebugAdd("SnapMouseP: %.2f, %.2f\n", SnapMouseP.X, SnapMouseP.Y);
 						IsSnapped = 1;
-						DebugAdd("Closest! %u\n", IsSnapped);
 					}
 				}
 			}
@@ -1587,7 +1585,7 @@ case_mode_extend_arc:
 
 		LOG("\tDRAW POINTS");
 		char PointIndex[8] = {0};
-		foreachf1(v2, po, *maPointsOnScreen)
+		foreachf1(v2, po, *maPointsOnScreen) if(POINTSTATUS(ipo))
 		{ // draw on-screen points
 			v2 SSPoint = ToScreen(po);
 			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);

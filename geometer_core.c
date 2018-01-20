@@ -309,7 +309,7 @@ RemovePointsOfType(state *State, uint PointType)
 
 internal inline b32
 IsDrawing(state *State)
-{ return State->InputMode > MODE_Normal; }
+{ return State->InputMode > MODE_Normal && State->InputMode < MODE_BoxSelect; }
 
 internal inline b32
 IsDrawingArc(state *State)
@@ -949,6 +949,7 @@ LogActionsToFile(state *State, char *FilePath)
 						Action.Move.Dir.X, Action.Move.Dir.Y);
 			} break;
 
+			case ACTION_RemoveShape:
 			case ACTION_Reset:
 			break;
 
