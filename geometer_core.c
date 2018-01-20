@@ -23,10 +23,10 @@ ResetNoAction(state *State, uint iAction)
 	for(uint i = cPoints+1; i <= State->iLastPoint; ++i)
 	{ POINTSTATUS(i) = POINT_Free; }
 
-	State->Basis = DefaultBasis;
+	State->pBasis = State->Basis = DefaultBasis;
 	State->tBasis = 1.f;
 
-	State->Length = DEFAULT_LENGTH;
+	State->pLength = State->Length = DEFAULT_LENGTH;
 
 	END_TIMED_BLOCK;
 }
@@ -310,10 +310,6 @@ RemovePointsOfType(state *State, uint PointType)
 internal inline b32
 IsDrawing(state *State)
 { return State->InputMode > MODE_Normal && State->InputMode < MODE_BoxSelect; }
-
-internal inline b32
-IsDrawingArc(state *State)
-{ return State->InputMode == MODE_ExtendArc; }
 
 ///////////////////////////////////////////////////////////////////////////////
 //  INTERSECTIONS  ////////////////////////////////////////////////////////////

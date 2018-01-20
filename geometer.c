@@ -831,9 +831,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		if(DEBUGPress(C_CanvasHome))
 		{ // reset canvas position
+			pBASIS = BASIS;
 			BASIS.Offset = ZeroV2;
-			// TODO: do I want zoom to reset?
-			// BASIS->Zoom   = 1.f;
+			BASIS.Zoom   = 1.f;
 			State->tBasis = 0.f;
 		}
 
@@ -1285,12 +1285,9 @@ case_mode_draw:
 				} break;
 
 
-				// TODO: only draw the smaller arc if not gone around the focus
-				// use coord system based on focus to first point and its perp
 				case MODE_ExtendArc:
 				{
 case_mode_extend_arc:
-					Assert(IsDrawingArc(State));
 					poAtDist = ChooseCirclePoint(State, CanvasMouseP, SnapMouseP, C_ShapeLock.EndedDown);
 
 					v2 poFocus = State->poSelect;
