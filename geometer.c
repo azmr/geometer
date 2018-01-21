@@ -1027,7 +1027,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 					{ // add points in selection box to selection
 						foreachf1(v2,P, State->maPoints)
 						{ // add indexes of selected points to that array
-							if(PointInAABB(P, SelectionAABB))
+							if(POINTSTATUS(iP) && PointInAABB(P, SelectionAABB))
 							{
 								foreachf(uint,ipoSelected, State->maSelectedPoints)
 								{ // insert into array, keeping it in ascending order
@@ -1691,7 +1691,7 @@ case_mode_extend_arc:
 			case MODE_BoxSelect:
 			case MODE_AddToSelection:
 			{
-				foreachf1(v2, P, State->maPoints)
+				foreachf1(v2, P, State->maPoints) if(POINTSTATUS(iP))
 				{
 					if(PointInAABB(P, SelectionAABB))
 					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
