@@ -26,6 +26,7 @@
 // - Consolidate history
 // - Cancel actions with other mouseclick e.g. LMB while extending line with RMB
 // - Select shapes, then move that shape's points - extend/arc
+// 		- select via intersection with line allows weird angle selections...
 // - Add arc creation behaviour to dragging
 
 // UI that allows modification:
@@ -1011,7 +1012,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGClick(C_Select))
 					{
-						State->poSaved = SnapMouseP;
+						State->poSaved = V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre);
 						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_BoxSelect;
 					}
@@ -1021,13 +1022,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				case MODE_BoxSelect:
 				case MODE_AddToSelection:
 				{
-					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
+					SelectionAABB = AABBFromPoints(State->poSaved,
+							V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre));
 
 					if( ! C_Select.EndedDown)
 					{ // add points in selection box to selection
-						foreachf1(v2,P, State->maPoints)
+						foreachf1(v2,P, State->maPoints) if(POINTSTATUS(iP))
 						{ // add indexes of selected points to that array
-							if(POINTSTATUS(iP) && PointInAABB(P, SelectionAABB))
+							// TODO: use animated basis rather than state
+							P = V2CanvasToScreen(State->Basis, P, ScreenCentre);
+							if(PointInAABB(P, SelectionAABB))
 							{
 								foreachf(uint,ipoSelected, State->maSelectedPoints)
 								{ // insert into array, keeping it in ascending order
@@ -1055,7 +1059,8 @@ dont_append_selection:;
 
 				case MODE_RmFromSelection:
 				{
-					SelectionAABB = AABBFromPoints(State->poSaved, SnapMouseP);
+					SelectionAABB = AABBFromPoints(State->poSaved,
+							V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre));
 					if( ! C_Select.EndedDown)
 					{
 						foreach(uint,ipoTest, State->maSelectedPoints)
@@ -1086,7 +1091,7 @@ case_mode_selected:
 
 					else if(DEBUGClick(C_Select))
 					{ // add or remove points to/from selected array
-						State->poSaved = SnapMouseP;
+						State->poSaved = V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre);
 						if(C_SelectMod.EndedDown) // remove points from selected array
 						{ State->InputMode = MODE_RmFromSelection; }
 						else // add points to selected array
@@ -1527,6 +1532,7 @@ case_mode_extend_arc:
 	{ LOG("RENDER");
 	////////////////
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
+		// TODO: move up for other things
 		v2 SSSnapMouseP = ToScreen(SnapMouseP);
 
 		if(State->InputMode == MODE_DragMove)
@@ -1693,14 +1699,15 @@ case_mode_extend_arc:
 			{
 				foreachf1(v2, P, State->maPoints) if(POINTSTATUS(iP))
 				{
+					P = ToScreen(P);
 					if(PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
+					{ DrawActivePoint(ScreenBuffer, P, ORANGE); }
 				}
 			}
 			case MODE_RmFromSelection:
 			case MODE_Selected:
 			{
-				DrawAABB(ScreenBuffer, AABBCanvasToScreen(Basis, SelectionAABB, ScreenCentre), GREY);
+				DrawAABB(ScreenBuffer, SelectionAABB, GREY);
 				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
 				{
 					v2 P = POINTS(ipo);
@@ -1887,13 +1894,13 @@ case_mode_extend_arc:
 
 		char Message[512];
 		TextSize = 15.f;
-		uint *SelP = State->maSelectedPoints.Items;
+		/* uint *SelP = State->maSelectedPoints.Items; */
 		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
 				"\nFrame work: %.2fms, "
 				"Mouse: (%3.f, %3.f), "
 				"Mode: %s, "
-				"Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], "
-				"SwapDir: %u, "
+				"Selection BB: %.2f, %.2f, %.2f, %.2f, "
+				/* "Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], " */
 				/* "IsNaN: %f, " */
 				/* "cPtOnScreen: %u, " */
 				/* "cShapesNear: %u, " */
@@ -1903,9 +1910,9 @@ case_mode_extend_arc:
 				State->dtWork*1000.f,
 				Mouse.P.X, Mouse.P.Y,
 				InputModeText[State->InputMode],
-				Len(State->maSelectedPoints),
-				SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7],
-				State->ArcSwapDirection
+				SelectionAABB.MinX, SelectionAABB.MinY, SelectionAABB.MaxX, SelectionAABB.MaxY
+				/* Len(State->maSelectedPoints), */
+				/* SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7], */
 				/* (1.f/Zero) */
 				/* Len(State->maPointsOnScreen), */
 				/* Len(State->maShapesNearScreen) */
