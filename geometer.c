@@ -560,6 +560,51 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 	return Result;
 }
 
+internal basis
+AnimateBasis(basis StartBasis, basis EndBasis, f32 tBasis)
+{
+	// TODO: animate on undos
+	if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+	{ // Not within 90° either side
+		if(tBasis < 0.5f)
+		{ // first half of transition
+			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+			{ EndBasis.XAxis = Perp(StartBasis.XAxis); }
+			else
+			{ EndBasis.XAxis = Perp(EndBasis.XAxis); }
+			tBasis *= 2.f;
+		}
+
+		else
+		{ // second half of transition
+			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+			{ StartBasis.XAxis = Perp(StartBasis.XAxis); }
+			else
+			{ StartBasis.XAxis = Perp(EndBasis.XAxis); }
+			tBasis = (tBasis-0.5f) * 2.f;
+		}
+	}
+	else
+	{ // do small transition with smooth in/out
+		// NOTE: fine for one transition, not 2
+		tBasis = SmoothStep(tBasis);
+	}
+#if 1
+	// TODO: investigate why tBasis goes wildly out of bounds
+	// e.g. -174660.406 (is it only during debug?)
+	tBasis = Clamp01(tBasis);
+#else
+	Assert(tBasis >= 0.f);
+	Assert(tBasis <= 1.f);
+#endif
+
+#if 1
+	basis Result = BasisLerp(StartBasis, tBasis, EndBasis);
+#else
+	basis Result = BasisLerp(pBASIS, State->tBasis, BASIS);
+#endif
+	return Result;
+}
 
 UPDATE_AND_RENDER(UpdateAndRender)
 {
@@ -610,9 +655,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	END_NAMED_TIMED_BLOCK(ClearBG);
 	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
 
-	if(State->tBasis < 1.f)  State->tBasis += State->dt*4.f;
-	else                     State->tBasis = 1.f;
-
 	keyboard_state Keyboard;
 	mouse_state Mouse;
 	mouse_state pMouse;
@@ -628,6 +670,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoSnap = 0;
 	aabb SelectionAABB = {0};
 	b32 RecalcNeeded = 0;
+	basis Basis = {0};
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
@@ -683,8 +726,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 			{ BASIS.Zoom *= ScrollFactor; }
 		}
 
+		if(State->tBasis < 1.f)  { State->tBasis += State->dt*4.f; }
+		else                     { State->tBasis = 1.f; }
+		Basis = AnimateBasis(pBASIS, BASIS, State->tBasis);
+#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
+
 		// SNAPPING
-		v2 CanvasMouseP = V2ScreenToCanvas(BASIS, Mouse.P, ScreenCentre);
+		v2 CanvasMouseP = V2ScreenToCanvas(Basis, Mouse.P, ScreenCentre);
 		{
 			f32 ClosestDistSq;
 			f32 ClosestIntersectDistSq = 0.f;
@@ -1012,7 +1060,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					else if(DEBUGClick(C_Select))
 					{
-						State->poSaved = V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre);
+						State->poSaved = ToScreen(SnapMouseP);
 						State->maSelectedPoints.Used = 0;
 						State->InputMode = MODE_BoxSelect;
 					}
@@ -1022,15 +1070,14 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				case MODE_BoxSelect:
 				case MODE_AddToSelection:
 				{
-					SelectionAABB = AABBFromPoints(State->poSaved,
-							V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre));
+					SelectionAABB = AABBFromPoints(State->poSaved, ToScreen(SnapMouseP));
 
 					if( ! C_Select.EndedDown)
 					{ // add points in selection box to selection
 						foreachf1(v2,P, State->maPoints) if(POINTSTATUS(iP))
 						{ // add indexes of selected points to that array
 							// TODO: use animated basis rather than state
-							P = V2CanvasToScreen(State->Basis, P, ScreenCentre);
+							P = ToScreen(P);
 							if(PointInAABB(P, SelectionAABB))
 							{
 								foreachf(uint,ipoSelected, State->maSelectedPoints)
@@ -1059,8 +1106,7 @@ dont_append_selection:;
 
 				case MODE_RmFromSelection:
 				{
-					SelectionAABB = AABBFromPoints(State->poSaved,
-							V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre));
+					SelectionAABB = AABBFromPoints(State->poSaved, ToScreen(SnapMouseP));
 					if( ! C_Select.EndedDown)
 					{
 						foreach(uint,ipoTest, State->maSelectedPoints)
@@ -1091,7 +1137,7 @@ case_mode_selected:
 
 					else if(DEBUGClick(C_Select))
 					{ // add or remove points to/from selected array
-						State->poSaved = V2CanvasToScreen(State->Basis, SnapMouseP, ScreenCentre);
+						State->poSaved = ToScreen(SnapMouseP);
 						if(C_SelectMod.EndedDown) // remove points from selected array
 						{ State->InputMode = MODE_RmFromSelection; }
 						else // add points to selected array
@@ -1398,54 +1444,6 @@ case_mode_extend_arc:
 				}
 			}
 		}
-	}
-
-	basis Basis;
-	{ LOG("CALCULATE ANIMATED BASIS")
-		basis EndBasis = BASIS;
-		basis StartBasis = pBASIS;
-		f32 tBasis = State->tBasis;
-		// TODO: animate on undos
-		if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-		{ // Not within 90° either side
-			if(tBasis < 0.5f)
-			{ // first half of transition
-				if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-				{ EndBasis.XAxis = Perp(StartBasis.XAxis); }
-				else
-				{ EndBasis.XAxis = Perp(EndBasis.XAxis); }
-				tBasis *= 2.f;
-			}
-
-			else
-			{ // second half of transition
-				if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-				{ StartBasis.XAxis = Perp(StartBasis.XAxis); }
-				else
-				{ StartBasis.XAxis = Perp(EndBasis.XAxis); }
-				tBasis = (tBasis-0.5f) * 2.f;
-			}
-		}
-		else
-		{ // do small transition with smooth in/out
-			// NOTE: fine for one transition, not 2
-			tBasis = SmoothStep(tBasis);
-		}
-#if 1
-		tBasis = Clamp01(tBasis);
-#else
-		// TODO: investigate why tBasis goes wildly out of bounds
-		// e.g. -174660.406 (is it only during debug?)
-		Assert(tBasis >= 0.f);
-		Assert(tBasis <= 1.f);
-#endif
-
-#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
-#if 1
-		Basis = BasisLerp(StartBasis, tBasis, EndBasis);
-#else
-		Basis = BasisLerp(pBASIS, State->tBasis, BASIS);
-#endif
 	}
 
 	shape_arena *maShapesNearScreen = &State->maShapesNearScreen;
