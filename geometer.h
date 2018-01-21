@@ -9,6 +9,7 @@
 #define DEBUG_LOG_ACTIONS 1
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
+#define BASIS_ANIMATION_SPEED 8.f
 
 #include <types.h>
 

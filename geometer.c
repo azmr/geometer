@@ -560,52 +560,6 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 	return Result;
 }
 
-internal basis
-AnimateBasis(basis StartBasis, basis EndBasis, f32 tBasis)
-{
-	// TODO: animate on undos
-	if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-	{ // Not within 90° either side
-		if(tBasis < 0.5f)
-		{ // first half of transition
-			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-			{ EndBasis.XAxis = Perp(StartBasis.XAxis); }
-			else
-			{ EndBasis.XAxis = Perp(EndBasis.XAxis); }
-			tBasis *= 2.f;
-		}
-
-		else
-		{ // second half of transition
-			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
-			{ StartBasis.XAxis = Perp(StartBasis.XAxis); }
-			else
-			{ StartBasis.XAxis = Perp(EndBasis.XAxis); }
-			tBasis = (tBasis-0.5f) * 2.f;
-		}
-	}
-	else
-	{ // do small transition with smooth in/out
-		// NOTE: fine for one transition, not 2
-		tBasis = SmoothStep(tBasis);
-	}
-#if 1
-	// TODO: investigate why tBasis goes wildly out of bounds
-	// e.g. -174660.406 (is it only during debug?)
-	tBasis = Clamp01(tBasis);
-#else
-	Assert(tBasis >= 0.f);
-	Assert(tBasis <= 1.f);
-#endif
-
-#if 1
-	basis Result = BasisLerp(StartBasis, tBasis, EndBasis);
-#else
-	basis Result = BasisLerp(pBASIS, State->tBasis, BASIS);
-#endif
-	return Result;
-}
-
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
@@ -655,6 +609,11 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	END_NAMED_TIMED_BLOCK(ClearBG);
 	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
 
+	if(State->tBasis < 1.f)  { State->tBasis += State->dt*BASIS_ANIMATION_SPEED; }
+	else					 { State->tBasis = 1.f; }
+	basis Basis = AnimateBasis(pBASIS, State->tBasis, BASIS);
+#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
+
 	keyboard_state Keyboard;
 	mouse_state Mouse;
 	mouse_state pMouse;
@@ -670,29 +629,31 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	uint ipoSnap = 0;
 	aabb SelectionAABB = {0};
 	b32 RecalcNeeded = 0;
-	basis Basis = {0};
 	{ LOG("INPUT");
 		Keyboard = Input.New->Keyboard;
 		Mouse  = Input.New->Mouse;
 		pMouse = Input.Old->Mouse;
 
-		// TODO (ui): animate zoom (and pan?)
 		// Pan with arrow keys
+		b32 BasisIsChanged = 0;
+		basis NewBasis = Basis;
 		b32 Down  = C_PanDown.EndedDown;
 		b32 Up    = C_PanUp.EndedDown;
 		b32 Left  = C_PanLeft.EndedDown;
 		b32 Right = C_PanRight.EndedDown;
-		f32 PanSpeed = 8.f * BASIS.Zoom;
+		f32 PanSpeed = 15.f * Basis.Zoom;
 		if(Down != Up)
 		{
-			if(Down)      { BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed, Perp(BASIS.XAxis))); }
-			else/*Up*/    { BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed, Perp(BASIS.XAxis))); }
+			if(Down)      { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed, Perp(NewBasis.XAxis))); }
+			else/*Up*/    { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed, Perp(NewBasis.XAxis))); }
+			BasisIsChanged = 1;
 		}
 
 		if(Left != Right)
 		{
-			if(Left)      { BASIS.Offset = V2Add(BASIS.Offset, V2Mult(-PanSpeed,      BASIS.XAxis )); }
-			else/*Right*/ { BASIS.Offset = V2Add(BASIS.Offset, V2Mult( PanSpeed,      BASIS.XAxis )); }
+			if(Left)      { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed,      NewBasis.XAxis )); }
+			else/*Right*/ { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed,      NewBasis.XAxis )); }
+			BasisIsChanged = 1;
 		}
 
 		// Zoom with PgUp/PgDn
@@ -703,8 +664,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{
 			f32 ZoomFactor = 0.9f;
 			f32 invZoomFactor = 1.f/ZoomFactor;
-			if(ZoomIn)        BASIS.Zoom *=    ZoomFactor;
-			else if(ZoomOut)  BASIS.Zoom *= invZoomFactor;
+			if(ZoomIn)        { NewBasis.Zoom *=    ZoomFactor; }
+			else if(ZoomOut)  { NewBasis.Zoom *= invZoomFactor; }
+			BasisIsChanged = 1;
 		}
 
 		if(C_Zoom)
@@ -718,18 +680,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				ScrollFactor = invScrollFactor;
 			}
 			// NOTE: keep canvas under pointer in same screen location
-			v2 RotatedOffset = V2RotateToAxis(BASIS.XAxis, V2Mult((1.f-ScrollFactor) * BASIS.Zoom, dMouseP));
-			BASIS.Offset = V2Add(BASIS.Offset, RotatedOffset);
+			v2 RotatedOffset = V2RotateToAxis(NewBasis.XAxis, V2Mult((1.f-ScrollFactor) * NewBasis.Zoom, dMouseP));
+			NewBasis.Offset = V2Add(NewBasis.Offset, RotatedOffset);
 
 			// NOTE: wheel delta is in multiples of 120
 			for(int i = 0; i < C_Zoom/120; ++i)
-			{ BASIS.Zoom *= ScrollFactor; }
+			{ NewBasis.Zoom *= ScrollFactor; }
+			BasisIsChanged = 1;
 		}
 
-		if(State->tBasis < 1.f)  { State->tBasis += State->dt*4.f; }
-		else                     { State->tBasis = 1.f; }
-		Basis = AnimateBasis(pBASIS, BASIS, State->tBasis);
-#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
+		if(BasisIsChanged) { SetBasis(State, NewBasis); }
 
 		// SNAPPING
 		v2 CanvasMouseP = V2ScreenToCanvas(Basis, Mouse.P, ScreenCentre);
@@ -811,7 +771,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 #define POINT_SNAP_DIST 5000.f
 				// NOTE: BASIS->Zoom needs to be squared to match ClosestDistSq
-				if(ClosestDistSq/(BASIS.Zoom * BASIS.Zoom) < POINT_SNAP_DIST && // closest point is within range
+				if(ClosestDistSq/(Basis.Zoom * Basis.Zoom) < POINT_SNAP_DIST && // closest point is within range
 				   ! C_NoSnap.EndedDown && // point snapping is still on
 				   ! V2Equals(poClosest, CanvasMouseP)) // found something to snap to
 				{
@@ -879,10 +839,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		if(DEBUGPress(C_CanvasHome))
 		{ // reset canvas position
-			pBASIS = BASIS;
-			BASIS.Offset = ZeroV2;
-			BASIS.Zoom   = 1.f;
-			State->tBasis = 0.f;
+			NewBasis.Offset = ZeroV2;
+			NewBasis.Zoom   = 1.f;
+			SetBasis(State, NewBasis);
 		}
 
 		if(DEBUGPress(C_PrevLength))
@@ -1213,7 +1172,6 @@ case_mode_selected:
 					{ // set basis on release
 						if( ! V2Equals(SnapMouseP, State->poSaved)) // prevents XAxis with no length
 						{ // set new basis and start animation
-							basis NewBasis = State->Basis;
 							NewBasis.XAxis = V2Sub(SnapMouseP, State->poSaved);
 							SetBasis(State, NewBasis);
 						}
@@ -1655,7 +1613,7 @@ case_mode_extend_arc:
 		// TODO (UI): animate previews in and out by smoothstepping alpha over a few frames
 		// so that they don't pop too harshly when only seen briefly
 		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
-		f32 SSLength = State->Length/BASIS.Zoom; 
+		f32 SSLength = State->Length/Basis.Zoom; 
 		v2 poSelect = State->poSelect;
 		v2 poSSSelect = ToScreen(poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);

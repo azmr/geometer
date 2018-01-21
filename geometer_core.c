@@ -45,15 +45,6 @@ Reset(state *State, uint iAction)
 //  BASIS  ////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
-internal void
-SetBasis(state *State, basis NewBasis)
-{
-	State->tBasis = 0.f;
-	NewBasis.XAxis = Norm(NewBasis.XAxis);
-	pBASIS = BASIS;
-	BASIS = NewBasis;
-}
-
 internal inline basis
 BasisLerp(basis Start, f32 t, basis End)
 {
@@ -62,6 +53,62 @@ BasisLerp(basis Start, f32 t, basis End)
 	Result.Offset = V2Lerp(Start.Offset, t, End.Offset);
 	Result.Zoom   = Lerp(Start.Zoom, t, End.Zoom);
 	return Result;
+}
+
+internal basis
+AnimateBasis(basis StartBasis, f32 tBasis, basis EndBasis)
+{
+	// TODO: animate on undos
+	if(Dot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+	{ // Not within 90° either side
+		if(tBasis < 0.5f)
+		{ // first half of transition
+			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+			{ EndBasis.XAxis = Perp(StartBasis.XAxis); }
+			else
+			{ EndBasis.XAxis = Perp(EndBasis.XAxis); }
+			tBasis *= 2.f;
+		}
+
+		else
+		{ // second half of transition
+			if(PerpDot(EndBasis.XAxis, StartBasis.XAxis) < 0)
+			{ StartBasis.XAxis = Perp(StartBasis.XAxis); }
+			else
+			{ StartBasis.XAxis = Perp(EndBasis.XAxis); }
+			tBasis = (tBasis-0.5f) * 2.f;
+		}
+	}
+	else
+	{ // do small transition with smooth in/out
+		// NOTE: fine for one transition, not 2
+		tBasis = SmoothStep(tBasis);
+	}
+#if 1
+	// TODO: investigate why tBasis goes wildly out of bounds
+	// e.g. -174660.406 (is it only during debug?)
+	tBasis = Clamp01(tBasis);
+#else
+	Assert(tBasis >= 0.f);
+	Assert(tBasis <= 1.f);
+#endif
+
+#if 1
+	basis Result = BasisLerp(StartBasis, tBasis, EndBasis);
+#else
+	basis Result = BasisLerp(pBASIS, State->tBasis, BASIS);
+#endif
+	return Result;
+}
+
+internal void
+SetBasis(state *State, basis NewBasis)
+{
+	NewBasis.XAxis = Norm(NewBasis.XAxis);
+	f32 tBasis = State->tBasis + State->dt*BASIS_ANIMATION_SPEED;
+	pBASIS = BasisLerp(pBASIS, tBasis, BASIS);
+	BASIS = NewBasis;
+	State->tBasis = 0.f;
 }
 
 internal inline v2
