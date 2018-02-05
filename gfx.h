@@ -875,6 +875,8 @@ RasterCircleLine(memory_arena *Arena, f32 Radius)
 		DRAW_PIXEL(-RelPos.Y, -RelPos.X);
 
 		v2 CandidateH = PixelPos, CandidateV = PixelPos;
+		if(CandidateH.X == CandidateH.X - 1.f || CandidateH.Y == CandidateH.Y - 1.f)
+		{ break; } // out of precision, will infinite loop otherwise
 		CandidateH.X -= 1.f;
 		CandidateV.Y -= 1.f;
 		f32 DistSqH = V2LenSq(V2Sub(CandidateH, Centre));
@@ -986,6 +988,8 @@ ArcLine(image_buffer *Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
 #undef  DRAW_WITHIN_BOUNDARIES
 
 		v2 CandidateH = PixelPos, CandidateV = PixelPos;
+		if(CandidateH.X == CandidateH.X - 1.f || CandidateH.Y == CandidateH.Y + 1.f)
+		{ break; } // out of precision, will infinite loop otherwise
 		CandidateH.X -= 1.f;
 		CandidateV.Y += 1.f;
 		f32 DistSqH = DistSq(CandidateH, Centre);
