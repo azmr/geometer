@@ -799,10 +799,19 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			}
 		}
 
+#if 0 // probe frame time without drawing
+		ssnprintf(TitleText, sizeof(TitleText), "%6.2fms %6.2fms %s - %s %s",
+				1000.f * State->dtWork,
+				1000.f * State->dt,
+				"Geometer",
+				FileHasName(State) ? State->FilePath : "[New File]",
+				IsModified(State) ? "[Modified]" : "");
+#else
 		// TODO: move to open/save?
 		ssnprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
 				FileHasName(State) ? State->FilePath : "[New File]",
 				IsModified(State) ? "[Modified]" : "");
+#endif
 		SetWindowText(Window.Handle, TitleText);
 
 		// TODO: only fill buffer inside client
@@ -840,117 +849,120 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		image_buffer GameImageBuffer = *(image_buffer *) &Win32Buffer;
 		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
 
+		// IMPORTANT: update as more things are animated:
+		b32 IsAnimating = State->tBasis < 1.f; // || ...;
+		b32 IsAnyInputAtAll = !Equal(*Input.New, *Input.Old);
+		if(IsAnyInputAtAll || IsAnimating)
+		{
 #if !SINGLE_EXECUTABLE
-		// TODO IMPORTANT: fix random overwrites of data
-		// may be OS freeing data used in Lib..?
-		Win32ReloadLibOnRecompile(&Lib); 
-		update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
-		if(!UpdateAndRender) { break; }
+			Win32ReloadLibOnRecompile(&Lib); 
+			update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
+			if(!UpdateAndRender) { break; }
 #endif // !SINGLE_EXECUTABLE
 
-		platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
+			platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
 
-		switch(PlatRequest.Action)
-		{
-			case FILE_Close:
-			{
-				GlobalRunning = 0;
-			} break;
-
-			case FILE_Save:
-			{ // save file, possibly to new name & window
-				Save(State, Window.Handle, PlatRequest.NewWindow);
-			} break;
-
-			case FILE_ExportSVG:
-			{
-				ExportSVG(State, Window.Handle);
-			} break;
-
-			case FILE_Open:
-			{ // open file in same or new window
-				OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
-				char *DialogTitle = PlatRequest.NewWindow ? "Open in new window" : 0;
-				char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
-				if(OpenPath)
-				{
-					if(PlatRequest.NewWindow)
+			switch(PlatRequest.Action)
+			{ // open/close/save file
+				case FILE_Close:
 					{
-						LOG("OPEN NEW GEOMETER WINDOW");
-						Assert(Win32OpenGeometerWindow(OpenPath));
-						free(OpenPath); // allocc'd above
-					}
-					else if(Win32ConfirmFileClose(State, Window.Handle))
+						GlobalRunning = 0;
+					} break;
+
+				case FILE_Save:
+					{ // save file, possibly to new name & window
+						Save(State, Window.Handle, PlatRequest.NewWindow);
+					} break;
+
+				case FILE_ExportSVG:
 					{
-						HardReset(State, OpenedFile);
-						OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
+						ExportSVG(State, Window.Handle);
+					} break;
+
+				case FILE_Open:
+					{ // open file in same or new window
+						OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
+						char *DialogTitle = PlatRequest.NewWindow ? "Open in new window" : 0;
+						char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
+						if(OpenPath)
+						{
+							if(PlatRequest.NewWindow)
+							{
+								LOG("OPEN NEW GEOMETER WINDOW");
+								Assert(Win32OpenGeometerWindow(OpenPath));
+								free(OpenPath); // allocc'd above
+							}
+							else if(Win32ConfirmFileClose(State, Window.Handle))
+							{
+								HardReset(State, OpenedFile);
+								OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
+							}
+							// else cancelled
+						}
+					} break;
+
+				case FILE_New:
+					{ // new file in same or new window
+						if(PlatRequest.NewWindow)
+						{
+							LOG("OPEN NEW GEOMETER WINDOW");
+							Assert(Win32OpenGeometerWindow(""));
+						}
+						else if(Win32ConfirmFileClose(State, Window.Handle))
+						{
+							HardReset(State, OpenedFile);
+						}
+						// else cancelled
+					} break;
+
+				default:
+					{ // do nothing
 					}
-					// else cancelled
-				}
-			} break;
-
-			case FILE_New:
-			{ // new file in same or new window
-				if(PlatRequest.NewWindow)
-				{
-					LOG("OPEN NEW GEOMETER WINDOW");
-					Assert(Win32OpenGeometerWindow(""));
-				}
-				else if(Win32ConfirmFileClose(State, Window.Handle))
-				{
-					HardReset(State, OpenedFile);
-				}
-				// else cancelled
-			} break;
-
-			default:
-			{ // do nothing
 			}
-		}
 
 #if INTERNAL && DEBUG_LOG_ACTIONS
-		// Just in case the location-specific logs missed any changes
-		// TODO: How best to assert for anything missed?
-		LogActionsToFile(State, "ActionLog.txt");
+			// Just in case the location-specific logs missed any changes
+			// TODO: How best to assert for anything missed?
+			LogActionsToFile(State, "ActionLog.txt");
 #endif
 
 #if 1
-		// TODO (ui fix): cursor is set to normal if moving on the help screen
-		f32 MX = Input.New->Mouse.P.X;
-		f32 MY = Input.New->Mouse.P.Y;
-		if(0.f <= MX && MX <= ClientWidth && // mouse is inside client area
-		   0.f <= MY && MY <= ClientHeight)  // otherwise resize arrows act up
-		{ // change the cursor based on the input mode
-			if(PlatRequest.Pan)
-			{
-				SetCursor(Cursors[CURSOR_Pan]);
-			}
-			else
-			{
-				switch(State->InputMode)
+			// TODO (ui fix): cursor is set to normal if moving on the help screen
+			f32 MX = Input.New->Mouse.P.X;
+			f32 MY = Input.New->Mouse.P.Y;
+			if(0.f <= MX && MX <= ClientWidth && // mouse is inside client area
+					0.f <= MY && MY <= ClientHeight)  // otherwise resize arrows act up
+			{ // change the cursor based on the input mode
+				if(PlatRequest.Pan)
 				{
-					case MODE_Normal:
-					{ SetCursor(Cursors[CURSOR_Normal]); } break;
-					case MODE_SetBasis:
-					{ SetCursor(Cursors[CURSOR_Basis]); } break;
-					case MODE_BoxSelect:
-					case MODE_DragMove:
-					case MODE_AddToSelection:
-					case MODE_RmFromSelection:
-					case MODE_Selected:
-					{ SetCursor(Cursors[CURSOR_Select]); } break;
-					case MODE_SetLength:
-					case MODE_QuickPtOrSeg:
-					case MODE_Draw:
-					case MODE_ExtendArc:
-					case MODE_ExtendSeg:
-					case MODE_SetPerp:
-					{ SetCursor(Cursors[CURSOR_Draw]); } break;
-					default:
-					{ Assert(!"No cursor set for this input mode"); }
+					SetCursor(Cursors[CURSOR_Pan]);
+				}
+				else
+				{
+					switch(State->InputMode)
+					{
+						case MODE_Normal:
+							{ SetCursor(Cursors[CURSOR_Normal]); } break;
+						case MODE_SetBasis:
+							{ SetCursor(Cursors[CURSOR_Basis]); } break;
+						case MODE_BoxSelect:
+						case MODE_DragMove:
+						case MODE_AddToSelection:
+						case MODE_RmFromSelection:
+						case MODE_Selected:
+							{ SetCursor(Cursors[CURSOR_Select]); } break;
+						case MODE_SetLength:
+						case MODE_QuickPtOrSeg:
+						case MODE_Draw:
+						case MODE_ExtendArc:
+						case MODE_ExtendSeg:
+						case MODE_SetPerp:
+							{ SetCursor(Cursors[CURSOR_Draw]); } break;
+						default:
+							{ Assert(!"No cursor set for this input mode"); }
+					}
 				}
 			}
-		}
 #else
 			if(PlatRequest.Pan)
 			{
@@ -961,27 +973,28 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				switch(State->InputMode)
 				{
 					case MODE_Normal:
-					{ gCursorHandle = (Cursors[CURSOR_Normal]); } break;
+						{ gCursorHandle = (Cursors[CURSOR_Normal]); } break;
 					case MODE_SetBasis:
-					{ gCursorHandle = (Cursors[CURSOR_Basis]); } break;
+						{ gCursorHandle = (Cursors[CURSOR_Basis]); } break;
 					case MODE_SetLength:
 					case MODE_DrawArc:
 					case MODE_ExtendArc:
-					{ gCursorHandle = (Cursors[CURSOR_Arc]); } break;
+						{ gCursorHandle = (Cursors[CURSOR_Arc]); } break;
 					case MODE_QuickSeg:
 					case MODE_DrawSeg:
 					case MODE_SetPerp:
 					case MODE_ExtendSeg:
 					case MODE_ExtendLinePt:
-					{ gCursorHandle = (Cursors[CURSOR_Seg]); } break;
+						{ gCursorHandle = (Cursors[CURSOR_Seg]); } break;
 					default:
-					{ Assert(0); }
+						{ Assert(0); }
 				}
 			}
 #endif
-		
-		
-		ReallocateArenas(State, Window.Handle);
+
+
+			ReallocateArenas(State, Window.Handle);
+		}
 
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);
