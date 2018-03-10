@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "geometer.h"
 #include <fonts.c>
+#include "geometer_debug.c"
 
 // TODO:
 // =====
@@ -583,6 +584,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		InitArena(&Arena, (state *)Memory->PermanentStorage + 1, Memory->PermanentStorageSize - sizeof(state));
 
 		State->iSaveAction = State->iCurrentAction;
+		State->ShowDebugInfo = 1;
 
 		Memory->IsInitialized = 1;
 	}
@@ -833,6 +835,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 #define DEBUGClick(button) (MouseInScreenBounds && DEBUGPress(button))
 #define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)
 #define DEBUGPress(button)   (!Input.Old->button.EndedDown && Input.New->button.EndedDown)
+#define DEBUGdMouse()   (V2Sub(Input.New->Mouse.P, Input.Old->Mouse.P))
 
 		if(DEBUGPress(C_DebugInfo)) // toggle debug info
 		{ State->ShowDebugInfo = !State->ShowDebugInfo; }
@@ -873,7 +876,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		KEYBOARD_LENGTH_FACTOR(0, 10.f)
 #undef KEYBOARD_LENGTH_FACTOR
 
-#if 1
 #define KEYBOARD_LENGTH_STORE(key, index) \
 		if(DEBUGPress(Keyboard.key)) { \
 			Assert(index >= 0 && index < ArrayCount(State->LengthStores)); \
@@ -911,7 +913,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		KEYBOARD_LENGTH_STORE(Y, 24)
 		KEYBOARD_LENGTH_STORE(Z, 25)
 #undef KEYBOARD_LENGTH_STORE
-#endif
 
 		// TODO (UI): if panning, ignore input but still do preview
 		// TODO: fix needed for if started and space released part way?
@@ -1417,20 +1418,23 @@ case_mode_extend_arc:
 	/////////////////////
 		uint iLastShape = State->iLastShape;
 		uint iLastPoint = State->iLastPoint;
-#if 1
-		ScreenBB.MinX = 0.f;
-		ScreenBB.MinY = 0.f;
-		ScreenBB.MaxX = ScreenSize.X;
-		ScreenBB.MaxY = ScreenSize.Y;
-#else // use a smaller screen
-		v2 FakeScreenMin = V2Mult(0.2f, ScreenSize);
-		v2 FakeScreenMax = V2Mult(0.8f, ScreenSize);
-		ScreenBB.MinX = FakeScreenMin.X;
-		ScreenBB.MinY = FakeScreenMin.Y;
-		ScreenBB.MaxX = FakeScreenMax.X;
-		ScreenBB.MaxY = FakeScreenMax.Y;
-		DrawAABB(ScreenBuffer, ScreenBB, GREEN);
-#endif
+		DEBUG_LIVE_if(Rendering_SmallScreenBoundary)
+		{
+			v2 FakeScreenMin = V2Mult(0.2f, ScreenSize);
+			v2 FakeScreenMax = V2Mult(0.8f, ScreenSize);
+			ScreenBB.MinX = FakeScreenMin.X;
+			ScreenBB.MinY = FakeScreenMin.Y;
+			ScreenBB.MaxX = FakeScreenMax.X;
+			ScreenBB.MaxY = FakeScreenMax.Y;
+			DrawAABB(ScreenBuffer, ScreenBB, GREEN);
+		}
+		else // use a full size screen
+		{
+			ScreenBB.MinX = 0.f;
+			ScreenBB.MinY = 0.f;
+			ScreenBB.MaxX = ScreenSize.X;
+			ScreenBB.MaxY = ScreenSize.Y;
+		}
 
 		v2 *Points = State->maPoints.Items;
 		shape *Shapes = State->maShapes.Items;
@@ -1518,11 +1522,12 @@ case_mode_extend_arc:
 			}
 		}
 
-#if 0
-		DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
-		DEBUGDrawLine(ScreenBuffer, ScreenCentre,
-			V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
-#endif
+		DEBUG_LIVE_if(Vectors_CrosshairThing)
+		{
+			DrawCrosshair(ScreenBuffer, ScreenCentre, 20.f, RED);
+			DEBUGDrawLine(ScreenBuffer, ScreenCentre,
+					V2Add(ScreenCentre, V2Mult(50.f, V2CanvasToScreen(Basis, V2(1.f, 0.f), ScreenCentre))), CYAN);
+		}
 
 		LOG("\tDRAW SHAPES");
 		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)
@@ -1613,8 +1618,9 @@ case_mode_extend_arc:
 		// TODO (UI): animate previews in and out by smoothstepping alpha over a few frames
 		// so that they don't pop too harshly when only seen briefly
 		// TODO QUICK (UI): when mid basis-change, use that value rather than the new one...
-		f32 SSLength = State->Length/Basis.Zoom; 
-		v2 poSelect = State->poSelect;
+		DEBUG_WATCH(f32, SSLength) = State->Length/Basis.Zoom; 
+		DEBUG_WATCHED_EQ(v2, Vectors_Points, poSelect, State->poSelect);
+
 		v2 poSSSelect = ToScreen(poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);
 		b32 DrawPreviewCircle = ! ScreenIsInsideCircle(ScreenBB, poSSSelect, SSLength * SSLength);
@@ -1736,7 +1742,7 @@ case_mode_extend_arc:
 
 			case MODE_SetPerp:
 			{
-				v2 PerpDir = State->PerpDir;
+				DEBUG_WATCH(v2, PerpDir) = State->PerpDir;
 				if( ! V2Equals(PerpDir, ZeroV2))
 				{
 					v2 poSSStart = ToScreen(poSelect);
@@ -1755,11 +1761,12 @@ case_mode_extend_arc:
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
 			if(IsDrawing(State))
-				DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE);
+			{ DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE); }
 		}
 	}
 
-	f32 TextSize = ScreenSize.Y/40.f;
+	/* f32 TextSize = ScreenSize.Y/40.f; */
+	DEBUG_WATCHED(f32, Text, TextSize) = ScreenSize.Y/40.f;
 	if(TextSize > 20.f)  { TextSize = 20.f; }
 
 	if(State->ShowHelpInfo)
@@ -1838,75 +1845,38 @@ case_mode_extend_arc:
 		DrawString(ScreenBuffer, &State->DefaultFont, RightHelpBuffer, TextSize, ScreenSize.X - 32.f*TextSize, ScreenSize.Y-2.f*TextSize, 0, BLACK);
 	}
 
-	if(State->ShowDebugInfo)
+	DEBUG_LIVE_if(Debug_ShowInfo)
 	{ LOG("PRINT DEBUG");
-		DebugPrint();
-		/* DrawSuperSlowCircleLine(ScreenBuffer, ScreenCentre, 50.f, RED); */
+		PrintDebugHierarchy(*ScreenBuffer, Input);
+		DEBUG_LIVE_if(Debug_PrintMidFrameInfo)
+		{ DebugPrint(); }
 
-		CycleCountersInfo(ScreenBuffer, &State->DefaultFont);
+		DEBUG_WATCHED(f32, Profiling, FrameWork) = State->dtWork * 1000.f;
+		DEBUG_WATCH(v2, Input_Mouse) = Mouse.P;
+		DEBUG_WATCH(uint, CurrentLayer) = State->iCurrentLayer;
 
-		// TODO: Highlight status for currently selected/hovered points
-		/* f32 Zero = 0; */
-
-		char Message[512];
-		TextSize = 15.f;
-		/* uint *SelP = State->maSelectedPoints.Items; */
-		ssprintf(Message, //"LinePoints: %u, TypeLine: %u, Esc Down: %u"
-				"\nFrame work: %.2fms, "
-				"Mouse: (%3.f, %3.f), "
-				"Mode: %s, "
-				"Selection BB: %.2f, %.2f, %.2f, %.2f, "
-				/* "Selected Points: %u [%u, %u, %u, %u, %u, %u, %u, %u], " */
-				/* "IsNaN: %f, " */
-				/* "cPtOnScreen: %u, " */
-				/* "cShapesNear: %u, " */
-				/* "draw (iC/c/iL/iS): %u/%u/%u/%u, " */
-				/* "actions (iC/iL/iS): %u/%u/%u, " */
-				,
-				State->dtWork*1000.f,
-				Mouse.P.X, Mouse.P.Y,
-				InputModeText[State->InputMode],
-				SelectionAABB.MinX, SelectionAABB.MinY, SelectionAABB.MaxX, SelectionAABB.MaxY
-				/* Len(State->maSelectedPoints), */
-				/* SelP[0], SelP[1], SelP[2], SelP[3], SelP[4], SelP[5], SelP[6], SelP[7], */
-				/* (1.f/Zero) */
-				/* Len(State->maPointsOnScreen), */
-				/* Len(State->maShapesNearScreen) */
-				/* State->iCurrentDraw, State->cDraws, State->iLastDraw, State->iSaveDraw, */
-				/* State->iCurrentAction, State->iLastAction, State->iSaveAction */
-				/* BASIS->Offset.X, BASIS->Offset.Y, */
-				);
-		DrawString(ScreenBuffer, &State->DefaultFont, Message, TextSize, 10.f, TextSize, 1, BLACK);
-
-#if 1
-		TextSize = 13.f;
-		char TextInfoBuffer[512];
-		*TextInfoBuffer = 0;
-		/* ssprintf(TextInfoBuffer, "L#  P#\n\n"); */
-		/* for(uint i = 1; i <= State->iLastShape && i <= 32; ++i) */
-		/* { */
-		/* 	ssprintf(TextInfoBuffer, "%s%02u  %04b\n", TextInfoBuffer, i, SHAPES(i).Kind); */
-		/* } */
-		/* DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize, */
-		/* 		ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK); */
-
-		ssprintf(TextInfoBuffer, " # DARTFILE\n\n");
-		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
+		DEBUG_LIVE_if(Debug_PrintPointDetails)
 		{
-			ssprintf(TextInfoBuffer, "%s%02u %08b\n", TextInfoBuffer, i, POINTSTATUS(i));
-		}
-		DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
-				ScreenSize.X - 120.f, ScreenSize.Y - 30.f, 0, BLACK);
+			char TextInfoBuffer[512];
+			*TextInfoBuffer = 0;
+			/* ssprintf(TextInfoBuffer, "L#  P#\n\n"); */
+			/* for(uint i = 1; i <= State->iLastShape && i <= 32; ++i) */
+			/* { */
+			/*	 ssprintf(TextInfoBuffer, "%s%02u  %04b\n", TextInfoBuffer, i, SHAPES(i).Kind); */
+			/* } */
+			/* DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize, */
+			/*		 ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK); */
 
-		*TextInfoBuffer = 0;
-		for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
-		{
-			v2 po = Pull(State->maPoints, i);
-			ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
+
+			*TextInfoBuffer = 0;
+			for(uint i = 1; i <= State->iLastPoint && i <= 32; ++i)
+			{
+				v2 po = Pull(State->maPoints, i);
+				ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
+			}
+			DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
+					ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
 		}
-		DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
-				ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
-#endif
 	}
 
 	State->pSnapMouseP = SnapMouseP;
@@ -1916,47 +1886,6 @@ case_mode_extend_arc:
 	return File;
 }
 
-global_variable char DebugTextBuffer[Megabytes(8)];
-
-DECLARE_DEBUG_RECORDS;
-DECLARE_DEBUG_FUNCTION
-{
-	DebugTextBuffer[0] = '\0';
-	/* debug_state *DebugState = Memory->DebugStorage; */
-	int Offset = 0;
-	if(1)//DebugState)
-	{
-		/* u32 HitI = 0; */
-		for(u32 i = 0;
-			/* i < cCounters; */
-			/* i < ArrayCount(DEBUG_RECORDS); */
-			i < DEBUG_RECORDS_ENUM;
-			++i)
-		{
-			debug_record *Counter = DEBUG_RECORD(i);
-
-			u64 HitCount_CycleCount = AtomicExchangeU64(&Counter->HitCount_CycleCount, 0);
-			u32 HitCount = (u32)(HitCount_CycleCount >> 32);
-			u32 CycleCount = (u32)(HitCount_CycleCount & 0xFFFFFFFF);
-
-			if(HitCount)
-			{
-				Offset +=
-					ssnprintf(DebugTextBuffer, Megabytes(8)-1,
-								   /* AltFormat ? AltFormat :*/ "%s%28s%8s(%4d): %'12ucy %'8uh %'10ucy/h\n", 
-								   DebugTextBuffer,
-								   Counter->FunctionName,
-								   Counter->Name,
-								   Counter->LineNumber,
-								   CycleCount,
-								   HitCount,
-								   CycleCount / HitCount);
-				/* TextBuffer[Offset] = '\n'; */
-				/* ++HitI; */
-			}
-		}
-		f32 TextHeight = 13.f;
-		DrawString(Buffer, Font, DebugTextBuffer, TextHeight, 0, 2.f*(f32)Buffer->Height/3.f /*- ((HitI+2)*TextHeight)*/, 0, GREY);
-	}
-}
+#define GEOMETER_DEBUG_IMPLEMENTATION
+#include "geometer_debug.c"
 #undef ToScreen

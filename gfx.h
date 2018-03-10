@@ -1093,11 +1093,29 @@ DrawCircleFill(image_buffer *Buffer, v2 Centre, f32 Radius, colour Colour)
 	// NOTE: this prevents duplication on cardinal directions (seen with partial transparency)
 	PixelPos.Y -= 1;
 
-	v2 RelPos = V2Sub(PixelPos, Centre);
-
 	DEBUGDrawLine(Buffer, V2(Centre.X - Radius, Centre.Y), V2(Centre.X + Radius + 1, Centre.Y), Colour);
 	int LoopCounter = 0;
-	while(RelPos.X >= -RelPos.Y)
+	for(v2 RelPos = V2Sub(PixelPos, Centre); RelPos.X >= -RelPos.Y; RelPos = V2Sub(PixelPos, Centre))
+	/* DEBUG_for(v2, RelPos = V2Sub(PixelPos, Centre), RelPos.X >= -RelPos.Y, RelPos = V2Sub(PixelPos, Centre)) */
+
+	/* static v2 RelPos; */
+	/* static v2 RelPosInit; */
+	/* int RelPos_IsDebug = 1; */
+	/* { */
+	/* 	static int DebugFor_IsInit; */
+	/* 	if(! DEBUG_ATOMIC_EXCHANGE(&DebugFor_IsInit, 1)) { */
+	/* 		v2 RelPosTemp = V2Sub(PixelPos, Centre); */
+	/* 		RelPos = RelPosInit = RelPosTemp; */
+	/* 	} */
+	/* 	else */
+	/* 	{ */
+	/* 		RelPos = V2Sub(PixelPos, Centre); */
+	/* 	} */
+	/* 	/1* if(RelPos_IsDebug) { goto DEBUG_FOR_CAT1(debug_for_label_, __LINE__); } *1/ */
+	/* } */
+	/* for(RelPos = RelPosInit; !RelPos_IsDebug && (RelPos.X >= -RelPos.Y); RelPos = V2Sub(PixelPos, Centre)) */
+	/* DEBUG_FOR_CAT1(debug_for_label_, __LINE__): */
+
 	{
 		++LoopCounter;
 #if 1 // Overdraws - only good for Alpha = 1.0
@@ -1141,7 +1159,6 @@ DrawCircleFill(image_buffer *Buffer, v2 Centre, f32 Radius, colour Colour)
 			/* DEBUGDrawLine(Buffer, V2Add(Centre, V2(-RelPos.Y,  RelPos.X)), V2Add(Centre, V2(RelPos.Y + 1,  RelPos.X)), Colour); */
 			/* DEBUGDrawLine(Buffer, V2Add(Centre, V2(-RelPos.Y, -RelPos.X)), V2Add(Centre, V2(RelPos.Y + 1, -RelPos.X)), Colour); */
 		}
-		RelPos = V2Sub(PixelPos, Centre);
 	}
 	/* // NOTE: fills in missed orthogonal points */
 	/* DEBUGDrawBlendedPixel(Buffer, V2Add(Centre, V2( Radius,  0)), Colour); */

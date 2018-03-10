@@ -99,10 +99,10 @@ In roughly implementation order:
 - Animate between changes in basis
 - Unlimited points/shapes
 - File saves/loading
+- Faster way to implement multiple arcs/circles of the same radius
 
 ### TO DO
 - Basic .png exports
-- Faster way to implement multiple arcs/circles of the same radius
 - Add text labels for points
 - Add layers and decide on how they can interact
 - Improved exports

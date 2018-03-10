@@ -11,7 +11,7 @@
 #define USING_INPUT
 #include <fonts.c>
 #include <win32.h>
-#include <live_edit.h>
+#include <live_edit/win32_live_edit.h>
 #include "svg.h"
 
 #if INTERNAL
@@ -23,6 +23,8 @@ global_variable b32 GlobalPause;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
 #include <win32_gfx.h>
 #include <win32_input.h>
+
+char *STDC_VERSION = STR(__STDC_VERSION__);
 
 typedef UPDATE_AND_RENDER(update_and_render);
 
@@ -741,7 +743,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	// TODO: Pool with bitmap VirtualAlloc and font?
 #if !SINGLE_EXECUTABLE
 	char *LibFnNames[] = {"UpdateAndRender"};
-	win32_library Lib = Win32Library(LibFnNames, 0, ArrayCount(LibFnNames),
+	win32_library Lib = Win32Library(LibFnNames, ArrayCount(LibFnNames),
 									 0, "geometer.dll", "geometer_temp.dll", "lock.tmp");
 #endif // !SINGLE_EXECUTABLE
 
@@ -849,15 +851,17 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		image_buffer GameImageBuffer = *(image_buffer *) &Win32Buffer;
 		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
 
+#if DEBUGVAR_LazyRender
 		// IMPORTANT: update as more things are animated:
 		b32 IsAnimating = State->tBasis < 1.f; // || ...;
 		b32 IsAnyInputAtAll = !Equal(*Input.New, *Input.Old);
 		if(IsAnyInputAtAll || IsAnimating)
+#endif
 		{
 #if !SINGLE_EXECUTABLE
 			Win32ReloadLibOnRecompile(&Lib); 
 			update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
-			if(!UpdateAndRender) { break; }
+			Assert(UpdateAndRender && "loaded library function.");
 #endif // !SINGLE_EXECUTABLE
 
 			platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
@@ -995,6 +999,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 			ReallocateArenas(State, Window.Handle);
 		}
+
 
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);

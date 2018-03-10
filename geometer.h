@@ -12,6 +12,22 @@
 #define BASIS_ANIMATION_SPEED 8.f
 
 #include <types.h>
+/* #include "geometer_config.h" */
+// TODO: DEBUG_TYPE_MEMBERS
+#define DEBUG_TYPES \
+	DEBUG_TYPE(b32, "%d") \
+	DEBUG_TYPE(char, "%c") \
+	DEBUG_TYPE(uint, "%u") \
+	DEBUG_TYPE(f32, "%ff") \
+	DEBUG_TYPE_STRUCT(v2, "{ %ff, %ff }", DEBUG_TYPE_MEMBER(v2, X), DEBUG_TYPE_MEMBER(v2, Y)) \
+
+#include "geometer_live.h"
+
+#define DEBUG_HIERARCHY_KINDS \
+	DEBUG_HIERARCHY_KIND(debug_variable, Live) \
+	DEBUG_HIERARCHY_KIND(debug_variable, Observed) \
+	DEBUG_HIERARCHY_KIND(debug_record, Profiling)
+#include <live_edit/hierarchy.h>
 
 typedef struct debug_text
 {
@@ -39,6 +55,9 @@ static debug_text DebugText;
 #include <fonts.h>
 #include <input.h>
 #include <misc.h>
+
+#define DEBUG_TWEAK_IMPLEMENTATION
+#include <live_edit/live_variable.h>
 
 typedef arena_type(v2);   typedef union v2_arena   v2_arena; // repeated from macro - just for syntax highlighting
 typedef arena_type(u8);   typedef union u8_arena   u8_arena; // repeated from macro - just for syntax highlighting
