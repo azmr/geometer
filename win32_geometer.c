@@ -38,31 +38,6 @@ typedef enum cursor_type
 	CURSOR_Count
 } cursor_type;
 
-typedef enum header_section
-{
-	HEAD_Points_v1,
-	HEAD_PointStatus_v1,
-	HEAD_Shapes_v1,
-	HEAD_Actions_v1,
-	HEAD_Basis_v1,
-	HEAD_Lengths_v1,
-} header_section;
-
-typedef struct file_header
-{
-	char ID[8];        // unique(ish) text id: "Geometer"
-	u16 FormatVersion; // file format version num
-	u16 cArrays;       // for data section
-	u32 CRC32;         // checksum of data
-	u64 cBytes;        // bytes in data section (everything after this point)
-	// Data following this point:
-	//   cArrays * [
-	//     - u32 ElementType; // array type tag (from which element size is known)
-	//     - u32 cElements;   // size of array (could be 1 for individual data element)
-	//     - Elements...      // array elements
-	//   ]
-} file_header;
-
 internal inline void
 MemErrorOnFail(HWND WindowHandle, b32 Success)
 {
@@ -144,10 +119,10 @@ ArenaAllocSize(u32 cElements, size_t ElementSize, u32 Factor, u32 Add)
 }
 
 internal inline u64
-ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 ElementSize, u32 Factor, u32 Add, HWND Window)
+ReadFileArrayToArena(FILE *File, memory_arena *Arena, u32 cElements, u32 ElementSize, u32 Factor, u32 Add)
 {
 	size_t cBytesEl = cElements * ElementSize;
-	MemErrorOnFail(Window, ArenaRealloc(Arena, ArenaAllocSize(cElements, ElementSize, Factor, Add)));
+	MemErrorOnFail(0, ArenaRealloc(Arena, ArenaAllocSize(cElements, ElementSize, Factor, Add)));
 	Arena->Used = cBytesEl + ElementSize; // Account for index 0
 	// TODO: check individual array size is right
 	Assert(Arena->Base);
@@ -169,101 +144,185 @@ CRC32FileArray(u32 Continuation, u32 Tag, u32 Count, void *Array, size_t ElSize)
 internal FILE *
 OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND WindowHandle)
 {
-	FILE *Result = 0;
+	FILE *File = 0;
+	void *FileContents = 0;
 	if(FilePath)
 	{
-		Result = fopen(FilePath, "r+b");
-		FileErrorOnFail(WindowHandle, Result, FilePath); 
-		u32 OpenCRC32 = 0;
+		File = fopen(FilePath, "r+b");
+		FileErrorOnFail(WindowHandle, File, FilePath); 
 		file_header FH;
 		LOG("\tCHECK ID");
-		DoAssert(fread(&FH, sizeof(FH), 1, Result));
+		DoAssert(fread(&FH, sizeof(FH), 1, File));
 		if(!(FH.ID[0]=='G'&&FH.ID[1]=='e'&&FH.ID[2]=='o'&&FH.ID[3]=='m'&&
 			 FH.ID[4]=='e'&&FH.ID[5]=='t'&&FH.ID[6]=='e'&&FH.ID[7]=='r'))
-		{ goto open_end; }
+		{ goto open_error; }
 
-		// TODO (opt): read in entire file in one go based on cBytes
 		// all in from now?
 		ChangeFilePath(State, FilePath, cchFilePath);
 		State->iCurrentAction = 0;
 		State->iLastAction    = 0;
 
+		FileContents = malloc(FH.cBytes);
+		// TODO (ui): better indicate to user
+		u64 cBytesCheck = fread(FileContents, 1, FH.cBytes, File);
 #define FileDataWarning(desc, title) MessageBox(WindowHandle, desc \
-				"\nThe file might be corrupted, or Geometer might have made an error.\n\n" \
-				"If your file looks correct you can continue, " \
-				"but I advise you to back up the existing file before saving over it " \
-				"(e.g. copy and paste the file in 'My Computer').", title, MB_ICONWARNING)
+		"\nThe file might be corrupted, or Geometer might have made an error.\n\n" \
+		"If your file looks correct you can continue, " \
+		"but I advise you to back up the existing file before saving over it " \
+		"(e.g. copy and paste the file in 'My Computer').", title, MB_ICONWARNING)
+		if     (cBytesCheck < FH.cBytes) { FileDataWarning("There was less data in the file than expected.", "Unexpected quantity of data"); }
+		else if(cBytesCheck > FH.cBytes) { FileDataWarning("There was more data in the file than expected.", "Unexpected quantity of data"); }
 
-		u64 cBytesCheck = 0;
+		u32 OpenCRC32 = CRC32(FileContents, FH.cBytes, 0);
+		if(OpenCRC32 != FH.CRC32) { FileDataWarning( "The validity check (CRC32) for opening this file failed." , "CRC32 check failed"); }
+		// TODO: do I want to continue if this fails?
+
 		switch(FH.FormatVersion)
 		{
 			case 1:
 			{
-				u64 cBytesCheckT = 0;
 				u32 ElType;
 				u32 cElements;
+				u8 *At = FileContents;
+				u8 *FinalAt = At + FH.cBytes;
 				for(uint iArray = 0; iArray < FH.cArrays; ++iArray)
 				{
-					DoAssert(cBytesCheckT = fread(&ElType,    sizeof(ElType),    1, Result) * sizeof(ElType));
-					cBytesCheck += cBytesCheckT;
-					DoAssert(cBytesCheckT = fread(&cElements, sizeof(cElements), 1, Result) * sizeof(cElements));
-					cBytesCheck += cBytesCheckT;
+					ElType    = *(u32 *)At;    At += sizeof(ElType);
+					cElements = *(u32 *)At;    At += sizeof(cElements);
 					switch(ElType)
 					{
-#define FILE_HEADER_ARENA(ID, vNum, type, mult, add) \
-						case HEAD_## ID ##_## vNum: { \
-							cBytesCheckT = ReadFileArrayToArena(Result, &State->ma## ID.Arena, cElements, sizeof(type), mult, add, WindowHandle); \
-							cBytesCheck += cBytesCheckT; \
-							if(cBytesCheckT != cElements * sizeof(type))  \
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. ("#ID")", "Unexpected quantity of data"); } \
-							ArenaRealloc(&State->maPointsOnScreen.Arena, ArenaAllocSize(cElements, sizeof(type), mult, add)); \
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_## ID ##_## vNum, cElements, State->ma## ID.Bytes + sizeof(type), sizeof(type)); \
-						} break
+#define FILE_HEADER_ELEMENT(ID) \
+						size_t cBytesEl = cElements * HeaderElSizes[ElType]; \
+						void *Els = (void *)At; \
+						At += cBytesEl; \
+						if(At > FinalAt) FileDataWarning("Unexpected quantity of data or corrupted file. ("#ID")", "Unexpected quantity of data")
+#define FILE_HEADER_ARENA(ID, mult, add) \
+						FILE_HEADER_ELEMENT(ID); \
+						MemErrorOnFail(0, ArenaRealloc(&State->ma## ID.Arena, ArenaAllocSize(cElements, sizeof(*State->ma## ID.Items), mult, add))); \
+						State->ma## ID.Used = (cElements + 1) * sizeof(*State->ma## ID.Items) /* Account for index 0 */
 
-						FILE_HEADER_ARENA(Points,      v1, v2,     2, 0);
-						FILE_HEADER_ARENA(PointStatus, v1, u8,     2, 0);
-						FILE_HEADER_ARENA(Shapes,      v1, shape,  1, 2);
-						FILE_HEADER_ARENA(Actions,     v1, action, 2, 0);
-#undef FILE_HEADER_ARENA
+						// Arenas
+						case HEAD_Points_v1:
+						{
+							FILE_HEADER_ARENA(Points, 2, 0);
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{ Pull(State->maPoints, iEl + 1) = ((v2 *)Els)[iEl]; }
+						} break;
 
-#define FILE_HEADER_ARRAY(ID, vNum, to, num) \
-						case HEAD_## ID ##_## vNum: { \
-							u64 cElCheck = fread(to, sizeof(*(to)), cElements, Result); \
-							if(cElCheck != cElements) \
-							{ FileDataWarning("Unexpected quantity of data or corrupted file. ("#ID")", "Unexpected quantity of data"); } \
-							cBytesCheck += cElCheck * sizeof(*(to)); \
-							Assert(cElCheck == num); \
-							OpenCRC32 = CRC32FileArray(OpenCRC32, HEAD_## ID ##_## vNum, cElements, to, sizeof(*(to))); \
-						} break
+						case HEAD_PointStatus_v1:
+						{
+							FILE_HEADER_ARENA(PointLayer, 2, 0); // moves `At` but ignores value
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{
+								Pull(State->maPointLayer, iEl + 1) = !!((u8 *)Els)[iEl];
+							}
+						} break;
 
-						FILE_HEADER_ARRAY(Lengths, v1, State->LengthStores, 26);
-						FILE_HEADER_ARRAY(Basis, v1, &State->Basis, 1);
-#undef FILE_HEADER_ARRAY
+						case HEAD_Shapes_v1:
+						{
+							FILE_HEADER_ARENA(Shapes, 1, 2);
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{ Pull(State->maShapes, iEl + 1) = ((shape *)Els)[iEl]; }
+						} break;
+
+						case HEAD_Actions_v1:
+						case HEAD_Actions_v2:
+						{
+							FILE_HEADER_ARENA(Actions, 2, 0);
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{ // transfer the elements to state
+								action_v1 Action_v1 = {0};
+								action_v2 Action_v2 = {0};
+								switch(ElType)
+								{ // update type to most recent version
+									case HEAD_Actions_v1:
+										Action_v1 = ((action_v1 *)Els)[iEl];
+										switch(USERIFY_ACTION(Action_v1.Kind)) // TODO (opt): Could make into a function ActionV1ToV2 - slightly more readable
+										{ // convert action_v1 to action_v2
+											case ACTION_Reset:
+												Action_v2.Reset.i         = Action_v1.Reset.i;
+												Action_v2.Reset.cPoints   = Action_v1.Reset.cPoints;
+												Action_v2.Reset.cShapes   = Action_v1.Reset.cShapes;
+												break;
+
+											case ACTION_RemoveShape:
+											case ACTION_Segment:
+											case ACTION_Circle:
+											case ACTION_Arc:
+												Action_v2.Shape.i         = Action_v1.Shape.i;
+												Action_v2.Shape.AllPoints = Action_v1.Shape.AllPoints;
+												Action_v2.Shape.iLayer    = 1;
+												break;
+
+											case ACTION_Point:
+											case ACTION_RemovePt:
+												Action_v2.Point.ipo       = Action_v1.Point.ipo;
+												Action_v2.Point.po        = Action_v1.Point.po;
+												Action_v2.Point.iLayer    = 1;
+												break;
+
+											default:
+												Assert(! "Trying to load unknown action type");
+										} // fallthrough
+
+									case HEAD_Actions_v2:
+										if(ElType == HEAD_Actions_v2) // only if directly switched to
+										{ Action_v2 = ((action_v2 *)Els)[iEl]; } // TODO (opt): maybe slightly faster with an unconditional jump
+								}
+								Pull(State->maActions, iEl + 1) = Action_v2;
+							}
+						} break;
+
+						// Arrays/Singles
+						case HEAD_Lengths_v1:
+						{
+							FILE_HEADER_ELEMENT(Lengths);
+							u32 NumberOfLengthsStored = cElements;
+							Assert(NumberOfLengthsStored == 26);
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{ State->LengthStores[iEl] = ((f32 *)Els)[iEl]; }
+						} break;
+
+						case HEAD_Basis_v1:
+						{
+							FILE_HEADER_ELEMENT(Basis);
+							Assert(cElements == 1);
+							State->Basis = DecompressBasis(*(basis_v1 *)Els);
+						} break;
+						case HEAD_Basis_v2:
+						{
+							FILE_HEADER_ELEMENT(Basis);
+							Assert(cElements == 1);
+							State->Basis = *(basis_v2 *)Els;
+						} break;
+
+						case HEAD_PointLayer_v1:
+						{
+							FILE_HEADER_ARENA(PointLayer, 2, 0);
+							for(u32 iEl = 0; iEl < cElements; ++iEl)
+							{
+								Pull(State->maPointLayer, iEl + 1) = ((uint *)Els)[iEl];
+							}
+						} break;
 
 						default:
 						{
 							// NOTE: unknown tag
 							MessageBox(WindowHandle, "Unexpected data or corrupted file. Try again.", "Filetype Error", MB_ICONERROR);
-							Assert(0);
+							Assert(! "Unexpected data or corrupted file.");
 							ElType;
-							Result = 0;
+							File = 0;
 							goto open_end;
 						} break;
+#undef FILE_HEADER_ARENA
+#undef FILE_HEADER_ARRAY
 					}
 				}
 			} break;
 
 			default: { goto open_error; }
 		}
- 
-		if(cBytesCheck != FH.cBytes)
-		{
-			if(cBytesCheck < FH.cBytes)
-			{ FileDataWarning("There was less data in the file than expected.", "Unexpected quantity of data"); }
-			else
-			{ FileDataWarning("There was more data in the file than expected.", "Unexpected quantity of data"); }
-		}
-		if(OpenCRC32 != FH.CRC32) { FileDataWarning( "The validity check (CRC32) for opening this file failed." , "CRC32 check failed"); }
+
 		// fclose?
 		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
 		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
@@ -276,12 +335,16 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 	}
 
 open_end:
+	Free(FileContents);
 	// TODO (rm): State->OpenFile = 0;
-	return Result;
+	return File;
 
 open_error:
-	MessageBox(WindowHandle, "Wrong filetype or corrupted file. Try again.", "Filetype Error", MB_ICONERROR);
-	Result = 0;
+	MessageBox(WindowHandle, "Wrong filetype or corrupted file. Try again.\n\n"
+	                         "The filetype may be more recent than this version of Geometer can handle. "
+	                         "If so, please download and try opening this with the latest version.", "Filetype Error", MB_ICONERROR);
+	fclose(File);
+	File = 0;
 	goto open_end;
 }
 
@@ -290,14 +353,15 @@ internal u32
 SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 {
 	BEGIN_TIMED_BLOCK;
+	/* DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1) \ */
 #define PROCESS_DATA_ARRAY() \
-	DATA_PROCESS(HEAD_Points_v1,      State->iLastPoint,  State->maPoints.Items + 1) \
-	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1) \
-	DATA_PROCESS(HEAD_Shapes_v1,      State->iLastShape,  State->maShapes.Items + 1) \
-	DATA_PROCESS(HEAD_Actions_v1,     State->iLastAction, State->maActions.Items + 1) \
-	DATA_PROCESS(HEAD_Lengths_v1,     cLengthStores,      State->LengthStores) \
-	DATA_PROCESS(HEAD_Basis_v1,       One,                &State->Basis)
-	//           elementType          cElements           arraybase
+	DATA_PROCESS(HEAD_Points,     State->iLastPoint,  State->maPoints.Items + 1) \
+	DATA_PROCESS(HEAD_Shapes,     State->iLastShape,  State->maShapes.Items + 1) \
+	DATA_PROCESS(HEAD_Actions,    State->iLastAction, State->maActions.Items + 1) \
+	DATA_PROCESS(HEAD_Lengths,    cLengthStores,      State->LengthStores) \
+	DATA_PROCESS(HEAD_Basis,      One,                &State->Basis) \
+	DATA_PROCESS(HEAD_PointLayer, State->iLastPoint,  State->maPointLayer.Items + 1) \
+	//           elementType      cElements           arraybase
 
 #define DATA_PROCESS(a, b, c) +1
 	FILE *SaveFile = fopen(FilePath, "wb");
@@ -356,7 +420,7 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	v2_arena     *maPoints           = &State->maPoints;
 	v2_arena     *maPointsOnScreen   = &State->maPointsOnScreen;
 	v2_arena     *maIntersects       = &State->maIntersects;
-	u8_arena     *maPointStatus      = &State->maPointStatus;
+	uint_arena   *maPointLayer       = &State->maPointLayer;
 	uint_arena   *maSelectedPoints   = &State->maSelectedPoints;
 	shape_arena  *maShapes           = &State->maShapes;
 	shape_arena  *maShapesNearScreen = &State->maShapesNearScreen;
@@ -365,16 +429,16 @@ ReallocateArenas(state *State, HWND WindowHandle)
 	// NOTE: Can add multiple points per frame (intersections), but can't double
 	// NOTE: Realloc the next undo state if needed
 	ArenaAssert(maPoints);
-	ArenaAssert(maPointStatus);
+	ArenaAssert(maPointLayer);
 	ArenaAssert(maPointsOnScreen);
 	if(maPoints->Used >= maPoints->Size / 2)
 	{ LOG("Adding to points arena");
 		// NOTE: should all have exactly the same number of members
-		Assert(Len(*maPointStatus)    == Len(*maPoints));
+		Assert(Len(*maPointLayer)    == Len(*maPoints));
 		Assert(Cap(*maPointsOnScreen) == Cap(*maPoints));
 		Assert(Cap(*maSelectedPoints) == Cap(*maPoints));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size         * 2));
-		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size    * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointLayer->Arena,     maPointLayer->Size     * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointsOnScreen->Arena, maPointsOnScreen->Size * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maSelectedPoints->Arena, maSelectedPoints->Size * 2));
 	}
@@ -610,7 +674,7 @@ ExportSVGToFile(state *State, char *FilePath)
 
 					default:
 					{
-						Assert(0 && "not sure what shape is at index " && iShape);
+						Assert(! "not sure what shape is at index " && iShape);
 					}
 				}
 			}
@@ -644,7 +708,7 @@ internal void
 FreeStateArenas(state *State)
 {
 	Free(State->maPoints.Base);
-	Free(State->maPointStatus.Base);
+	Free(State->maPointLayer.Base);
 	Free(State->maShapes.Base);
 	Free(State->maActions.Base);
 	Free(State->maIntersects.Base);
@@ -655,7 +719,7 @@ FreeStateArenas(state *State)
 internal void
 AllocStateArenas(state *State)
 {
-	State->maPointStatus.Arena      = ArenaCalloc(sizeof(*State->maPointStatus.Items     ) * cSTART_POINTS);
+	State->maPointLayer.Arena       = ArenaCalloc(sizeof(*State->maPointLayer.Items      ) * cSTART_POINTS);
 	State->maPoints.Arena           = ArenaCalloc(sizeof(*State->maPoints.Items          ) * cSTART_POINTS);
 	State->maShapes.Arena           = ArenaCalloc(sizeof(*State->maShapes.Items          ) * cSTART_POINTS);
 	State->maActions.Arena          = ArenaCalloc(sizeof(*State->maActions.Items         ) * cSTART_POINTS);
@@ -741,6 +805,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 	Win32LoadXInput();
 	// TODO: Pool with bitmap VirtualAlloc and font?
+	// TODO IMPORTANT: move to thin host layer so win32 can be updated at runtime
 #if !SINGLE_EXECUTABLE
 	char *LibFnNames[] = {"UpdateAndRender"};
 	win32_library Lib = Win32Library(LibFnNames, ArrayCount(LibFnNames),
@@ -851,7 +916,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		image_buffer GameImageBuffer = *(image_buffer *) &Win32Buffer;
 		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
 
-#if DEBUGVAR_LazyRender
+/* #if DEBUGVAR_LazyRender */
+#if 0
 		// IMPORTANT: update as more things are animated:
 		b32 IsAnimating = State->tBasis < 1.f; // || ...;
 		b32 IsAnyInputAtAll = !Equal(*Input.New, *Input.Old);
