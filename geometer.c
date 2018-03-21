@@ -550,7 +550,7 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 
 #define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 internal void
-RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre)
+RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, uint PointLayer)
 {
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
@@ -559,45 +559,49 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre)
 
 		uint ShapeLayer = POINTLAYER(Shape.P[0]);
 		Assert(ShapeLayer != 0);
-		colour LayerColour = BLACK;
-		if(ShapeLayer != State->iCurrentLayer)
-		{ LayerColour = LIGHT_GREY; }
-
-		switch(Shape.Kind)
+		if((! PointLayer || ShapeLayer == PointLayer))
 		{
-			case SHAPE_Segment:
-			{
-				v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
-				v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
-				DEBUGDrawLine(Buffer, poA, poB, LayerColour);
-			} break;
+			colour LayerColour = BLACK;
+			if(ShapeLayer != State->iCurrentLayer)
+			{ LayerColour = LIGHT_GREY; }
 
-			case SHAPE_Circle:
+			switch(Shape.Kind)
 			{
-				v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
-				v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
-				f32 Radius = Dist(poFocus, poRadius);
-				Assert(Radius);
-				CircleLine(Buffer, poFocus, Radius, LayerColour);
-			} break;
+				case SHAPE_Segment:
+					{
+						v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
+						v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
+						DEBUGDrawLine(Buffer, poA, poB, LayerColour);
+					} break;
 
-			case SHAPE_Arc:
-			{
-				v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
-				v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
-				v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
-				DrawArcFromPoints(Buffer, poFocus, poStart, poEnd, LayerColour); 
-			} break;
+				case SHAPE_Circle:
+					{
+						v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
+						v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
+						f32 Radius = Dist(poFocus, poRadius);
+						Assert(Radius);
+						CircleLine(Buffer, poFocus, Radius, LayerColour);
+					} break;
 
-			default:
-			{ Assert(!"Tried to draw unknown shape"); }
+				case SHAPE_Arc:
+					{
+						v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
+						v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
+						v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
+						DrawArcFromPoints(Buffer, poFocus, poStart, poEnd, LayerColour); 
+					} break;
+
+				default:
+					{ Assert(!"Tried to draw unknown shape"); }
+			}
 		}
 	}
 
 	v2_arena maPointsOnScreen = State->maPointsOnScreen;
 	LOG("\tDRAW POINTS");
 	char PointIndex[32] = {0};
-	foreachf1(v2, po, maPointsOnScreen) if(POINTSTATUS(ipo))
+	foreachf1(v2, po, maPointsOnScreen)
+	if(POINTSTATUS(ipo) && (! PointLayer || POINTLAYER(ipo) == PointLayer))
 	{ // draw on-screen points
 		v2 SSPoint = ToScreen(po);
 		DrawCircleFill(Buffer, SSPoint, 3.f, LIGHT_GREY);
@@ -1602,7 +1606,7 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre);
+		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre, 0);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
 			foreachf1(shape, Shape, *maShapesNearScreen)
@@ -1792,17 +1796,22 @@ case_mode_extend_arc:
 
 
 		uint cThumbs = 5;
-		f32 ThumbPercentScreen = 1.f/cThumbs;
+		f32 ThumbScreenFraction = 1.f/cThumbs;
 		basis ThumbBasis = Basis;
 		ThumbBasis.Zoom *= (f32)cThumbs;
-		v2 ThumbSize = V2Mult(ThumbPercentScreen, ScreenSize);
-		v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 1 };
-		v2 ThumbTR = V2Add(ThumbBL, ThumbSize);
-		image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, ThumbBL),
-			(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
-		DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, WHITE);
-		RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, ThumbSize));
-		DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY);
+		v2 ThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
+		v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 0 };
+		// TODO (fix): sometimes clips before the edge of the thumbnail)
+		for(uint iThumb = 0; iThumb++ < cThumbs;)
+		{
+			v2 ThumbTR = V2Add(ThumbBL, ThumbSize);
+			image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, sizeof(u32), ThumbBL),
+				(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
+			DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, WHITE);
+			RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, ThumbSize), iThumb);
+			DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY);
+			ThumbBL.Y += ThumbSize.Y;
+		}
 
 	}
 

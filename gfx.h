@@ -632,18 +632,19 @@ GetLinearizedPosition(u32 Width, v2 PixelPos)
 }
 
 internal inline u32 *
-GetBufferLocation(image_buffer Buffer, v2 Pos)
+GetBufferLocation(image_buffer Buffer, u32 PixelSize, v2 Pos)
 {
-	u32 Offset = RoundF32ToU32(Pos.Y) * Buffer.Pitch + RoundF32ToU32(Pos.X);
-	u32 *Result = (u32 *)Buffer.Memory + Offset;
-	return Result;
+	u32 Offset = RoundF32ToU32(Pos.Y) * Buffer.Pitch + RoundF32ToU32(Pos.X) * PixelSize;
+	char *Result = (char *)Buffer.Memory + Offset;
+	return (u32 *)Result;
 }
 
 internal inline void
 DEBUGDrawCheckedPixel(image_buffer *Buffer, v2 PixelPos, colour Colour)
 {
-	u32 LinearizedPosition = GetLinearizedPosition(Buffer->Pitch/sizeof(u32), PixelPos);
-	u32 *Pixel = (u32 *)Buffer->Memory + LinearizedPosition;
+	u32 *Pixel = GetBufferLocation(*Buffer, sizeof(u32), PixelPos);
+	/* u32 LinearizedPosition = GetLinearizedPosition(Buffer->Pitch/sizeof(u32), PixelPos); */
+	/* u32 *Pixel = (u32 *)Buffer->Memory + LinearizedPosition; */
 		
 	if(IsInScreenBounds(Buffer, PixelPos))
 	{
