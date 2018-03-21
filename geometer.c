@@ -177,7 +177,7 @@ SimpleUndo(state *State)
 
 		case ACTION_RemovePt:
 		{
-			POINTLAYER(Action.Point.ipo) = Action.Point.iLayer;
+			POINTSTATUS(Action.Point.ipo) = 1;
 		} break;
 
 		case ACTION_RemoveShape:
@@ -548,6 +548,85 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 	return Result;
 }
 
+#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
+internal void
+RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre)
+{
+	LOG("\tDRAW SHAPES");
+	shape_arena maShapesNearScreen = State->maShapesNearScreen;
+	foreachf1(shape, Shape, maShapesNearScreen)
+	{ // DRAW SHAPES
+
+		uint ShapeLayer = POINTLAYER(Shape.P[0]);
+		Assert(ShapeLayer != 0);
+		colour LayerColour = BLACK;
+		if(ShapeLayer != State->iCurrentLayer)
+		{ LayerColour = LIGHT_GREY; }
+
+		switch(Shape.Kind)
+		{
+			case SHAPE_Segment:
+			{
+				v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
+				v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
+				DEBUGDrawLine(Buffer, poA, poB, LayerColour);
+			} break;
+
+			case SHAPE_Circle:
+			{
+				v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
+				v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
+				f32 Radius = Dist(poFocus, poRadius);
+				Assert(Radius);
+				CircleLine(Buffer, poFocus, Radius, LayerColour);
+			} break;
+
+			case SHAPE_Arc:
+			{
+				v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
+				v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
+				v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
+				DrawArcFromPoints(Buffer, poFocus, poStart, poEnd, LayerColour); 
+			} break;
+
+			default:
+			{ Assert(!"Tried to draw unknown shape"); }
+		}
+	}
+
+	v2_arena maPointsOnScreen = State->maPointsOnScreen;
+	LOG("\tDRAW POINTS");
+	char PointIndex[32] = {0};
+	foreachf1(v2, po, maPointsOnScreen) if(POINTSTATUS(ipo))
+	{ // draw on-screen points
+		v2 SSPoint = ToScreen(po);
+		DrawCircleFill(Buffer, SSPoint, 3.f, LIGHT_GREY);
+	}
+
+	DEBUG_LIVE_if(Points_Numbering)
+	{ // write index number next to points and intersections
+		foreachf(v2, po, State->maPoints)
+		{
+			v2 SSPoint = ToScreen(po);
+			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", ipo, POINTLAYER(ipo));
+			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
+		}
+		foreachf(v2, P, State->maIntersects)
+		{
+			v2 SSP = ToScreen(P);
+			ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
+			DrawCrosshair(Buffer, SSP, 6.f, GREEN);
+			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, GREEN);
+		}
+		foreachf(shape, Shape, State->maShapes)
+		{
+			v2 SSP = ToScreen(POINTS(Shape.P[2]));
+			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", Shape.P[2], POINTLAYER(Shape.P[2]));
+			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
+		}
+	}
+}
+
 UPDATE_AND_RENDER(UpdateAndRender)
 {
 	BEGIN_TIMED_BLOCK;
@@ -601,7 +680,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	if(State->tBasis < 1.f)  { State->tBasis += State->dt*BASIS_ANIMATION_SPEED; }
 	else					 { State->tBasis = 1.f; }
 	basis Basis = AnimateBasis(pBASIS, State->tBasis, BASIS);
-#define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 
 	keyboard_state Keyboard = Input.New->Keyboard;
 	mouse_state Mouse  = Input.New->Mouse;
@@ -1034,7 +1112,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 					if( ! C_Select.EndedDown)
 					{ // add points in selection box to selection
-						foreachf1(v2,P, State->maPoints) if(POINTLAYER(iP) == State->iCurrentLayer)
+						foreachf1(v2,P, State->maPoints)
+						if(POINTSTATUS(iP) && POINTLAYER(iP) == State->iCurrentLayer)
 						{ // add indexes of selected points to that array
 							// TODO: use animated basis rather than state
 							P = ToScreen(P);
@@ -1482,7 +1561,7 @@ case_mode_extend_arc:
 		foreachf1(v2, po, State->maPoints)
 		{ 
 			// NOTE: needed in canvas form later
-			/* if(POINTLAYER(ipo) != POINT_Free && */
+			/* if(POINTSTATUS(ipo) != POINT_Free && */
 			/*    PointInAABB(ToScreen(po), ScreenBB)) */
 			{
 				Pull(*maPointsOnScreen, ipo) = po;
@@ -1523,81 +1602,19 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		LOG("\tDRAW SHAPES");
-		for(uint iShape = 0; iShape < cShapesNearScreen; ++iShape)
-		{ // DRAW SHAPES
-			shape Shape = Pull(*maShapesNearScreen, iShape);
-			uint ShapeLayer = POINTLAYER(Shape.P[0]);
-			Assert(ShapeLayer != 0);
-			colour LayerColour = BLACK;
-			if(ShapeLayer != State->iCurrentLayer)
-			{ LayerColour = LIGHT_GREY; }
-
-			switch(Shape.Kind)
+		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre);
+		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
+		{
+			foreachf1(shape, Shape, *maShapesNearScreen)
 			{
-				case SHAPE_Segment:
-				{
-					v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
-					v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
-					DEBUGDrawLine(ScreenBuffer, poA, poB, LayerColour);
-					DEBUG_LIVE_if(Shapes_ShowClosestPoint)
-					{ DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, poA, poB); }
-				} break;
-				
-				case SHAPE_Circle:
-				{
-					v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
-					v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
-					f32 Radius = Dist(poFocus, poRadius);
-					Assert(Radius);
-					CircleLine(ScreenBuffer, poFocus, Radius, LayerColour);
-					DEBUG_LIVE_if(Shapes_ShowClosestPoint)
-					{ DrawClosestPtOnCircle(ScreenBuffer, Mouse.P, poFocus, Radius); }
-				} break;
-
-				case SHAPE_Arc:
-				{
-					v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
-					v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
-					v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
-					DrawArcFromPoints(ScreenBuffer, poFocus, poStart, poEnd, LayerColour); 
-					DEBUG_LIVE_if(Shapes_ShowClosestPoint)
-					{ DrawClosestPtOnArc(ScreenBuffer, Mouse.P, poFocus, poStart, poEnd); }
-				} break;
-
-				default:
-				{ Assert(!"Tried to draw unknown shape"); }
-			}
-		}
-
-		LOG("\tDRAW POINTS");
-		char PointIndex[32] = {0};
-		foreachf1(v2, po, *maPointsOnScreen) if(POINTSTATUS(ipo))
-		{ // draw on-screen points
-			v2 SSPoint = ToScreen(po);
-			DrawCircleFill(ScreenBuffer, SSPoint, 3.f, LIGHT_GREY);
-		}
-
-		DEBUG_LIVE_if(Points_Numbering)
-		{ // write index number next to points and intersections
-			foreachf(v2, po, State->maPoints)
-			{
-				v2 SSPoint = ToScreen(po);
-				ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", ipo, POINTLAYER(ipo));
-				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
-			}
-			foreachf(v2, P, State->maIntersects)
-			{
-				v2 SSP = ToScreen(P);
-				ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
-				DrawCrosshair(ScreenBuffer, SSP, 6.f, GREEN);
-				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, GREEN);
-			}
-			foreachf(shape, Shape, State->maShapes)
-			{
-				v2 SSP = ToScreen(POINTS(Shape.P[2]));
-				ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", Shape.P[2], POINTLAYER(Shape.P[2]));
-				DrawString(ScreenBuffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
+				v2 Pts[ArrayCount(Shape.P)] = {0};
+				for(uint i = ArrayCount(Pts); i--;) { Pts[i] = ToScreen(POINTS(Shape.P[i])); }
+				switch(Shape.Kind) {
+					case SHAPE_Segment: DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, Pts[0], Pts[1]); break;
+					case SHAPE_Circle:  DrawClosestPtOnCircle( ScreenBuffer, Mouse.P, Pts[0], Dist(Pts[0],Pts[1])); break;
+					case SHAPE_Arc:		DrawClosestPtOnArc(	ScreenBuffer, Mouse.P, Pts[0], Pts[1], Pts[2]); break;
+					default:            Assert(! "Tried to debug unknown shape");
+				}
 			}
 		}
 
@@ -1770,7 +1787,25 @@ case_mode_extend_arc:
 			if(IsDrawing(State))
 			{ DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE); }
 		}
+
+		// Draw layer thumbnails
+
+
+		uint cThumbs = 5;
+		f32 ThumbPercentScreen = 1.f/cThumbs;
+		basis ThumbBasis = Basis;
+		ThumbBasis.Zoom *= (f32)cThumbs;
+		v2 ThumbSize = V2Mult(ThumbPercentScreen, ScreenSize);
+		v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 1 };
+		v2 ThumbTR = V2Add(ThumbBL, ThumbSize);
+		image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, ThumbBL),
+			(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
+		DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, WHITE);
+		RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, ThumbSize));
+		DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY);
+
 	}
+
 
 	/* f32 TextSize = ScreenSize.Y/40.f; */
 	DEBUG_WATCHED(f32, Text, TextSize) = ScreenSize.Y/40.f;

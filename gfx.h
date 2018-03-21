@@ -72,6 +72,37 @@ colour DARK_YELLOW  = {0.5f, 0.4f, 0.1f, 1.0f};
 colour V_LIGHT_GREY = {0.90f, 0.90f, 0.90f, 1.0f};
 colour BLANK_COLOUR = {0.0f, 0.0f, 0.0f, 0.0f};
 
+colour Colours[] = 
+{
+	{1.0f, 0.0f, 0.0f, 1.0f},
+	{0.0f, 1.0f, 0.0f, 1.0f},
+	{0.0f, 0.0f, 1.0f, 1.0f},
+	{1.0f, 1.0f, 0.0f, 1.0f},
+	{1.0f, 0.0f, 1.0f, 1.0f},
+	{0.0f, 1.0f, 1.0f, 1.0f},
+	{0.8f, 0.2f, 0.2f, 1.0f},
+	{0.2f, 0.8f, 0.2f, 1.0f},
+	{0.4f, 0.4f, 0.8f, 1.0f},
+	{1.0f, 0.8f, 0.0f, 1.0f},
+	{0.8f, 0.0f, 0.8f, 1.0f},
+	{0.0f, 0.8f, 0.8f, 1.0f},
+	{0.9f, 0.6f, 0.2f, 1.0f},
+	{0.0f, 0.0f, 0.0f, 1.0f},
+	{1.0f, 1.0f, 1.0f, 1.0f},
+	{0.5f, 0.5f, 0.5f, 1.0f},
+	{1.0f, 0.65f, 0.65f, 1.0f},
+	{0.65f, 1.0f, 0.65f, 1.0f},
+	{0.65f, 0.65f, 1.0f, 1.0f},
+	{0.75f, 0.75f, 0.75f, 1.0f},
+	{1.0f, 0.95f, 0.7f, 1.0f},
+	{0.5f, 0.15f, 0.15f, 1.0f},
+	{0.1f, 0.5f, 0.1f, 1.0f},
+	{0.1f, 0.1f, 0.5f, 1.0f},
+	{0.5f, 0.4f, 0.1f, 1.0f},
+	{0.90f, 0.90f, 0.90f, 1.0f},
+	{0.0f, 0.0f, 0.0f, 0.0f},
+};
+
 internal colour
 Colour(f32 R, f32 G, f32 B, f32 A)
 {
@@ -600,10 +631,18 @@ GetLinearizedPosition(u32 Width, v2 PixelPos)
 	return Result;
 }
 
+internal inline u32 *
+GetBufferLocation(image_buffer Buffer, v2 Pos)
+{
+	u32 Offset = RoundF32ToU32(Pos.Y) * Buffer.Pitch + RoundF32ToU32(Pos.X);
+	u32 *Result = (u32 *)Buffer.Memory + Offset;
+	return Result;
+}
+
 internal inline void
 DEBUGDrawCheckedPixel(image_buffer *Buffer, v2 PixelPos, colour Colour)
 {
-	u32 LinearizedPosition = GetLinearizedPosition(Buffer->Width, PixelPos);
+	u32 LinearizedPosition = GetLinearizedPosition(Buffer->Pitch/sizeof(u32), PixelPos);
 	u32 *Pixel = (u32 *)Buffer->Memory + LinearizedPosition;
 		
 	if(IsInScreenBounds(Buffer, PixelPos))
