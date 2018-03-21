@@ -111,7 +111,7 @@ OpenFilenameDefault(HWND OwnerWindow, uint cchFilePath)
 internal inline size_t
 ArenaAllocSize(u32 cElements, size_t ElementSize, u32 Factor, u32 Add)
 {
-	size_t cBytesEl = cElements * ElementSize + ElementSize; // Account for index 0
+	size_t cBytesEl = (cElements + 1) * ElementSize; // Account for index 0
 	size_t Result = CeilPow2U64(Factor * cBytesEl + Add * ElementSize);
 	if(Result < ElementSize * cSTART_POINTS)
 	{  Result = ElementSize * cSTART_POINTS; }
@@ -149,6 +149,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 	if(FilePath)
 	{
 		File = fopen(FilePath, "r+b");
+		// TODO: handle nonexistant file names
 		FileErrorOnFail(WindowHandle, File, FilePath); 
 		file_header FH;
 		LOG("\tCHECK ID");
@@ -177,6 +178,8 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 		if(OpenCRC32 != FH.CRC32) { FileDataWarning( "The validity check (CRC32) for opening this file failed." , "CRC32 check failed"); }
 		// TODO: do I want to continue if this fails?
 
+		b8 TypesFoundInFile[HEAD_Count] = {0};
+
 		switch(FH.FormatVersion)
 		{
 			case 1:
@@ -189,6 +192,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 				{
 					ElType    = *(u32 *)At;    At += sizeof(ElType);
 					cElements = *(u32 *)At;    At += sizeof(cElements);
+					TypesFoundInFile[ElType] = 1;
 					switch(ElType)
 					{
 #define FILE_HEADER_ELEMENT(ID) \
@@ -211,10 +215,10 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 
 						case HEAD_PointStatus_v1:
 						{
-							FILE_HEADER_ARENA(PointLayer, 2, 0); // moves `At` but ignores value
+							FILE_HEADER_ARENA(PointStatus, 2, 0);
 							for(u32 iEl = 0; iEl < cElements; ++iEl)
 							{
-								Pull(State->maPointLayer, iEl + 1) = !!((u8 *)Els)[iEl];
+								Pull(State->maPointStatus, iEl + 1) = !!((u8 *)Els)[iEl];
 							}
 						} break;
 
@@ -237,6 +241,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 								{ // update type to most recent version
 									case HEAD_Actions_v1:
 										Action_v1 = ((action_v1 *)Els)[iEl];
+										Action_v2.Kind = Action_v1.Kind;
 										switch(USERIFY_ACTION(Action_v1.Kind)) // TODO (opt): Could make into a function ActionV1ToV2 - slightly more readable
 										{ // convert action_v1 to action_v2
 											case ACTION_Reset:
@@ -287,7 +292,7 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 						{
 							FILE_HEADER_ELEMENT(Basis);
 							Assert(cElements == 1);
-							State->Basis = DecompressBasis(*(basis_v1 *)Els);
+							State->Basis = DecompressBasis(*(compressed_basis *)Els);
 						} break;
 						case HEAD_Basis_v2:
 						{
@@ -323,6 +328,24 @@ OpenFileInCurrentWindow(state *State, char *FilePath, uint cchFilePath, HWND Win
 			default: { goto open_error; }
 		}
 
+		u32 cPoints = (u32) Len(State->maPoints) - 1;
+		if(! TypesFoundInFile[HEAD_PointLayer_v1])
+		{
+			MemErrorOnFail(0, ArenaRealloc(&State->maPointLayer.Arena,
+			                  ArenaAllocSize(cPoints, sizeof(*State->maPointLayer.Items), 2, 0)));
+			State->maPointLayer.Used = (cPoints + 1) * sizeof(*State->maPointLayer.Items); /* Account for index 0 */
+			foreach(u32, Point, State->maPointLayer)
+			{ Pull(State->maPointLayer, iPoint) = 1; }
+		}
+		if(! TypesFoundInFile[HEAD_PointStatus_v1])
+		{
+			MemErrorOnFail(0, ArenaRealloc(&State->maPointStatus.Arena,
+			                  ArenaAllocSize(cPoints, sizeof(*State->maPointStatus.Items), 2, 0)));
+			State->maPointStatus.Used = (cPoints + 1) * sizeof(*State->maPointStatus.Items); /* Account for index 0 */
+			foreach(u8, Point, State->maPointStatus)
+			{ Pull(State->maPointStatus, iPoint) = 1; }
+		}
+
 		// fclose?
 		State->iLastPoint  = (uint)Len(State->maPoints)  - 1;
 		State->iLastShape  = (uint)Len(State->maShapes)  - 1;
@@ -353,8 +376,8 @@ internal u32
 SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 {
 	BEGIN_TIMED_BLOCK;
-	/* DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1) \ */
 #define PROCESS_DATA_ARRAY() \
+	DATA_PROCESS(HEAD_PointStatus_v1, State->iLastPoint,  State->maPointStatus.Items + 1) \
 	DATA_PROCESS(HEAD_Points,     State->iLastPoint,  State->maPoints.Items + 1) \
 	DATA_PROCESS(HEAD_Shapes,     State->iLastShape,  State->maShapes.Items + 1) \
 	DATA_PROCESS(HEAD_Actions,    State->iLastAction, State->maActions.Items + 1) \
@@ -376,10 +399,10 @@ SaveToFile(state *State, HWND WindowHandle, char *FilePath)
 	Header.ID[6] = 'e';
 	Header.ID[7] = 'r';
 	Header.FormatVersion = 1;
-	Header.cArrays = 0 PROCESS_DATA_ARRAY(); // IMPORTANT: Keep updated when adding new arrays!
+	Header.cArrays = PROCESS_DATA_ARRAY(); // IMPORTANT: Keep updated when adding new arrays!
 	Header.CRC32 = 0;  // edited in following macros
 	Header.cBytes = 0; // edited in following macros
-	Assert(Header.cArrays == 6);
+	Assert(Header.cArrays == 7);
 #undef DATA_PROCESS
 
 	u32 Tag; 
@@ -418,6 +441,7 @@ ReallocateArenas(state *State, HWND WindowHandle)
 #define ArenaAssert(arena) Assert(arena->Used <= arena->Size)
 	// TODO: what to do if reallocation fails? Ensure no more shapes/points etc; Error message box: https://msdn.microsoft.com/en-us/library/windows/desktop/ms645505(v=vs.85).aspx
 	v2_arena     *maPoints           = &State->maPoints;
+	u8_arena     *maPointStatus      = &State->maPointStatus;
 	v2_arena     *maPointsOnScreen   = &State->maPointsOnScreen;
 	v2_arena     *maIntersects       = &State->maIntersects;
 	uint_arena   *maPointLayer       = &State->maPointLayer;
@@ -438,6 +462,7 @@ ReallocateArenas(state *State, HWND WindowHandle)
 		Assert(Cap(*maPointsOnScreen) == Cap(*maPoints));
 		Assert(Cap(*maSelectedPoints) == Cap(*maPoints));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPoints->Arena,         maPoints->Size         * 2));
+		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointStatus->Arena,    maPointStatus->Size    * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointLayer->Arena,     maPointLayer->Size     * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maPointsOnScreen->Arena, maPointsOnScreen->Size * 2));
 		MemErrorOnFail(WindowHandle, ArenaRealloc(&maSelectedPoints->Arena, maSelectedPoints->Size * 2));
@@ -709,6 +734,7 @@ FreeStateArenas(state *State)
 {
 	Free(State->maPoints.Base);
 	Free(State->maPointLayer.Base);
+	Free(State->maPointStatus.Base);
 	Free(State->maShapes.Base);
 	Free(State->maActions.Base);
 	Free(State->maIntersects.Base);
@@ -720,6 +746,7 @@ internal void
 AllocStateArenas(state *State)
 {
 	State->maPointLayer.Arena       = ArenaCalloc(sizeof(*State->maPointLayer.Items      ) * cSTART_POINTS);
+	State->maPointStatus.Arena      = ArenaCalloc(sizeof(*State->maPointLayer.Items      ) * cSTART_POINTS);
 	State->maPoints.Arena           = ArenaCalloc(sizeof(*State->maPoints.Items          ) * cSTART_POINTS);
 	State->maShapes.Arena           = ArenaCalloc(sizeof(*State->maShapes.Items          ) * cSTART_POINTS);
 	State->maActions.Arena          = ArenaCalloc(sizeof(*State->maActions.Items         ) * cSTART_POINTS);

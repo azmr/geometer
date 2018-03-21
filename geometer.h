@@ -2,8 +2,9 @@
 #define BASIS State->Basis
 #define pBASIS State->pBasis
 #define POINTS(i)      Pull(State->maPoints, i)
-#define POINTS_OS(i)   Pull(State->maPointsOnScreen, i)
 #define POINTSTATUS(i) Pull(State->maPointStatus, i)
+#define POINTS_OS(i)   Pull(State->maPointsOnScreen, i)
+#define POINTLAYER(i)  Pull(State->maPointLayer, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
 #define DEBUG_LOG_ACTIONS 1
@@ -142,7 +143,6 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
-
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
 typedef struct debug
 {
@@ -154,21 +154,6 @@ typedef struct debug
 } debug;
 global_variable debug Debug;
 #define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
-
-// TODO: replace with better way of indicating existence
-typedef enum point_flags
-{
-	POINT_Free         = 0,
-	POINT_Extant       = (1 << 0),
-	POINT_Line         = (1 << 1),
-	POINT_Intersection = (1 << 2),
-	POINT_Focus        = (1 << 3),
-	POINT_Text         = (1 << 4),
-	POINT_Radius       = (1 << 5), // maybe POINT_Dist | POINT_Arc ?
-	// POINT_Dir
-	POINT_Arc          = (1 << 6),
-	POINT_Dist         = (1 << 7), 
-} point_flags;
 
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
@@ -183,11 +168,13 @@ typedef struct state
 	shape_arena maShapesNearScreen;
 	shape_arena maShapes;
 	u8_arena maPointStatus;
+	uint_arena maPointLayer;
 	action_arena maActions; 
 
 	basis Basis;
 	basis pBasis;
 
+	uint iCurrentLayer;
 	uint iSaveAction;
 	uint iCurrentAction;
 	uint iLastAction;
@@ -206,7 +193,6 @@ typedef struct state
 	uint cchFilePath;
 	char *FilePath; // allocc'd
 	// TODO: turn bools into flags?
-	b32 ShowDebugInfo;
 	b32 ShowHelpInfo;
 	b32 ArcSwapDirection;
 	input_mode InputMode;

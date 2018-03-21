@@ -12,16 +12,17 @@ ResetNoAction(state *State, uint iAction)
 	{ CountActionPointsShapes(State, 1, iAction, &cPoints, &cShapes); }
 	State->iLastPoint = cPoints;
 	State->iLastShape = cPoints;
-	State->maPointStatus.Used      = sizeof(u8)    * (1+cPoints);
-	State->maPoints.Used           = sizeof(v2)    * (1+cPoints);
-	State->maShapes.Used           = sizeof(shape) * (1+cShapes);
-	State->maIntersects.Used       = sizeof(v2);
+	State->maPointLayer.Used       = sizeof(*State->maPointLayer.Items)  * (1+cPoints);
+	State->maPointStatus.Used      = sizeof(*State->maPointStatus.Items) * (1+cPoints);
+	State->maPoints.Used           = sizeof(*State->maPoints.Items)      * (1+cPoints);
+	State->maShapes.Used           = sizeof(*State->maShapes.Items)      * (1+cShapes);
+	State->maIntersects.Used       = sizeof(*State->maIntersects.Items);
 	State->maShapesNearScreen.Used = 0;
 	State->maPointsOnScreen.Used   = 0;
 	State->maSelectedPoints.Used   = 0;
 
 	for(uint i = cPoints+1; i <= State->iLastPoint; ++i)
-	{ POINTSTATUS(i) = POINT_Free; }
+	{ POINTSTATUS(i) = 0; }
 
 	State->pBasis = State->Basis = DefaultBasis;
 	State->tBasis = 1.f;
@@ -101,6 +102,7 @@ AnimateBasis(basis StartBasis, f32 tBasis, basis EndBasis)
 	return Result;
 }
 
+// TODO: return pbasis?
 internal void
 SetBasis(state *State, basis NewBasis)
 {
@@ -189,13 +191,15 @@ DecompressBasis(compressed_basis Basis)
 ///////////////////////////////////////////////////////////////////////////////
 
 internal uint
-FindPointAtPos(state *State, v2 po, uint PointStatus)
+FindPointAtPos(state *State, v2 po, uint PointLayer)
 {
 	BEGIN_TIMED_BLOCK;
 	uint Result = 0;
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{
-		if(V2WithinEpsilon(po, POINTS(i), POINT_EPSILON) && (POINTSTATUS(i) & PointStatus))
+		if(POINTSTATUS(i) &&
+		   (! PointLayer || POINTLAYER(i) == PointLayer) &&
+		   V2WithinEpsilon(po, POINTS(i), POINT_EPSILON))
 		{
 			Result = i;
 			break;
@@ -218,7 +222,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 	// TODO (opt): look at only those on screen
 	for(uint i = 1; i <= State->iLastPoint; ++i)
 	{
-		if(POINTSTATUS(i) != POINT_Free)
+		if(POINTSTATUS(i))
 		{
 			if(!Result)
 			{ // first iteration
@@ -242,7 +246,7 @@ ClosestPointIndex(state *State, v2 Comp, f32 *ClosestDistSq)
 
 // NOTE: less than numlinepoints if any points are reused
 internal uint
-NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
+NumPointsOfType(u8 *Layeres, uint iEnd, uint PointTypes)
 {
 	BEGIN_TIMED_BLOCK;
 	// TODO: could be done 16x faster with SIMD (maybe just for practice)
@@ -250,7 +254,7 @@ NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
 	for(uint i = 1; i <= iEnd; ++i)
 	{
 		// TODO: Do I want inclusive as well as exclusive?
-		if(Statuses[i] == PointTypes)
+		if(Layeres[i] == PointTypes)
 		{ ++Result; }
 	}
 	END_TIMED_BLOCK;
@@ -259,51 +263,41 @@ NumPointsOfType(u8 *Statuses, uint iEnd, uint PointTypes)
 
 /// returns true if a point is added/updated (i.e. an action is needed)
 internal b32
-AddPointNoAction(state *State, v2 po, uint PointStatus, u8 *PriorStatus, uint *ipoOut)
+AddPointNoAction(state *State, v2 po, uint PointLayer, uint *ipoOut)
 {
 	BEGIN_TIMED_BLOCK;
 	/* gDebugV2 = po; */
 	b32 Result = 0;
-	uint ipo = FindPointAtPos(State, po, ~(uint)POINT_Free);
-	if(ipo) // point exists already
-	{
-		// NOTE: Use existing point, but add any new status (and confirm Extant)
-		if(PriorStatus) { *PriorStatus = POINTSTATUS(ipo); }
-		if((POINTSTATUS(ipo) & (PointStatus | POINT_Extant))) // with full status
-		{ goto end; } // no changes needed; exit
-		else // status needs updating
-		{ POINTSTATUS(ipo) |= PointStatus | POINT_Extant; }
-	}
-
-	else 
-	{ // add a new point
-		if(PriorStatus) { *PriorStatus = POINT_Free; }
+	uint ipo = FindPointAtPos(State, po, PointLayer);
+	if( ! ipo) // point does not exist on this layer already
+	{ // add a new point on this layer
 		// NOTE: Create new point
-		Push1(&State->maPoints);
-		Push1(&State->maPointStatus);
+		Push(&State->maPoints, po);
+		Push(&State->maPointLayer, PointLayer);
+		Push(&State->maPointStatus, 1);
 		ipo = ++State->iLastPoint;
-		POINTS(ipo) = po;
-		POINTSTATUS(ipo) |= PointStatus | POINT_Extant;
+		Assert(State->iLastPoint == Len(State->maPoints) - 1);
+		Result = 1;
 	}
 
-	Result = 1;
-end:
-	*ipoOut = ipo;
+	*ipoOut = ipo; // NOTE: updated regardless of whether the point is new
 	END_TIMED_BLOCK;
 	return Result;
 }
 
 /// returns index of point (may be new or existing)
 internal uint
-AddPoint(state *State, v2 po, uint PointStatus, u8 *PriorStatus, action_types PointType)
+AddPoint(state *State, v2 po, action_types PointType)
 {
 	uint Result = 0;
-	if(AddPointNoAction(State, po, PointStatus, PriorStatus, &Result))
+	uint iCurrentLayer = State->iCurrentLayer;
+	if(AddPointNoAction(State, po, iCurrentLayer, &Result))
 	{
-		action Action = {0};
-		Action.Kind = PointType;
-		Action.Point.ipo = Result;
-		Action.Point.po  = po;
+		action Action       = {0};
+		Action.Kind         = PointType;
+		Action.Point.iLayer = iCurrentLayer;
+		Action.Point.ipo    = Result;
+		Action.Point.po     = po;
 		AddAction(State, Action);
 	}
 	DebugReplace("AddPoint => %u\n", Result);
@@ -317,9 +311,10 @@ InvalidatePointOnly(state *State, uint ipo, action_types ActionType)
 {
 	action Action = {0};
 	Action.Kind = ActionType;
+	Action.Point.iLayer = State->iCurrentLayer;
 	Action.Point.ipo = ipo;
 	Action.Point.po  = POINTS(ipo);
-	POINTSTATUS(ipo) = POINT_Free;
+	POINTSTATUS(ipo) = 0;
 	return Action;
 }
 
@@ -480,11 +475,12 @@ CountShapeIntersects(v2 *Points, shape *Shapes, uint cShapes)
 }
 
 // TODO: don't auto-add intersections - only suggest when mouse is near
+// IDEA: do we want to add intersections between shapes on different layers?
 internal inline void
 AddIntersection(state *State, v2 po)
 {
 	// TODO (opt): only add if on screen
-	if( ! FindPointAtPos(State, po, ~(uint)POINT_Free))
+	if( ! FindPointAtPos(State, po, State->iCurrentLayer))
 	{ // given that there isn't a point already, add an intersection
 		Push(&State->maIntersects, po);
 	}
@@ -513,12 +509,12 @@ AddIntersectionsAsPoints(state *State, v2 po1, v2 po2, uint cIntersections)
 	BEGIN_TIMED_BLOCK;
 	if(cIntersections == 1)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0, -ACTION_Point);
+		AddPoint(State, po1, -ACTION_Point);
 	}
 	else if(cIntersections == 2)
 	{
-		AddPoint(State, po1, POINT_Intersection, 0, -ACTION_Point);
-		AddPoint(State, po2, POINT_Intersection, 0, -ACTION_Point);
+		AddPoint(State, po1, -ACTION_Point);
+		AddPoint(State, po2, -ACTION_Point);
 	}
 	else { Assert(!cIntersections); }
 	END_TIMED_BLOCK;
@@ -668,8 +664,8 @@ AddSegment(state *State, uint P1, uint P2)
 internal inline uint
 AddSegmentAtPoints(state *State, v2 po1, v2 po2)
 {
-	uint ipo1 = AddPoint(State, po1, POINT_Line, 0, -ACTION_Point);
-	uint ipo2 = AddPoint(State, po2, POINT_Line, 0, -ACTION_Point);
+	uint ipo1 = AddPoint(State, po1, -ACTION_Point);
+	uint ipo2 = AddPoint(State, po2, -ACTION_Point);
 	return AddSegment(State, ipo1, ipo2);
 }
 
@@ -688,8 +684,8 @@ AddCircle(state *State, uint ipoFocus, uint ipoRadius)
 internal inline uint
 AddCircleAtPoints(state *State, v2 poFocus, v2 poRadius)
 {
-	uint ipoFocus  = AddPoint(State, poFocus,  POINT_Focus,  0, -ACTION_Point);
-	uint ipoRadius = AddPoint(State, poRadius, POINT_Radius, 0, -ACTION_Point);
+	uint ipoFocus  = AddPoint(State, poFocus,  -ACTION_Point);
+	uint ipoRadius = AddPoint(State, poRadius, -ACTION_Point);
 	return AddCircle(State, ipoFocus, ipoRadius);
 }
 
@@ -709,9 +705,9 @@ AddArc(state *State, uint ipoFocus, uint ipoStart, uint ipoEnd)
 internal inline uint
 AddArcAtPoints(state *State, v2 poFocus, v2 poStart, v2 poEnd)
 {
-	uint ipoFocus = AddPoint(State, poFocus, POINT_Focus,  0, -ACTION_Point);
-	uint ipoStart = AddPoint(State, poStart, POINT_Radius, 0, -ACTION_Point);
-	uint ipoEnd   = AddPoint(State, poEnd,   POINT_Radius, 0, -ACTION_Point);
+	uint ipoFocus = AddPoint(State, poFocus, -ACTION_Point);
+	uint ipoStart = AddPoint(State, poStart, -ACTION_Point);
+	uint ipoEnd   = AddPoint(State, poEnd,   -ACTION_Point);
 	return AddArc(State, ipoFocus, ipoStart, ipoEnd);
 }
 
@@ -759,7 +755,7 @@ InvalidatePointIfUnusedAndAutomatic(state *State, uint ipo)
 {
 	b32 Used = 0;
 	b32 Result = 0;
-	if(POINTSTATUS(ipo) != POINT_Free)
+	if(POINTSTATUS(ipo))
 	{
 		for(uint iShape = State->iLastShape; iShape > 0; --iShape)
 		{
@@ -906,13 +902,14 @@ LogActionsToFile(state *State, char *FilePath)
 				ActionTypesStrings[USERIFY_ACTION(Action.Kind)],
 				IsUserAction(Action.Kind) ? "" : " (non-user)");
 
-		if(USERIFY_ACTION(Action.Kind) == ACTION_Move)
-		{
-			Action.Move.ipo[1] ?
-				fprintf(ActionFile, " -> [%u, %u]", Action.Move.ipo[0], Action.Move.ipo[1]) :
-				fprintf(ActionFile, " -> [%u]", Action.Move.ipo[0]);
-		}
-		else if(Action.Shape.i)
+		/* if(USERIFY_ACTION(Action.Kind) == ACTION_Move) */
+		/* { */
+		/* 	Action.Move.ipo[1] ? */
+		/* 		fprintf(ActionFile, " -> [%u, %u]", Action.Move.ipo[0], Action.Move.ipo[1]) : */
+		/* 		fprintf(ActionFile, " -> [%u]", Action.Move.ipo[0]); */
+		/* } */
+		/* else */
+			if(Action.Shape.i)
 		{ fprintf(ActionFile, " -> [%u]", Action.Shape.i); }
 
 		if(iAction == iCurrentAction)
@@ -930,7 +927,7 @@ LogActionsToFile(state *State, char *FilePath)
 		{
 			case ACTION_Basis:
 			{
-				basis B = DecompressBasis(Action.Basis);
+				basis B = Action.Basis;
 				fprintf(ActionFile,
 						"\tx-axis: (%.3f, %.3f)\n"
 						"\toffset: (%.3f, %.3f)\n"
@@ -987,9 +984,9 @@ LogActionsToFile(state *State, char *FilePath)
 
 			case ACTION_Move:
 			{
-				fprintf(ActionFile,
-						"\tDrag direction: (%f, %f)\n",
-						Action.Move.Dir.X, Action.Move.Dir.Y);
+/* 				fprintf(ActionFile, */
+/* 						"\tDrag direction: (%f, %f)\n", */
+/* 						Action.Move.Dir.X, Action.Move.Dir.Y); */
 			} break;
 
 			case ACTION_RemoveShape:
@@ -1029,7 +1026,7 @@ ApplyAction(state *State, action Action)
 		{ ResetNoAction(State, 0); } break;
 
 		case ACTION_RemovePt:
-		{ Pull(State->maPointStatus, Action.Point.ipo) = POINT_Free; } break;
+		{ Pull(State->maPointLayer, Action.Point.ipo) = 0; } break;
 
 		case ACTION_RemoveShape:
 		{
@@ -1039,7 +1036,7 @@ ApplyAction(state *State, action Action)
 		} break;
 
 		case ACTION_Basis:
-		{ SetBasis(State, DecompressBasis(Action.Basis)); } break;
+		{ SetBasis(State, Action.Basis); } break;
 
 		case ACTION_Segment:
 		case ACTION_Circle:
@@ -1056,15 +1053,15 @@ ApplyAction(state *State, action Action)
 		case ACTION_Point:
 		{
 			uint ipo = 0;
-			AddPointNoAction(State, Action.Point.po, POINT_Extant, 0, &ipo);
+			AddPointNoAction(State, Action.Point.po, Action.Point.iLayer, &ipo);
 			Assert(Action.Point.ipo == ipo);
 		} break;
 
 		case ACTION_Move:
 		{
-			POINTS(Action.Move.ipo[0])   = V2Add(POINTS(Action.Move.ipo[0]), Action.Move.Dir);
-			if(Action.Move.ipo[1])
-			{ POINTS(Action.Move.ipo[1]) = V2Add(POINTS(Action.Move.ipo[1]), Action.Move.Dir); }
+		/* 	POINTS(Action.Move.ipo[0])   = V2Add(POINTS(Action.Move.ipo[0]), Action.Move.Dir); */
+		/* 	if(Action.Move.ipo[1]) */
+		/* 	{ POINTS(Action.Move.ipo[1]) = V2Add(POINTS(Action.Move.ipo[1]), Action.Move.Dir); } */
 		} break;
 
 		default:

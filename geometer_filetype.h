@@ -200,12 +200,14 @@ typedef enum header_section
 {
 	//HEAD_Invalid = (u32)-1,
 	HEADER_SECTIONS
-	HEAD_Points     = HEAD_Points_v1,
-	HEAD_Shapes     = HEAD_Shapes_v1,
-	HEAD_Actions    = HEAD_Actions_v2,
-	HEAD_Basis      = HEAD_Basis_v2,
-	HEAD_Lengths    = HEAD_Lengths_v1,
-	HEAD_PointLayer = HEAD_PointLayer_v1,
+	HEAD_Count,
+	HEAD_Points      = HEAD_Points_v1,
+	HEAD_PointStatus = HEAD_PointStatus_v1,
+	HEAD_Shapes      = HEAD_Shapes_v1,
+	HEAD_Actions     = HEAD_Actions_v2,
+	HEAD_Basis       = HEAD_Basis_v2,
+	HEAD_Lengths     = HEAD_Lengths_v1,
+	HEAD_PointLayer  = HEAD_PointLayer_v1,
 } header_section;
 #undef HEADER_SECTION
 
