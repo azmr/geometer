@@ -1809,7 +1809,14 @@ case_mode_extend_arc:
 				(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
 			DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, WHITE);
 			RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, ThumbSize), iThumb);
-			DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY);
+			if(iThumb == State->iCurrentLayer)
+			{
+				DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, BLUE);
+				DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
+				                                 V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
+			}
+			else
+			{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY); }
 			ThumbBL.Y += ThumbSize.Y;
 		}
 
