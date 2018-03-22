@@ -11,6 +11,7 @@
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 #define BASIS_ANIMATION_SPEED 8.f
+#define MAX_LAYERS 5
 
 #include <types.h>
 /* #include "geometer_config.h" */
@@ -173,6 +174,7 @@ typedef struct state
 
 	basis Basis;
 	basis pBasis;
+	f32 tBasis;
 
 	uint iCurrentLayer;
 	uint iSaveAction;
@@ -184,7 +186,6 @@ typedef struct state
 	u64 FrameCount;
 	f32 dt;
 	f32 dtWork;
-	f32 tBasis;
 	f32 Length;
 	f32 pLength;
 	f32 LengthStores[26];
@@ -195,6 +196,8 @@ typedef struct state
 	// TODO: turn bools into flags?
 	b32 ShowHelpInfo;
 	b32 ArcSwapDirection;
+	b32 ShowLayerDrawer;
+	f32 tLayerDrawer;
 	input_mode InputMode;
 
 	// TODO: Consolidate to 2 points used as determined by flags

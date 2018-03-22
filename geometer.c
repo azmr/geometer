@@ -29,6 +29,7 @@
 // - Select shapes, then move that shape's points - extend/arc
 // 		- select via intersection with line allows weird angle selections...
 // - Add arc creation behaviour to dragging
+// - Regression test actions by comparing end state to version reconstructed by actions
 
 // UI that allows modification:
 //	- LMB-drag - quick seg
@@ -91,8 +92,10 @@
 #define C_PrevLength   Keyboard.Tab
 
 // TODO: ctrl-tab? mouse special buttons?
-#define C_LayerUp      Keyboard.Plus
-#define C_LayerDn      Keyboard.Minus
+#define C_LayerMod     Keyboard.Ctrl
+#define C_LayerRev     Keyboard.Shift
+#define C_LayerChange  Keyboard.Tab
+#define C_LayerDrawer  Keyboard.T
 /////////////////////////////////////////
 
 v2 gDebugV2;
@@ -550,7 +553,7 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 
 #define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 internal void
-RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, uint PointLayer)
+RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, uint PointLayer, f32 PtRadius)
 {
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
@@ -604,7 +607,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 	if(POINTSTATUS(ipo) && (! PointLayer || POINTLAYER(ipo) == PointLayer))
 	{ // draw on-screen points
 		v2 SSPoint = ToScreen(po);
-		DrawCircleFill(Buffer, SSPoint, 3.f, LIGHT_GREY);
+		DrawCircleFill(Buffer, SSPoint, PtRadius, LIGHT_GREY);
 	}
 
 	DEBUG_LIVE_if(Points_Numbering)
@@ -1046,7 +1049,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						}
 					}
 
-					uint dLayer = DEBUGPress(C_LayerUp) - DEBUGPress(C_LayerDn);
+					int dLayer = DEBUGPress(C_LayerChange)*(C_LayerMod.EndedDown - 2*C_LayerRev.EndedDown);
 
 					if((Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.Z) && !Keyboard.Shift.EndedDown) &&
 							(State->iCurrentAction > 0))
@@ -1100,12 +1103,17 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						State->InputMode = MODE_BoxSelect;
 					}
 					
-					else if(dLayer)
+					else if(C_LayerMod.EndedDown && DEBUGPress(C_LayerDrawer))
 					{
-						State->iCurrentLayer += dLayer;
+						State->tLayerDrawer = (f32)State->ShowLayerDrawer;
+						State->ShowLayerDrawer = ! State->ShowLayerDrawer;
 					}
 
-					if(State->iCurrentLayer == 0) { ++State->iCurrentLayer; }
+					else if(dLayer)
+					{ State->iCurrentLayer += dLayer; }
+
+					if     (State->iCurrentLayer == 0)         { ++State->iCurrentLayer; }
+					else if(State->iCurrentLayer > MAX_LAYERS) { --State->iCurrentLayer; }
 				} break;
 
 
@@ -1606,7 +1614,7 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre, 0);
+		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre, 0, 3.f);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
 			foreachf1(shape, Shape, *maShapesNearScreen)
@@ -1792,31 +1800,41 @@ case_mode_extend_arc:
 			{ DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE); }
 		}
 
+		// Animate layer drawer
+#define DRAWER_SLIDE_RATE 0.1f
+		f32 tLayerDrawer = State->tLayerDrawer;
+		if(State->ShowLayerDrawer && tLayerDrawer < 1.f)
+		{ tLayerDrawer += DRAWER_SLIDE_RATE; }
+		else if(! State->ShowLayerDrawer && tLayerDrawer > 0.f)
+		{ tLayerDrawer -= DRAWER_SLIDE_RATE; }
+		/* Clamp01(tLayerDrawer); */
+		State->tLayerDrawer = tLayerDrawer;
 		// Draw layer thumbnails
-
-
-		uint cThumbs = 5;
+		uint cThumbs = MAX_LAYERS;
 		f32 ThumbScreenFraction = 1.f/cThumbs;
 		basis ThumbBasis = Basis;
 		ThumbBasis.Zoom *= (f32)cThumbs;
-		v2 ThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
+		v2 TargetThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
+		v2 ThumbSize = { Lerp(0, tLayerDrawer, TargetThumbSize.X), TargetThumbSize.Y };
 		v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 0 };
 		// TODO (fix): sometimes clips before the edge of the thumbnail)
 		for(uint iThumb = 0; iThumb++ < cThumbs;)
 		{
-			v2 ThumbTR = V2Add(ThumbBL, ThumbSize);
+			v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y }; // V2Add(ThumbBL, ThumbSize);
 			image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, sizeof(u32), ThumbBL),
 				(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
-			DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, WHITE);
-			RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, ThumbSize), iThumb);
+			DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
+			RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
 			if(iThumb == State->iCurrentLayer)
 			{
 				DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, BLUE);
 				DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
 				                                 V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
+				DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
+				                                 V2(ThumbTR.X-2.f, ThumbTR.Y-2.f), BLUE);
 			}
 			else
-			{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, GREY); }
+			{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, LIGHT_GREY); }
 			ThumbBL.Y += ThumbSize.Y;
 		}
 
@@ -1878,7 +1896,9 @@ case_mode_extend_arc:
 			" Home           - return to centre\n"
 			" Backspace      - reset canvas drawing\n"
 			" Alt+Enter      - fullscreen\n"
-			" + / -          - up/down a layer\n"
+			" Ctrl+Tab       - up a layer\n"
+			" Ctrl+Shift+Tab - down a layer\n"
+			" Ctrl+T         - toggle layer thumbnails\n"
 			"\n"
 			"Length/radius manipulation\n"
 			"==========================\n"
