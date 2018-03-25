@@ -1,9 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "geometer.h"
 #include <fonts.c>
-#if INTERNAL
 #include "geometer_debug.c"
-#endif//INTERNAL
 
 // TODO:
 // =====
@@ -568,7 +566,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 		{
 			colour LayerColour = BLACK;
 			if(ShapeLayer != State->iCurrentLayer)
-			{ LayerColour = LIGHT_GREY; }
+			{ LayerColour = PreMultiplyColour(BLACK, 0.25f); }
 
 			switch(Shape.Kind)
 			{
@@ -677,6 +675,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		LOG("Invalid basis");
 		BASIS.XAxis.X = 1.f;
 		BASIS.XAxis.Y = 0.f;
+		BASIS.Zoom = BASIS_DEFAULT_ZOOM;
 		// TODO (UI): should I reset zoom here as well?
 	}
 
@@ -923,7 +922,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		if(DEBUGPress(C_CanvasHome))
 		{ // reset canvas position
 			NewBasis.Offset = ZeroV2;
-			NewBasis.Zoom   = 1.f;
+			NewBasis.Zoom   = BASIS_DEFAULT_ZOOM;
 			SetBasis(State, NewBasis);
 		}
 
@@ -1945,7 +1944,9 @@ case_mode_extend_arc:
 
 	DEBUG_LIVE_if(Debug_ShowInfo)
 	{ LOG("PRINT DEBUG");
+#if !SINGLE_EXECUTABLE
 		PrintDebugHierarchy(*ScreenBuffer, Input);
+#endif//!SINGLE_EXECUTABLE
 		DEBUG_LIVE_if(Debug_PrintMidFrameInfo)
 		{ DebugPrint(); }
 

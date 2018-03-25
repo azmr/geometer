@@ -1,4 +1,5 @@
 #ifndef GEOMETER_H
+#define BASIS_DEFAULT_ZOOM 0.1f
 #define BASIS State->Basis
 #define pBASIS State->pBasis
 #define POINTS(i)      Pull(State->maPoints, i)
