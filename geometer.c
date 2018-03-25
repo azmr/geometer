@@ -1,7 +1,9 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "geometer.h"
 #include <fonts.c>
+#if INTERNAL
 #include "geometer_debug.c"
+#endif//INTERNAL
 
 // TODO:
 // =====
@@ -903,6 +905,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 				}
 			}
 			if(IsSnapped == 0) { ipoSnap = 0; }
+			else if(! V2Equals(SnapMouseP, State->pSnapMouseP))
+			{ State->tSnapMouseP = 0.f; }
 		}
 
 		// TODO IMPORTANT (fix): stop unwanted clicks from registering. e.g. on open/save
@@ -1014,7 +1018,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		{ State->ShowHelpInfo = !State->ShowHelpInfo; }
 
 		else
-		{
+		{ // process normal input
 			// TODO (opt): jump straight to the right mode.
 			switch(State->InputMode)
 			{ // process input based on current mode
@@ -1102,7 +1106,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						// TODO (ui): reset to save point
 						/* else */
 						/* { Reset(State, State->iSaveAction); } */
-						
+
 						DebugClear();
 					}
 
@@ -1591,11 +1595,16 @@ case_mode_extend_arc:
 		}
 	}
 
+	if(State->tSnapMouseP < 1.f)
+	{ State->tSnapMouseP += State->dt*MOUSE_ANIMATION_SPEED; }
+	Clamp01(State->tSnapMouseP);
+	v2 AnimSnapMouseP = V2Lerp(State->pSnapMouseP, State->tSnapMouseP, SnapMouseP);
 	{ LOG("RENDER");
 	////////////////
 		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
 		// TODO: move up for other things
-		v2 SSSnapMouseP = ToScreen(SnapMouseP);
+		v2 SSSnapMouseP = ToScreen(AnimSnapMouseP);
+		DrawCrosshair(ScreenBuffer, SSSnapMouseP, 5.f, GREY);
 
 		/* if(State->InputMode == MODE_DragMove) */
 		/* { // offset dragged points and arc counterparts */
@@ -1810,42 +1819,42 @@ case_mode_extend_arc:
 			{ DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE); }
 		}
 
-		// Animate layer drawer
-#define DRAWER_SLIDE_RATE 0.1f
-		f32 tLayerDrawer = State->tLayerDrawer;
-		if(State->ShowLayerDrawer && tLayerDrawer < 1.f)
-		{ tLayerDrawer += DRAWER_SLIDE_RATE; }
-		else if(! State->ShowLayerDrawer && tLayerDrawer > 0.f)
-		{ tLayerDrawer -= DRAWER_SLIDE_RATE; }
-		/* Clamp01(tLayerDrawer); */
-		State->tLayerDrawer = tLayerDrawer;
-		// Draw layer thumbnails
-		uint cThumbs = MAX_LAYERS;
-		f32 ThumbScreenFraction = 1.f/cThumbs;
-		basis ThumbBasis = Basis;
-		ThumbBasis.Zoom *= (f32)cThumbs;
-		v2 TargetThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
-		v2 ThumbSize = { Lerp(0, tLayerDrawer, TargetThumbSize.X), TargetThumbSize.Y };
-		v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 0 };
-		// TODO (fix): sometimes clips before the edge of the thumbnail)
-		for(uint iThumb = 0; iThumb++ < cThumbs;)
-		{
-			v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y }; // V2Add(ThumbBL, ThumbSize);
-			image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, sizeof(u32), ThumbBL),
-				(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
-			DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
-			RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
-			if(iThumb == State->iCurrentLayer)
+		{ // Animate layer drawer
+			f32 tLayerDrawer = State->tLayerDrawer;
+			if(State->ShowLayerDrawer && tLayerDrawer < 1.f)
+			{ tLayerDrawer += State->dt*DRAWER_ANIMATION_SPEED; }
+			else if(! State->ShowLayerDrawer && tLayerDrawer > 0.f)
+			{ tLayerDrawer -= State->dt*DRAWER_ANIMATION_SPEED; }
+			Clamp01(tLayerDrawer);
+			State->tLayerDrawer = tLayerDrawer;
+			// Draw layer thumbnails
+			uint cThumbs = MAX_LAYERS;
+			f32 ThumbScreenFraction = 1.f/cThumbs;
+			basis ThumbBasis = Basis;
+			ThumbBasis.Zoom *= (f32)cThumbs;
+			v2 TargetThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
+			v2 ThumbSize = { Lerp(0, tLayerDrawer, TargetThumbSize.X), TargetThumbSize.Y };
+			v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 0 };
+			// TODO (fix): sometimes clips before the edge of the thumbnail)
+			for(uint iThumb = 0; iThumb++ < cThumbs;)
 			{
-				DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, BLUE);
-				DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
-				                                 V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
-				DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
-				                                 V2(ThumbTR.X-2.f, ThumbTR.Y-2.f), BLUE);
+				v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y }; // V2Add(ThumbBL, ThumbSize);
+				image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, sizeof(u32), ThumbBL),
+					(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
+				DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
+				RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
+				if(iThumb == State->iCurrentLayer)
+				{
+					DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, BLUE);
+					DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
+							V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
+					DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
+							V2(ThumbTR.X-2.f, ThumbTR.Y-2.f), BLUE);
+				}
+				else
+				{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, LIGHT_GREY); }
+				ThumbBL.Y += ThumbSize.Y;
 			}
-			else
-			{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, LIGHT_GREY); }
-			ThumbBL.Y += ThumbSize.Y;
 		}
 
 	}
@@ -1967,7 +1976,7 @@ case_mode_extend_arc:
 		}
 	}
 
-	State->pSnapMouseP = SnapMouseP;
+	State->pSnapMouseP = AnimSnapMouseP;
 
 	CLOSE_LOG();
 	END_TIMED_BLOCK;

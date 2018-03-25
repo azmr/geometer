@@ -11,6 +11,8 @@
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 #define BASIS_ANIMATION_SPEED 8.f
+#define MOUSE_ANIMATION_SPEED 30.f
+#define DRAWER_ANIMATION_SPEED 10.f
 #define MAX_LAYERS 5
 
 #include <types.h>
@@ -18,6 +20,7 @@
 // TODO: DEBUG_TYPE_MEMBERS
 #define DEBUG_TYPES \
 	DEBUG_TYPE(b32, "%d") \
+	DEBUG_TYPE(int, "%d") \
 	DEBUG_TYPE(char, "%c") \
 	DEBUG_TYPE(uint, "%u") \
 	DEBUG_TYPE(f32, "%ff") \
@@ -196,7 +199,7 @@ typedef struct state
 	// TODO: turn bools into flags?
 	b32 ShowHelpInfo;
 	b32 ArcSwapDirection;
-	b32 ShowLayerDrawer;
+	b32 ShowLayerDrawer; // somewhat redundant with t
 	f32 tLayerDrawer;
 	input_mode InputMode;
 
@@ -207,6 +210,7 @@ typedef struct state
 	v2 poSaved;
 	v2 PerpDir;
 	v2 pSnapMouseP; // TODO (opt): remove?
+	f32 tSnapMouseP;
 
 	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:
