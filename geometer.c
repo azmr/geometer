@@ -94,7 +94,7 @@
 // TODO: ctrl-tab? mouse special buttons?
 #define C_LayerMod     Keyboard.Ctrl
 #define C_LayerRev     Keyboard.Shift
-#define C_LayerChange  Keyboard.Tab
+#define C_LayerChange  Keyboard.Tab // TODO: change to 1?
 #define C_LayerDrawer  Keyboard.T
 /////////////////////////////////////////
 
@@ -1891,8 +1891,9 @@ case_mode_extend_arc:
 			"=========\n"
 			" RMB       - add point(s) to selection\n"
 			"   -> drag - box select\n"
-			" Alt + ^^^ - remove point(s) from selection\n"
+			" Alt+^^^   - remove point(s) from selection\n"
 			" Delete    - delete selected points (+shapes)\n"
+			" Ctrl+A    - select all on current layer\n"
 			"\n"
 			"Modifiers\n"
 			"=========\n"
