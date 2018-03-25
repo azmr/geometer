@@ -1597,7 +1597,7 @@ case_mode_extend_arc:
 
 	if(State->tSnapMouseP < 1.f)
 	{ State->tSnapMouseP += State->dt*MOUSE_ANIMATION_SPEED; }
-	Clamp01(State->tSnapMouseP);
+	State->tSnapMouseP = Clamp01(State->tSnapMouseP);
 	v2 AnimSnapMouseP = V2Lerp(State->pSnapMouseP, State->tSnapMouseP, SnapMouseP);
 	{ LOG("RENDER");
 	////////////////
@@ -1825,7 +1825,7 @@ case_mode_extend_arc:
 			{ tLayerDrawer += State->dt*DRAWER_ANIMATION_SPEED; }
 			else if(! State->ShowLayerDrawer && tLayerDrawer > 0.f)
 			{ tLayerDrawer -= State->dt*DRAWER_ANIMATION_SPEED; }
-			Clamp01(tLayerDrawer);
+			tLayerDrawer = Clamp01(tLayerDrawer);
 			State->tLayerDrawer = tLayerDrawer;
 			// Draw layer thumbnails
 			uint cThumbs = MAX_LAYERS;
