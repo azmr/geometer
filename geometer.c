@@ -559,7 +559,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 {
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
-	foreachf1(shape, Shape, maShapesNearScreen)
+	foreachf(shape, Shape, maShapesNearScreen)
 	{ // DRAW SHAPES
 
 		uint ShapeLayer = POINTLAYER(Shape.P[0]);
@@ -1636,7 +1636,7 @@ case_mode_extend_arc:
 		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre, 0, 3.f);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
-			foreachf1(shape, Shape, *maShapesNearScreen)
+			foreachf(shape, Shape, *maShapesNearScreen)
 			{
 				v2 Pts[ArrayCount(Shape.P)] = {0};
 				for(uint i = ArrayCount(Pts); i--;) { Pts[i] = ToScreen(POINTS(Shape.P[i])); }
