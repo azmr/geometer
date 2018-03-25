@@ -1074,6 +1074,16 @@ UPDATE_AND_RENDER(UpdateAndRender)
 						State->InputMode = MODE_SetBasis;
 					}
 
+					else if(Keyboard.Ctrl.EndedDown && DEBUGPress(Keyboard.A))
+					{ // select all points on current layer
+						State->maSelectedPoints.Used = 0;
+						foreachf1(uint, PtLayer, State->maPointLayer)
+							if(PtLayer == State->iCurrentLayer && POINTSTATUS(iPtLayer))
+							{ Push(&State->maSelectedPoints, iPtLayer); }
+						if(Len(State->maSelectedPoints))
+						{ State->InputMode = MODE_Selected; }
+					}
+
 					else if(DEBUGClick(C_StartShape))
 					{ // start drawing arc
 						// NOTE: Starting a shape, save the first point
