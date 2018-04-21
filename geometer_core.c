@@ -1,5 +1,59 @@
-internal void AddAction(state *State, action Action);
 internal void CountActionPointsShapes(state *State, uint iActionLow, uint iActionHigh, uint *cPointsOut, uint *cShapesOut);
+///////////////////////////////////////////////////////////////////////////////
+//  ACTIONS p1  ///////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////
+
+internal void
+AddAction(state *State, action Action)
+{
+	++State->iCurrentAction;
+	// NOTE: prevent redoing to future history
+	State->maActions.Used = State->iCurrentAction * sizeof(action);
+	Push(&State->maActions, Action);
+	State->iLastAction = State->iCurrentAction;
+#if INTERNAL && DEBUG_LOG_ACTIONS
+	LogActionsToFile(State, "ActionLog.txt");
+#endif
+}
+
+internal inline action
+ActionReset(u32 i)
+{
+	action Result = { ACTION_Reset };
+	Result.Reset.i = i;
+	return Result;
+}
+
+internal inline action
+ActionShape(u32 i, /* u32 iLayer,? */ shape Shape)
+{
+	action Result     = { Shape.Kind };
+	Result.Shape.i    = i;
+	Result.Shape.P[0] = Shape.P[0];
+	Result.Shape.P[1] = Shape.P[1];
+	Result.Shape.P[2] = Shape.P[2];
+	return Result;
+}
+
+internal inline action
+ActionPoint(u32 iLayer, u32 i, v2 po, u32 PointType)
+{
+	action Result       = { PointType };
+	Result.Point.iLayer = iLayer;
+	Result.Point.ipo    = i;
+	Result.Point.po     = po;
+	return Result;
+}
+
+internal inline action
+ActionBasis(/* u32 iLayer, */ basis Basis)
+{
+	action Result = { ACTION_Basis };
+	Result.Basis = Basis;
+	return Result;
+}
+
+
 
 internal void
 ResetNoAction(state *State, uint iAction)
@@ -36,9 +90,7 @@ internal void
 Reset(state *State, uint iAction)
 {
 	ResetNoAction(State, iAction);
-	action Action = {0};
-	Action.Kind = ACTION_Reset;
-	Action.Reset.i = iAction;
+	action Action = ActionReset(iAction);
 	AddAction(State, Action);
 }
 
@@ -293,11 +345,7 @@ AddPoint(state *State, v2 po, action_types PointType)
 	uint iCurrentLayer = State->iCurrentLayer;
 	if(AddPointNoAction(State, po, iCurrentLayer, &Result))
 	{
-		action Action       = {0};
-		Action.Kind         = PointType;
-		Action.Point.iLayer = iCurrentLayer;
-		Action.Point.ipo    = Result;
-		Action.Point.po     = po;
+		action Action = ActionPoint(iCurrentLayer, Result, po, PointType);
 		AddAction(State, Action);
 	}
 	DebugReplace("AddPoint => %u\n", Result);
@@ -309,11 +357,7 @@ internal inline void InvalidateShapesAtPoint(state *State, uint ipo);
 internal inline action
 InvalidatePointOnly(state *State, uint ipo, action_types ActionType)
 {
-	action Action = {0};
-	Action.Kind = ActionType;
-	Action.Point.iLayer = State->iCurrentLayer;
-	Action.Point.ipo = ipo;
-	Action.Point.po  = POINTS(ipo);
+	action Action = ActionPoint(State->iCurrentLayer, ipo, POINTS(ipo), ActionType);
 	POINTSTATUS(ipo) = 0;
 	return Action;
 }
@@ -639,12 +683,7 @@ AddShape(state *State, shape Shape)
 	uint Result = 0;
 	if(AddShapeNoAction(State, Shape, &Result))
 	{
-		action Action = {0};
-		Action.Kind = Shape.Kind;
-		Action.Shape.i = Result;
-		Action.Shape.P[0] = Shape.P[0];
-		Action.Shape.P[1] = Shape.P[1];
-		Action.Shape.P[2] = Shape.P[2];
+		action Action = ActionShape(Result, Shape);
 		AddAction(State, Action);
 	}
 	return Result;
@@ -877,7 +916,7 @@ AABBFromShape(v2 *Points, shape Shape)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//  ACTIONS  //////////////////////////////////////////////////////////////////
+//  ACTIONS p2  ///////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 #if INTERNAL && DEBUG_LOG_ACTIONS
@@ -1003,19 +1042,6 @@ LogActionsToFile(state *State, char *FilePath)
 	fclose(ActionFile);
 }
 #endif//INTERNAL && DEBUG_LOG_ACTIONS
-
-internal void
-AddAction(state *State, action Action)
-{
-	++State->iCurrentAction;
-	// NOTE: prevent redoing to future history
-	State->maActions.Used = State->iCurrentAction * sizeof(action);
-	Push(&State->maActions, Action);
-	State->iLastAction = State->iCurrentAction;
-#if INTERNAL && DEBUG_LOG_ACTIONS
-	LogActionsToFile(State, "ActionLog.txt");
-#endif
-}
 
 internal inline void
 ApplyAction(state *State, action Action)
