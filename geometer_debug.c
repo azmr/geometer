@@ -1,32 +1,8 @@
-#if !SINGLE_EXECUTABLE
 internal void PrintDebugHierarchy(image_buffer ScreenBuffer, input Input);
 
 #if !defined(GEOMETER_DEBUG_H) && defined(GEOMETER_DEBUG_IMPLEMENTATION)
-#include "blit32.h"
-#include "blit16.h"
-
-typedef struct debug_print_props
-{
-	uint *Buffer;
-	int RowStride;
-	uint X, Y;
-	int Scale;
-	uint Col;
-} debug_print_props;
-
-internal inline void
-PrintIndented(debug_print_props *Props, int Indent, char *String)
-{
-	debug_print_props LProps = *Props;
-	LProps.X += Indent * 4 * (blit16_WIDTH + 1) * LProps.Scale;
-
-#if 1
-	blit16_String(LProps.Buffer, LProps.RowStride, String, LProps.X, LProps.Y, LProps.Scale, LProps.Col);
-#else
-	blit16_StringLine(LProps.Buffer, LProps.RowStride, -1, String, LProps.X, LProps.Y, LProps.Scale, LProps.Col);
-#endif
-	Props->Y -= LProps.Scale * blit16_ROW_ADVANCE;
-}
+#include "blit-fonts/blit32.h"
+#include "blit-fonts/blit16.h"
 
 u32 DebugRecordsCount;
 // anything need returning?
@@ -61,8 +37,15 @@ PrintDebugHierarchy(image_buffer ScreenBuffer, input Input)
 	int Indent = 0;
 	b32 RequestRewrite = 0;
 	int iNum = 0;
-	debug_print_props Props = { ScreenBuffer.Memory, -ScreenBuffer.Width, 5, ScreenBuffer.Height, 2, PixelColour(BLACK) };
-#define DEBUG_PRINT(...) ssnprintf(DebugVarBuffer, sizeof(DebugVarBuffer), __VA_ARGS__); PrintIndented(&Props, Indent, DebugVarBuffer);
+	Blit16.Props = (blit_props){ ScreenBuffer.Memory, PixelColour(BLACK), 2, -ScreenBuffer.Width, ScreenBuffer.Height, blit_Wrap };
+	/* int StringX = (int)Mouse.P.X; */
+	/* int StringY = (int)Mouse.P.Y; */
+	int StringX = 5;
+	int StringY = ScreenBuffer.Height - Blit16.Props.Scale;
+	blit16_Scale(&Blit16, Blit16.Props.Scale);
+	/* blit16_String(250, StringY, "\nHello\nWorld\nLine\nBreak\nTest"); */
+#define DEBUG_PRINT(...) ssnprintf(DebugVarBuffer, sizeof(DebugVarBuffer), __VA_ARGS__); \
+	                     StringY -= Blit16.RowAdvance * blit16_Text(StringX + Blit16.Advance * Indent, StringY, DebugVarBuffer)
 	DEBUG_PRINT(DebugLiveVar_IsCompiling ? "COMPILING "COMPILE_OPT_LEVEL :"");
 
 	for(debug_hierarchy_el *HVar = DebugHierarchy_Next(DebugHierarchy);
@@ -70,7 +53,7 @@ PrintDebugHierarchy(image_buffer ScreenBuffer, input Input)
 		HVar = DebugHierarchy_Next(HVar))
 	{ // print and interact with variables in hierarchy
 		Assert(HVar->Parent != HVar->NextSibling);
-		Indent = DebugHierarchy_Level(*HVar)-1;
+		Indent = 4 * DebugHierarchy_Level(*HVar);
 
 		switch(HVar->Kind)
 		{
@@ -175,7 +158,7 @@ PrintDebugHierarchy(image_buffer ScreenBuffer, input Input)
 			{
 				debug_record *Counter = HVar->Data;
 				debug_record_hits_cycles HC = DebugRecord_HitCycleCount(Counter);
-				if(HC.HitCount) { DEBUG_PRINT("%24s(%4d): %'12ucy %'8uh %'10ucy/h\n",
+				if(HC.HitCount) { DEBUG_PRINT("%24s(%4d): %'12ucy %'8uh %'10ucy/h",
 								  HVar->Name,
 								  Counter->LineNumber,
 								  HC.CycleCount,
@@ -232,10 +215,13 @@ DECLARE_DEBUG_FUNCTION
 			}
 		}
 		DEBUG_WATCHED_INIT(uint, Debug, Scale, 3);
+		blit_props Props = Blit16.Props;
+		Props.Scale = Scale;
+		Props.Value = PixelColour(GREY);
 		switch(Scale % 2)
 		{
-			case 0: blit16_String(Buffer->Memory, -Buffer->Width, DebugTextBuffer, 300, Buffer->Height - Scale * blit16_HEIGHT, Scale/2, PixelColour(GREY)); break;
-			case 1: blit32_String(Buffer->Memory, -Buffer->Width, DebugTextBuffer, 300, Buffer->Height - Scale * blit32_HEIGHT, Scale/2, PixelColour(GREY)); break;
+			case 0: blit16_TextProps(Props, 300, Buffer->Height - Scale * blit16_HEIGHT, DebugTextBuffer); break;
+			/* case 1: blit32_StringProps(Props, 300, Buffer->Height - Scale * blit32_HEIGHT, DebugTextBuffer); break; */
 		}
 	}
 }
@@ -243,5 +229,3 @@ DEBUG_HIERARCHY_DECLARATION;
 DEBUG_WATCH_DECLARATION;
 #define GEOMETER_DEBUG_H
 #endif
-
-#endif //!SINGLE_EXECUTABLE
