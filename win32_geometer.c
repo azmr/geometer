@@ -14,6 +14,7 @@
 #include <live_edit/win32_live_edit.h>
 #include "svg.h"
 #include <opengl/opengl.h>
+#include <opengl/opengl_primitives.h>
 /* #include "geometer_templibs.h" */
 
 #if INTERNAL
@@ -22,6 +23,7 @@
 
 global_variable b32 GlobalRunning;
 global_variable b32 GlobalPause;
+global_variable f32 GlobalStroke;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
 #include <win32_gfx.h>
 #include <win32_input.h>
@@ -774,42 +776,71 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
-#pragma warning(disable: 4100)  // unreferenced formal parameter
 internal void
 OpenGLCircleLine(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLCircleLine(Centre, Radius);
 }
 
 internal void
 OpenGLCircleFill(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLCircleFill(Centre, Radius);
 }
 
 internal void
 OpenGLArcLine(image_buffer Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	// TODO: are these absolute points or offsets?
+	GLArcCap(Centre, Radius, A, B);
 }
 
 internal void
 OpenGLLine(image_buffer Buffer, v2 Point1, v2 Point2, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLLine(Point1, Point2);
 }
 
 internal void
 OpenGLCrosshair(image_buffer Buffer, v2 CentrePos, f32 Radius, colour Colour)
 {
+	(void)Buffer;
+	v2 X1 = {1.f, 0.f};
+	v2 Y1 = {0.f, 1.f};
+	v2 XRad = {Radius, 0.f};
+	v2 YRad = {0.f, Radius};
+	GLStrokeWidth(1.f);
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLLine(V2Sub(CentrePos, X1), V2Sub(CentrePos, XRad));
+	GLLine(V2Add(CentrePos, X1), V2Add(CentrePos, XRad));
+	GLLine(V2Add(CentrePos, Y1), V2Add(CentrePos, YRad));
+	GLLine(V2Sub(CentrePos, Y1), V2Sub(CentrePos, YRad));
+	GLStrokeWidth(GlobalStroke);
 }
 
 internal void
 OpenGLRectangleLines(image_buffer Buffer, v2 vMin, v2 vMax, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLRectMinMaxLine(vMin, vMax);
 }
 
 internal void
 OpenGLRectangleFilled(image_buffer Buffer, v2 vMin, v2 vMax, colour Colour)
 {
+	(void)Buffer;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLRectMinMaxFill(vMin, vMax);
 }
-#pragma warning(default: 4100)  // unreferenced formal parameter
 
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
@@ -894,7 +925,10 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		Draw.Crosshair   = OpenGLCrosshair;
 		Draw.RectLine    = OpenGLRectangleLines;
 		Draw.RectFill    = OpenGLRectangleFilled;
-		/* glViewport(0, 0, 300, 400); */
+
+		GlobalStroke = 2.5f;
+		GLStrokeWidth(GlobalStroke);
+		GLEnablePrimitiveSmoothing();
 	}
 
 	else
@@ -960,10 +994,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		}
 
 		// TODO: move to open/save?
-		int TitleOffset = ssnprintf(TitleText, sizeof(TitleText), "%s - %s %s %s", "Geometer",
+		int TitleOffset = ssnprintf(TitleText, sizeof(TitleText),
+				"%s - %s %s"
+				" %s"
+				, "Geometer",
 				FileHasName(State) ? State->FilePath : "[New File]",
-				RenderingViaHardware ? "[Hardware]" : "[Software]",
-				IsModified(State) ? "[Modified]" : "");
+				IsModified(State) ? "[Modified]" : "",
+				RenderingViaHardware ? "[Hardware]" : "[Software]");
 		TitleOffset;
 #if 0 // probe frame time without drawing
 		ssnprintf(TitleText + TitleOffset, sizeof(TitleText) - TitleOffset,
@@ -977,11 +1014,11 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		// TODO: only fill buffer inside client
 		int ClientWidth = 0, ClientHeight = 0;
 		Win32ClientWidthHeight(Window.Handle, &ClientWidth, &ClientHeight);
-		Win32Buffer.Width = ClientWidth;
-		Win32Buffer.Height = ClientHeight;
-		Win32Buffer.Info.bmiHeader.biWidth = ClientWidth;
+		Win32Buffer.Width                   = ClientWidth;
+		Win32Buffer.Height                  = ClientHeight;
+		Win32Buffer.Info.bmiHeader.biWidth  = ClientWidth;
 		Win32Buffer.Info.bmiHeader.biHeight = ClientHeight;
-		Win32Buffer.Pitch = ClientWidth * BytesPerPixel;
+		Win32Buffer.Pitch                   = ClientWidth * BytesPerPixel;
 
 		Draw.Buffer = *(image_buffer *) &Win32Buffer;
 
@@ -1006,7 +1043,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			Input.New->Mouse.P.Y += 134;
 		}
 
-		/* TEMP Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window); */
 
 /* #if DEBUGVAR_LazyRender */
 #if 0
@@ -1018,7 +1054,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		{
 #if !SINGLE_EXECUTABLE
 			Win32ReloadLibOnRecompile(&Lib); 
-			update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
+			update_and_render *UpdateAndRender = (update_and_render *)Lib.Functions[0].Function;
 			Assert(UpdateAndRender && "loaded library function.");
 #endif // !SINGLE_EXECUTABLE
 
@@ -1052,7 +1088,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 						if(PlatRequest.NewWindow)
 						{
 							LOG("OPEN NEW GEOMETER WINDOW");
-							Assert(Win32OpenGeometerWindow(OpenPath));
+							DoAssert(Win32OpenGeometerWindow(OpenPath));
 							free(OpenPath); // allocc'd above
 						}
 						else if(Win32ConfirmFileClose(State, Window.Handle))
@@ -1069,7 +1105,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 					if(PlatRequest.NewWindow)
 					{
 						LOG("OPEN NEW GEOMETER WINDOW");
-						Assert(Win32OpenGeometerWindow(""));
+						DoAssert(Win32OpenGeometerWindow(""));
 					}
 					else if(Win32ConfirmFileClose(State, Window.Handle))
 					{
@@ -1161,18 +1197,29 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		if(Draw.Kind == DRAW_Hardware)
 		{
 			RenderingViaHardware = 1;
-			glColor3f(0.0f,0.0f,1.0f); //blue color
-			glClearColor(0.f, 1.f, 1.f, 1.f);
+			f32 W = (f32)Win32Buffer.Width, H = (f32)Win32Buffer.Height;
+			glViewport(0, 0, Win32Buffer.Width, Win32Buffer.Height);
+			glMatrixMode(GL_PROJECTION);
+			glLoadIdentity();
+			glOrtho(0.f, W,
+					0.f, H,
+					0.0, 1.0);
+			glMatrixMode(GL_MODELVIEW);
+
+			glClearColor(1.f, 1.f, 1.f, 1.f);
 			glClear(GL_COLOR_BUFFER_BIT);
 
-			glBegin(GL_QUADS);//start drawing a line loop
-				glVertex3f(-1.0f,0.0f,0.0f);//left of window
-				glVertex3f(0.0f,-1.0f,0.0f);//bottom of window
-				glVertex3f(1.0f,0.0f,0.0f);//right of window
-				glVertex3f(0.0f,1.0f,0.0f);//top of window
-			glEnd();//end drawing of line loop
+			Draw.CircleLine(Draw.Buffer, V2(W/2.f, H/2.f), 50.f, BLUE);
+			Draw.ArcLine(Draw.Buffer, V2(W/2.f, H/2.f), 80.f, V2(0.f, 1.f), V2(1.f, 0.f), BLUE);
+
 			SwapBuffers(Window.Context);
 		}
+
+		else
+		{
+			Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+		}
+
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);
 		State->dtWork = FrameTimer.SecondsElapsedForWork;
