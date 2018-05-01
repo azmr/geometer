@@ -844,6 +844,18 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	win32_image_buffer Win32Buffer = {0};
 	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
 
+	draw_buffer Draw = {0};
+	Draw.Buffer      = *(image_buffer *) &Win32Buffer;
+	{
+		Draw.Kind = DRAW_Software;
+		Draw.CircleLine  = CircleLine;
+		Draw.CircleFill  = DrawCircleFill;
+		Draw.ArcLine     = ArcLine;
+		Draw.Line        = DEBUGDrawLine;
+		Draw.Crosshair   = DrawCrosshair;
+		Draw.RectLine    = DrawRectangleLines;
+		Draw.RectFill    = DrawRectangleFilled;
+	}
 	// ASSETS
 #if 1
 	if(!InitLoadedFont(&State->DefaultFont, BitstreamBinary))
@@ -919,6 +931,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		Win32Buffer.Info.bmiHeader.biHeight = ClientHeight;
 		Win32Buffer.Pitch = ClientWidth * BytesPerPixel;
 
+		Draw.Buffer = *(image_buffer *) &Win32Buffer;
 		UpdateKeyboard(Input);
 
 		// TODO: keep position of canvas static during resizing

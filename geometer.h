@@ -8,7 +8,7 @@
 #define POINTLAYER(i)  Pull(State->maPointLayer, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
-#define DEBUG_LOG_ACTIONS 1
+#define DEBUG_LOG_ACTIONS 0
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 #define BASIS_ANIMATION_SPEED 8.f
@@ -34,18 +34,6 @@
 	DEBUG_HIERARCHY_KIND(debug_variable, Observed) \
 	DEBUG_HIERARCHY_KIND(debug_record, Profiling)
 #include <live_edit/hierarchy.h>
-
-typedef struct debug_text
-{
-#define DEBUG_TEXT_SIZE 16384
-	uint Length;
-	char Text[DEBUG_TEXT_SIZE];
-} debug_text;
-static debug_text DebugText;
-#define DebugAdd(txt, ...) DebugText.Length += ssnprintf(DebugText.Text, DEBUG_TEXT_SIZE, "%s"txt, DebugText.Text, __VA_ARGS__)
-#define DebugClear() if(DebugText.Length > DEBUG_TEXT_SIZE) DebugText.Length = DEBUG_TEXT_SIZE;\
-					 for(unsigned int i = 0; i < DebugText.Length; ++i)  DebugText.Text[i] = 0
-#define DebugReplace(txt, ...) DebugClear(); DebugAdd(txt, __VA_ARGS__)
 
 // minimal prefix to prevent collision with stdio
 #define STB_SPRINTF_DECORATE(fn) s##fn
@@ -148,17 +136,42 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
+typedef void line_fn  (image_buffer Buffer, v2 Point1, v2 Point2, colour Colour);
+typedef void circle_fn(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour);
+typedef void marker_fn(image_buffer Buffer, v2 CentrePos, f32 Radius, colour Colour);
+typedef void arc_fn   (image_buffer Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour);
+typedef void rect_fn  (image_buffer Buffer, v2 vMin, v2 vMax, colour Colour);
+
+typedef struct draw_buffer
+{
+	enum {
+		DRAW_Software,
+		DRAW_Hardware,
+	} Kind;
+	// TODO: unions etc
+	image_buffer Buffer;
+
+	circle_fn *CircleLine;
+	circle_fn *CircleFill;
+	arc_fn    *ArcLine;
+	line_fn   *Line;
+	marker_fn *Crosshair;
+	rect_fn   *RectLine;
+	rect_fn   *RectFill;
+	// TODO: String
+} draw_buffer;
+
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
 typedef struct debug
 {
-	image_buffer *Buffer;
+	image_buffer Buffer;
 	drawstring *Print;
 	font Font;
 	v2 P;
 	f32 FontSize;
 } debug;
 global_variable debug Debug;
-#define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
+#define DebugPrint() Debug.Print(&Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
@@ -220,7 +233,7 @@ typedef struct state
 
 #include "geometer_core.c"
 
-#define UPDATE_AND_RENDER(name) platform_request name(image_buffer *ScreenBuffer, memory *Memory, input Input)
+#define UPDATE_AND_RENDER(name) platform_request name(draw_buffer *Draw, memory *Memory, input Input)
 
 DECLARE_DEBUG_FUNCTION;
 

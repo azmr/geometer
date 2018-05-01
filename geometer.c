@@ -102,46 +102,46 @@ v2 gDebugV2;
 v2 gDebugPoint;
 
 internal inline void
-DrawClosestPtOnSegment(image_buffer *ScreenBuffer, v2 po, v2 lipoA, v2 lipoB)
+DrawClosestPtOnSegment(draw_buffer *Draw, v2 po, v2 lipoA, v2 lipoB)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnSegment(po, lipoA, V2Sub(lipoB, lipoA));
-	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
+	Draw->Crosshair(Draw->Buffer, po1, 5.f, RED);
 	END_TIMED_BLOCK;
 }
 
 internal inline void
-DrawClosestPtOnCircle(image_buffer *ScreenBuffer, v2 po, v2 poFocus, f32 Radius)
+DrawClosestPtOnCircle(draw_buffer *Draw, v2 po, v2 poFocus, f32 Radius)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnCircle(po, poFocus, Radius);
-	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
+	Draw->Crosshair(Draw->Buffer, po1, 5.f, RED);
 	END_TIMED_BLOCK;
 }
 
 internal inline void
-DrawClosestPtOnArc(image_buffer *ScreenBuffer, v2 po, v2 poFocus, v2 poStart, v2 poEnd)
+DrawClosestPtOnArc(draw_buffer *Draw, v2 po, v2 poFocus, v2 poStart, v2 poEnd)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnArc(po, poFocus, poStart, poEnd);
-	DrawCrosshair(ScreenBuffer, po1, 5.f, RED);
+	Draw->Crosshair(Draw->Buffer, po1, 5.f, RED);
 	END_TIMED_BLOCK;
 }
 
 internal inline void
-DrawActivePoint(image_buffer *ScreenBuffer, v2 po, colour Col)
+DrawActivePoint(draw_buffer *Draw, v2 po, colour Col)
 {
 	BEGIN_TIMED_BLOCK;
-	DrawCircleFill(ScreenBuffer, po, 3.f, Col);
-	CircleLine(ScreenBuffer, po, 5.f, Col);
+	Draw->CircleFill(Draw->Buffer, po, 3.f, Col);
+	Draw->CircleLine(Draw->Buffer, po, 5.f, Col);
 	END_TIMED_BLOCK;
 }
 
 
 internal inline void
-DrawArcFromPoints(image_buffer *Buffer, v2 Centre, v2 A, v2 B, colour Colour)
+DrawArcFromPoints(draw_buffer *Draw, v2 Centre, v2 A, v2 B, colour Colour)
 {
-	ArcLine(Buffer, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
+	Draw->ArcLine(Draw->Buffer, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
 }
 
 internal inline b32
@@ -469,7 +469,7 @@ ChooseCirclePoint(state *State, v2 MouseP, v2 SnapMouseP, b32 ShapeLock)
 }
 
 internal void
-DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
+DrawAABB(draw_buffer *Draw, aabb AABB, colour Col)
 {
 	// TODO (fix): missing pixel in bottom right
 	v2 TopLeft     = V2(AABB.MinX, AABB.MaxY);
@@ -477,10 +477,10 @@ DrawAABB(image_buffer *ScreenBuffer, aabb AABB, colour Col)
 	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
 	v2 BottomRight = V2(AABB.MaxX, AABB.MinY);
 
-	DEBUGDrawLine(ScreenBuffer, TopLeft,    TopRight,    Col);
-	DEBUGDrawLine(ScreenBuffer, TopLeft,    BottomLeft,  Col);
-	DEBUGDrawLine(ScreenBuffer, TopRight,   BottomRight, Col);
-	DEBUGDrawLine(ScreenBuffer, BottomLeft, BottomRight, Col);
+	Draw->Line(Draw->Buffer, TopLeft,    TopRight,    Col);
+	Draw->Line(Draw->Buffer, TopLeft,    BottomLeft,  Col);
+	Draw->Line(Draw->Buffer, TopRight,   BottomRight, Col);
+	Draw->Line(Draw->Buffer, BottomLeft, BottomRight, Col);
 }
 
 internal inline aabb
@@ -553,7 +553,7 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 
 #define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 internal void
-RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, uint PointLayer, f32 PtRadius)
+RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 ScreenCentre, uint PointLayer, f32 PtRadius)
 {
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
@@ -574,7 +574,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 					{
 						v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
 						v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
-						DEBUGDrawLine(Buffer, poA, poB, LayerColour);
+						Draw.Line(Draw.Buffer, poA, poB, LayerColour);
 					} break;
 
 				case SHAPE_Circle:
@@ -583,7 +583,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 						v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
 						f32 Radius = Dist(poFocus, poRadius);
 						Assert(Radius);
-						CircleLine(Buffer, poFocus, Radius, LayerColour);
+						Draw.CircleLine(Draw.Buffer, poFocus, Radius, LayerColour);
 					} break;
 
 				case SHAPE_Arc:
@@ -591,7 +591,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 						v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
 						v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
 						v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
-						DrawArcFromPoints(Buffer, poFocus, poStart, poEnd, LayerColour); 
+						DrawArcFromPoints(&Draw, poFocus, poStart, poEnd, LayerColour); 
 					} break;
 
 				default:
@@ -607,7 +607,7 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 	if(POINTSTATUS(ipo) && (! PointLayer || POINTLAYER(ipo) == PointLayer))
 	{ // draw on-screen points
 		v2 SSPoint = ToScreen(po);
-		DrawCircleFill(Buffer, SSPoint, PtRadius, LIGHT_GREY);
+		Draw.CircleFill(Draw.Buffer, SSPoint, PtRadius, LIGHT_GREY);
 	}
 
 	DEBUG_LIVE_if(Points_Numbering)
@@ -616,20 +616,20 @@ RenderDrawing(image_buffer *Buffer, state *State, basis Basis, v2 ScreenCentre, 
 		{
 			v2 SSPoint = ToScreen(po);
 			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", ipo, POINTLAYER(ipo));
-			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
+			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSPoint.X + 5.f, SSPoint.Y - 5.f, 0, BLACK);
 		}
 		foreachf(v2, P, State->maIntersects)
 		{
 			v2 SSP = ToScreen(P);
 			ssnprintf(PointIndex, sizeof(PointIndex), "%u", iP);
-			DrawCrosshair(Buffer, SSP, 6.f, GREEN);
-			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, GREEN);
+			Draw.Crosshair(Draw.Buffer, SSP, 6.f, GREEN);
+			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, GREEN);
 		}
 		foreachf(shape, Shape, State->maShapes)
 		{
 			v2 SSP = ToScreen(POINTS(Shape.P[2]));
 			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", Shape.P[2], POINTLAYER(Shape.P[2]));
-			DrawString(Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
+			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
 		}
 	}
 }
@@ -644,8 +644,8 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	Origin.X = 0;
 	Origin.Y = 0;
 	v2 ScreenSize;
-	ScreenSize.X = (f32)ScreenBuffer->Width;
-	ScreenSize.Y = (f32)ScreenBuffer->Height;
+	ScreenSize.X = (f32)Draw->Buffer.Width;
+	ScreenSize.Y = (f32)Draw->Buffer.Height;
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
 	platform_request File = {0};
 
@@ -662,7 +662,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		Memory->IsInitialized = 1;
 	}
 	{ // DEBUG
-		Debug.Buffer = ScreenBuffer;
+		Debug.Buffer = Draw->Buffer;
 		Debug.Print = DrawString;
 		Debug.Font = State->DefaultFont;
 		Debug.FontSize = 11.f;
@@ -681,9 +681,9 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	// Clear BG
 	BEGIN_NAMED_TIMED_BLOCK(ClearBG);
-	memset(ScreenBuffer->Memory, 0xFF, ScreenBuffer->Width * ScreenBuffer->Height * BytesPerPixel);
+	memset(Draw->Buffer.Memory, 0xFF, Draw->Buffer.Width * Draw->Buffer.Height * BytesPerPixel);
 	END_NAMED_TIMED_BLOCK(ClearBG);
-	/* DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, WHITE); */
+	/* DrawRectangleFilled(Draw.Buffer, Origin, ScreenSize, WHITE); */
 
 	if(State->tBasis < 1.f)  { State->tBasis += State->dt*BASIS_ANIMATION_SPEED; }
 	else					 { State->tBasis = 1.f; }
@@ -910,7 +910,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		// TODO IMPORTANT (fix): stop unwanted clicks from registering. e.g. on open/save
 		// TODO: fix the halftransitioncount - when using released(button), it fires twice per release
-		b32 MouseInScreenBounds = IsInScreenBounds(ScreenBuffer, Mouse.P); 
+		b32 MouseInScreenBounds = IsInScreenBounds(Draw->Buffer, Mouse.P); 
 #define DEBUGClick(button) (MouseInScreenBounds && DEBUGPress(button))
 #define DEBUGRelease(button) (Input.Old->button.EndedDown && !Input.New->button.EndedDown)
 #define DEBUGPress(button)   (!Input.Old->button.EndedDown && Input.New->button.EndedDown)
@@ -1531,7 +1531,7 @@ case_mode_extend_arc:
 			ScreenBB.MinY = FakeScreenMin.Y;
 			ScreenBB.MaxX = FakeScreenMax.X;
 			ScreenBB.MaxY = FakeScreenMax.Y;
-			DrawAABB(ScreenBuffer, ScreenBB, GREEN);
+			DrawAABB(Draw, ScreenBB, GREEN);
 		}
 		else // use a full size screen
 		{
@@ -1561,7 +1561,7 @@ case_mode_extend_arc:
 					LocalShape.P[i] = i;
 				}
 				aabb ShapeBB = AABBFromShape(ShapePoints, LocalShape);
-				/* DrawAABB(ScreenBuffer, ShapeBB, ORANGE); */
+				/* DrawAABB(Draw.Buffer, ShapeBB, ORANGE); */
 				b32 ScreenIsInsideShape = 0;
 				if(Shape.Kind == SHAPE_Arc || Shape.Kind == SHAPE_Circle)
 				{
@@ -1600,10 +1600,10 @@ case_mode_extend_arc:
 	v2 AnimSnapMouseP = V2Lerp(State->pSnapMouseP, State->tSnapMouseP, SnapMouseP);
 	{ LOG("RENDER");
 	////////////////
-		DrawCrosshair(ScreenBuffer, ScreenCentre, 5.f, LIGHT_GREY);
+		Draw->Crosshair(Draw->Buffer, ScreenCentre, 5.f, LIGHT_GREY);
 		// TODO: move up for other things
 		v2 SSSnapMouseP = ToScreen(AnimSnapMouseP);
-		DrawCrosshair(ScreenBuffer, SSSnapMouseP, 5.f, GREY);
+		Draw->Crosshair(Draw->Buffer, SSSnapMouseP, 5.f, GREY);
 
 		/* if(State->InputMode == MODE_DragMove) */
 		/* { // offset dragged points and arc counterparts */
@@ -1632,7 +1632,7 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		RenderDrawing(ScreenBuffer, State, Basis, ScreenCentre, 0, 3.f);
+		RenderDrawing(*Draw, State, Basis, ScreenCentre, 0, 3.f);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
 			foreachf(shape, Shape, *maShapesNearScreen)
@@ -1640,9 +1640,9 @@ case_mode_extend_arc:
 				v2 Pts[ArrayCount(Shape.P)] = {0};
 				for(uint i = ArrayCount(Pts); i--;) { Pts[i] = ToScreen(POINTS(Shape.P[i])); }
 				switch(Shape.Kind) {
-					case SHAPE_Segment: DrawClosestPtOnSegment(ScreenBuffer, Mouse.P, Pts[0], Pts[1]); break;
-					case SHAPE_Circle:  DrawClosestPtOnCircle( ScreenBuffer, Mouse.P, Pts[0], Dist(Pts[0],Pts[1])); break;
-					case SHAPE_Arc:		DrawClosestPtOnArc(	ScreenBuffer, Mouse.P, Pts[0], Pts[1], Pts[2]); break;
+					case SHAPE_Segment: DrawClosestPtOnSegment(Draw, Mouse.P, Pts[0], Pts[1]); break;
+					case SHAPE_Circle:  DrawClosestPtOnCircle( Draw, Mouse.P, Pts[0], Dist(Pts[0],Pts[1])); break;
+					case SHAPE_Arc:		DrawClosestPtOnArc(	   Draw, Mouse.P, Pts[0], Pts[1], Pts[2]); break;
 					default:            Assert(! "Tried to debug unknown shape");
 				}
 			}
@@ -1656,13 +1656,13 @@ case_mode_extend_arc:
 		/* 	for(uint i = 1; i <= State->iLastPoint; ++i) */
 		/* 	{ if(POINTLAYER(i) != POINT_Free) { ValidPointExists = 1; break; } } */
 		/* 	if(ValidPointExists) */
-		/* 	{ CircleLine(ScreenBuffer, poSSClosest, 5.f, GREY); } */
+		/* 	{ CircleLine(Draw->BufferDraw.Buffer, poSSClosest, 5.f, GREY); } */
 
 		/* 	if(IsSnapped) */
 		/* 	{ // draw snapped point */
-		/* 		DrawCircleFill(ScreenBuffer, poSSClosest, 3.f, BLUE); */ 
+		/* 		DrawCircleFill(Draw->BufferDraw.Buffer, poSSClosest, 3.f, BLUE); */ 
 		/* 		// NOTE: Overdraws... */
-		/* 		DrawActivePoint(ScreenBuffer, poSSClosest, BLUE); */
+		/* 		DrawActivePoint(DrawDraw.Buffer, poSSClosest, BLUE); */
 		/* 	} */
 		/* } */
 
@@ -1682,15 +1682,15 @@ case_mode_extend_arc:
 			case MODE_Normal:
 			{
 				// TODO (UI): animate when (un)snapping
-				if(DrawPreviewCircle) CircleLine(ScreenBuffer, SSSnapMouseP, SSLength, LIGHT_GREY);
+				if(DrawPreviewCircle) Draw->CircleLine(Draw->Buffer, SSSnapMouseP, SSLength, LIGHT_GREY);
 				if(C_ShapeLock.EndedDown)
-				{ CircleLine(ScreenBuffer, SSSnapMouseP, 3.f, LIGHT_GREY); }
+				{ Draw->CircleLine(Draw->Buffer, SSSnapMouseP, 3.f, LIGHT_GREY); }
 			} break;
 
 
 			case MODE_SetBasis:
 			{
-				DEBUGDrawLine(ScreenBuffer, poSSSaved, SSSnapMouseP, RED);
+				Draw->Line(Draw->Buffer, poSSSaved, SSSnapMouseP, RED);
 			} break;
 
 
@@ -1698,15 +1698,15 @@ case_mode_extend_arc:
 			{
 				if( ! V2WithinEpsilon(SnapMouseP, poSelect, POINT_EPSILON) && ! C_PanMod.EndedDown)
 				{ SSLength = Dist(poSSSelect, SSSnapMouseP); }
-				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, LIGHT_GREY);
+				if(DrawPreviewCircle) Draw->CircleLine(Draw->Buffer, poSSSelect, SSLength, LIGHT_GREY);
+				Draw->Line(Draw->Buffer, poSSSelect, SSSnapMouseP, LIGHT_GREY);
 			} break;
 
 
 			case MODE_QuickPtOrSeg:
 			{
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, SSSnapMouseP, BLUE);
-				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
+				Draw->Line(Draw->Buffer, poSSSelect, SSSnapMouseP, BLUE);
+				DrawActivePoint(Draw, poSSSelect, RED);
 			} break;
 
 
@@ -1717,20 +1717,20 @@ case_mode_extend_arc:
 				{
 					P = ToScreen(P);
 					if(PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(ScreenBuffer, P, ORANGE); }
+					{ DrawActivePoint(Draw, P, ORANGE); }
 				}
 			} // fallthrough
 			case MODE_RmFromSelection:
 			case MODE_Selected:
 			{
-				DrawAABB(ScreenBuffer, SelectionAABB, GREY);
+				DrawAABB(Draw, SelectionAABB, GREY);
 				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
 				{
 					v2 P = POINTS(ipo);
 					if(State->InputMode == MODE_RmFromSelection && PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(ScreenBuffer, ToScreen(P), MAGENTA); }
+					{ DrawActivePoint(Draw, ToScreen(P), MAGENTA); }
 					else
-					{ DrawActivePoint(ScreenBuffer, ToScreen(P), ORANGE); }
+					{ DrawActivePoint(Draw, ToScreen(P), ORANGE); }
 				}
 			} break;
 
@@ -1742,8 +1742,8 @@ case_mode_extend_arc:
 			/* 		v2 PMoved = V2Add(P, DragDir); */
 			/* 		v2 SSP = ToScreen(P); */
 			/* 		v2 SSPMoved = ToScreen(PMoved); */
-			/* 		DEBUGDrawLine(ScreenBuffer, SSP, SSPMoved, LIGHT_GREY); */
-			/* 		DrawCircleFill(ScreenBuffer, SSPMoved, 3.f, BLUE); */
+			/* 		Draw->Line(Draw->Buffer, SSP, SSPMoved, LIGHT_GREY); */
+			/* 		DrawCircleFill(Draw->Buffer, SSPMoved, 3.f, BLUE); */
 			/* 	} */
 			/* } break; */
 
@@ -1757,27 +1757,27 @@ case_mode_extend_arc:
 					poSSEnd = ExtendSegment(poSSSelect, poSSDir, SSSnapMouseP);
 				}
 				// preview circle at given length and segment
-				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, BLUE);
-				DrawActivePoint(ScreenBuffer, poSSAtDist, RED);
-				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, BLUE);
+				if(DrawPreviewCircle) CircleLine(Draw->Buffer, poSSSelect, SSLength, BLUE);
+				DrawActivePoint(Draw, poSSAtDist, RED);
+				DrawActivePoint(Draw, poSSSelect, RED);
+				Draw->Line(Draw->Buffer, poSSSelect, poSSEnd, BLUE);
 			} break;
 
 
 			case MODE_ExtendArc:
 			{ // preview drawing arc
-				DrawActivePoint(ScreenBuffer, poSSSelect, RED);
+				DrawActivePoint(Draw, poSSSelect, RED);
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
 				v2 poSSStart = ToScreen(poArcStart);
-				DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSStart, LIGHT_GREY);
+				Draw->Line(Draw->Buffer, poSSSelect, poSSStart, LIGHT_GREY);
 				if(DrawPreviewCircle && V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
-				{ CircleLine(ScreenBuffer, poSSSelect, SSLength, BLACK); }
+				{ CircleLine(Draw->Buffer, poSSSelect, SSLength, BLACK); }
 				else
 				{
 					v2 poSSEnd   = ToScreen(poArcEnd);
-					DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSEnd, LIGHT_GREY);
-					DrawArcFromPoints(ScreenBuffer, poSSSelect, poSSStart, poSSEnd, BLACK);
+					Draw->Line(Draw->Buffer, poSSSelect, poSSEnd, LIGHT_GREY);
+					DrawArcFromPoints(Draw, poSSSelect, poSSStart, poSSEnd, BLACK);
 				}
 			} break;
 
@@ -1786,11 +1786,11 @@ case_mode_extend_arc:
 			{ // preview extending a line
 				v2 poSSDir = ToScreen(State->poSaved);
 				v2 poSSOnLine = ToScreen(poOnLine);
-				DrawFullScreenLine(ScreenBuffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
+				DrawFullScreenLine(Draw->Buffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				if(State->InputMode == MODE_ExtendSeg)
-				{ DEBUGDrawLine(ScreenBuffer, poSSSelect, poSSOnLine, BLACK); }
-				if(DrawPreviewCircle) CircleLine(ScreenBuffer, poSSSelect, SSLength, LIGHT_GREY);
-				DrawActivePoint(ScreenBuffer, poSSOnLine, RED);
+				{ Draw->Line(Draw->Buffer, poSSSelect, poSSOnLine, BLACK); }
+				if(DrawPreviewCircle) CircleLine(Draw->Buffer, poSSSelect, SSLength, LIGHT_GREY);
+				DrawActivePoint(Draw, poSSOnLine, RED);
 			} break;
 
 
@@ -1802,20 +1802,20 @@ case_mode_extend_arc:
 					v2 poSSStart = ToScreen(poSelect);
 					v2 poSSPerp  = ToScreen(V2Add(poSelect, PerpDir));
 					v2 poSSNPerp = ToScreen(V2Add(poSelect, V2Neg(PerpDir)));
-					DEBUGDrawLine(ScreenBuffer, poSSStart, SSSnapMouseP, LIGHT_GREY);
-					DEBUGDrawLine(ScreenBuffer, poSSNPerp, poSSPerp, LIGHT_GREY);
+					Draw->Line(Draw->Buffer, poSSStart, SSSnapMouseP, LIGHT_GREY);
+					Draw->Line(Draw->Buffer, poSSNPerp, poSSPerp, LIGHT_GREY);
 				}
 			} break;
 		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{ // draw debug vector
-			DEBUGDrawLine(ScreenBuffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
+			Draw->Line(Draw->Buffer, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
 			if(IsDrawing(State))
-			{ DrawActivePoint(ScreenBuffer, ToScreen(gDebugPoint), ORANGE); }
+			{ DrawActivePoint(Draw, ToScreen(gDebugPoint), ORANGE); }
 		}
 
 		{ // Animate layer drawer
@@ -1838,20 +1838,22 @@ case_mode_extend_arc:
 			for(uint iThumb = 0; iThumb++ < cThumbs;)
 			{
 				v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y }; // V2Add(ThumbBL, ThumbSize);
-				image_buffer ThumbBuffer = { GetBufferLocation(*ScreenBuffer, sizeof(u32), ThumbBL),
-					(i32)ThumbSize.X, (i32)ThumbSize.Y, ScreenBuffer->Pitch };
-				DrawRectangleFilled(ScreenBuffer, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
-				RenderDrawing(&ThumbBuffer, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
+				image_buffer ThumbBuffer = { GetBufferLocation(Draw->Buffer, sizeof(u32), ThumbBL),
+					(i32)ThumbSize.X, (i32)ThumbSize.Y, Draw->Buffer.Pitch };
+				draw_buffer ThumbDraw = *Draw;
+				ThumbDraw.Buffer = ThumbBuffer;
+				Draw->RectFill(Draw->Buffer, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
+				RenderDrawing(ThumbDraw, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
 				if(iThumb == State->iCurrentLayer)
 				{
-					DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, BLUE);
-					DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
+					DrawRectangleLines(Draw->Buffer, ThumbBL, ThumbTR, BLUE);
+					DrawRectangleLines(Draw->Buffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
 							V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
-					DrawRectangleLines(ScreenBuffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
+					DrawRectangleLines(Draw->Buffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
 							V2(ThumbTR.X-2.f, ThumbTR.Y-2.f), BLUE);
 				}
 				else
-				{ DrawRectangleLines(ScreenBuffer, ThumbBL, ThumbTR, LIGHT_GREY); }
+				{ DrawRectangleLines(Draw->Buffer, ThumbBL, ThumbTR, LIGHT_GREY); }
 				ThumbBL.Y += ThumbSize.Y;
 			}
 		}
@@ -1865,7 +1867,7 @@ case_mode_extend_arc:
 
 	if(State->ShowHelpInfo)
 	{ LOG("PRINT HELP");
-		DrawRectangleFilled(ScreenBuffer, Origin, ScreenSize, PreMultiplyColour(WHITE, 0.8f));
+		Draw->RectFill(Draw->Buffer, Origin, ScreenSize, PreMultiplyColour(WHITE, 0.8f));
 		char LeftHelpBuffer[] =
 			"Drawing\n"
 			"=======\n"
@@ -1939,14 +1941,14 @@ case_mode_extend_arc:
 			" Ctrl+N    - new file\n"
 			" Ctrl+Sh+N - new file in new window" ;
 
-		DrawString(ScreenBuffer, &State->DefaultFont, LeftHelpBuffer,  TextSize, 10.f, ScreenSize.Y-2.f*TextSize, 0, BLACK);
-		DrawString(ScreenBuffer, &State->DefaultFont, RightHelpBuffer, TextSize, ScreenSize.X - 32.f*TextSize, ScreenSize.Y-2.f*TextSize, 0, BLACK);
+		DrawString(&Draw->Buffer, &State->DefaultFont, LeftHelpBuffer,  TextSize, 10.f, ScreenSize.Y-2.f*TextSize, 0, BLACK);
+		DrawString(&Draw->Buffer, &State->DefaultFont, RightHelpBuffer, TextSize, ScreenSize.X - 32.f*TextSize, ScreenSize.Y-2.f*TextSize, 0, BLACK);
 	}
 
 	DEBUG_LIVE_if(Debug_ShowInfo)
 	{ LOG("PRINT DEBUG");
 #if !SINGLE_EXECUTABLE
-		PrintDebugHierarchy(*ScreenBuffer, Input);
+		PrintDebugHierarchy(Draw->Buffer, Input);
 #endif//!SINGLE_EXECUTABLE
 		DEBUG_LIVE_if(Debug_PrintMidFrameInfo)
 		{ DebugPrint(); }
@@ -1964,7 +1966,7 @@ case_mode_extend_arc:
 			/* { */
 			/*	 ssprintf(TextInfoBuffer, "%s%02u  %04b\n", TextInfoBuffer, i, SHAPES(i).Kind); */
 			/* } */
-			/* DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize, */
+			/* DrawString(Draw->Buffer, &State->DefaultFont, TextInfoBuffer, TextSize, */
 			/*		 ScreenSize.X - 180.f, ScreenSize.Y - 30.f, 0, BLACK); */
 
 			*TextInfoBuffer = 0;
@@ -1973,7 +1975,7 @@ case_mode_extend_arc:
 				v2 po = Pull(State->maPoints, i);
 				ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
 			}
-			DrawString(ScreenBuffer, &State->DefaultFont, TextInfoBuffer, TextSize,
+			DrawString(&Draw->Buffer, &State->DefaultFont, TextInfoBuffer, TextSize,
 					ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
 		}
 	}
