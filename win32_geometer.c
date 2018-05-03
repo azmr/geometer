@@ -776,71 +776,84 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
-internal void
-OpenGLCircleLine(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour)
+internal FN_CIRCLE(OpenGLCircleLine)
 {
-	(void)Buffer;
+	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLCircleLine(Centre, Radius);
 }
 
-internal void
-OpenGLCircleFill(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour)
+internal FN_CIRCLE(OpenGLCircleFill)
 {
-	(void)Buffer;
+	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLCircleFill(Centre, Radius);
 }
 
-internal void
-OpenGLArcLine(image_buffer Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+internal FN_ARC(OpenGLArcLine)
 {
-	(void)Buffer;
+	(void)Draw;
+	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	// TODO: are these absolute points or offsets?
 	GLArcCap(Centre, Radius, A, B);
 }
 
-internal void
-OpenGLLine(image_buffer Buffer, v2 Point1, v2 Point2, colour Colour)
+internal FN_LINE(OpenGLLine)
 {
-	(void)Buffer;
+	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
-	GLLine(Point1, Point2);
+	GLLineCap(Point1, Point2);
 }
 
-internal void
-OpenGLCrosshair(image_buffer Buffer, v2 CentrePos, f32 Radius, colour Colour)
+internal FN_RECT(OpenGLRectangleLines)
 {
-	(void)Buffer;
-	v2 X1 = {1.f, 0.f};
-	v2 Y1 = {0.f, 1.f};
-	v2 XRad = {Radius, 0.f};
-	v2 YRad = {0.f, Radius};
-	GLStrokeWidth(1.f);
-	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
-	GLLine(V2Sub(CentrePos, X1), V2Sub(CentrePos, XRad));
-	GLLine(V2Add(CentrePos, X1), V2Add(CentrePos, XRad));
-	GLLine(V2Add(CentrePos, Y1), V2Add(CentrePos, YRad));
-	GLLine(V2Sub(CentrePos, Y1), V2Sub(CentrePos, YRad));
-	GLStrokeWidth(GlobalStroke);
-}
-
-internal void
-OpenGLRectangleLines(image_buffer Buffer, v2 vMin, v2 vMax, colour Colour)
-{
-	(void)Buffer;
+	(void)Draw;
+	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxLine(vMin, vMax);
 }
 
-internal void
-OpenGLRectangleFilled(image_buffer Buffer, v2 vMin, v2 vMax, colour Colour)
+internal FN_RECT(OpenGLRectangleFilled)
 {
-	(void)Buffer;
+	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxFill(vMin, vMax);
 }
+
+internal FN_CLEAR(OpenGLClearBuffer)
+{
+	f32 W = (f32)Buffer.Width, H = (f32)Buffer.Height;
+	glViewport(0, 0, Buffer.Width, Buffer.Height);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.f, W,
+			0.f, H,
+			0.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+
+	glClearColor(1.f, 1.f, 1.f, 1.f);
+	glClear(GL_COLOR_BUFFER_BIT);
+}
+
+internal FN_LINE(SoftwareLine)
+{ DEBUGDrawLine(Draw->Buffer, Point1, Point2, Colour); }
+
+internal FN_CIRCLE(SoftwareCircleLine)
+{ CircleLine(Draw->Buffer, Centre, Radius, Colour); }
+internal FN_CIRCLE(SoftwareCircleFill)
+{ DrawCircleFill(Draw->Buffer, Centre, Radius, Colour); }
+
+internal FN_ARC(SoftwareArcLine)
+{ ArcLine(Draw->Buffer, Centre, Radius, A, B, Colour); }
+
+internal FN_RECT  (SoftwareRectLine)
+{ DrawRectangleLines(Draw->Buffer, vMin, vMax, Colour); }
+internal FN_RECT  (SoftwareRectFill)
+{ DrawRectangleFilled(Draw->Buffer, vMin, vMax, Colour); }
+
+internal FN_CLEAR(SoftwareClearBuffer)
+{ memset(Buffer.Memory, 0xFF, Buffer.Width * Buffer.Height * BytesPerPixel); }
 
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
@@ -922,9 +935,9 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		Draw.CircleFill  = OpenGLCircleFill;
 		Draw.ArcLine     = OpenGLArcLine;
 		Draw.Line        = OpenGLLine;
-		Draw.Crosshair   = OpenGLCrosshair;
 		Draw.RectLine    = OpenGLRectangleLines;
 		Draw.RectFill    = OpenGLRectangleFilled;
+		Draw.ClearBuffer = OpenGLClearBuffer;
 
 		GlobalStroke = 2.5f;
 		GLStrokeWidth(GlobalStroke);
@@ -934,13 +947,13 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	else
 	{
 		Draw.Kind = DRAW_Software;
-		Draw.CircleLine  = CircleLine;
-		Draw.CircleFill  = DrawCircleFill;
-		Draw.ArcLine     = ArcLine;
-		Draw.Line        = DEBUGDrawLine;
-		Draw.Crosshair   = DrawCrosshair;
-		Draw.RectLine    = DrawRectangleLines;
-		Draw.RectFill    = DrawRectangleFilled;
+		Draw.CircleLine  = SoftwareCircleLine;
+		Draw.CircleFill  = SoftwareCircleFill;
+		Draw.ArcLine     = SoftwareArcLine;
+		Draw.Line        = SoftwareLine;
+		Draw.RectLine    = SoftwareRectLine;
+		Draw.RectFill    = SoftwareRectFill;
+		Draw.ClearBuffer = SoftwareClearBuffer;
 	}
 
 	// ASSETS
@@ -1058,8 +1071,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			Assert(UpdateAndRender && "loaded library function.");
 #endif // !SINGLE_EXECUTABLE
 
-			platform_request PlatRequest = {0};
-				/* UpdateAndRender(&Draw, &Memory, Input); */
+			platform_request PlatRequest = UpdateAndRender(&Draw, &Memory, Input);
 
 			switch(PlatRequest.Action)
 			{ // open/close/save file
@@ -1189,36 +1201,25 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			}
 #endif
 
+			switch(Draw.Kind)
+			{
+				case DRAW_Hardware:
+					RenderingViaHardware = 1;
+					SwapBuffers(Window.Context);
+				break;
 
+				case DRAW_Software:
+					Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+				break;
+
+				default:
+					Assert(! "Unknown render method");
+			}
+
+			// TODO: optional internal reallocation
 			ReallocateArenas(State, Window.Handle);
 		}
 
-
-		if(Draw.Kind == DRAW_Hardware)
-		{
-			RenderingViaHardware = 1;
-			f32 W = (f32)Win32Buffer.Width, H = (f32)Win32Buffer.Height;
-			glViewport(0, 0, Win32Buffer.Width, Win32Buffer.Height);
-			glMatrixMode(GL_PROJECTION);
-			glLoadIdentity();
-			glOrtho(0.f, W,
-					0.f, H,
-					0.0, 1.0);
-			glMatrixMode(GL_MODELVIEW);
-
-			glClearColor(1.f, 1.f, 1.f, 1.f);
-			glClear(GL_COLOR_BUFFER_BIT);
-
-			Draw.CircleLine(Draw.Buffer, V2(W/2.f, H/2.f), 50.f, BLUE);
-			Draw.ArcLine(Draw.Buffer, V2(W/2.f, H/2.f), 80.f, V2(0.f, 1.f), V2(1.f, 0.f), BLUE);
-
-			SwapBuffers(Window.Context);
-		}
-
-		else
-		{
-			Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
-		}
 
 		FrameTimer = Win32WaitForFrameEnd(FrameTimer);
 		FrameTimer = Win32EndFrameTimer(FrameTimer);

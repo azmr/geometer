@@ -60,8 +60,8 @@ typedef action_v2 action;
 typedef basis_v2 basis;
 typedef shape_v1 shape;    shape gZeroShape;
 typedef arena_type(shape);  typedef union shape_arena shape_arena;
-typedef arena_type(v2);     typedef union v2_arena   v2_arena; // repeated from macro - just for syntax highlighting
-typedef arena_type(u8);     typedef union u8_arena   u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(v2);     typedef union v2_arena   v2_arena;   // repeated from macro - just for syntax highlighting
+typedef arena_type(u8);     typedef union u8_arena   u8_arena;   // repeated from macro - just for syntax highlighting
 typedef arena_type(uint);   typedef union uint_arena uint_arena; // repeated from macro - just for syntax highlighting
 typedef arena_type(action); typedef union action_arena action_arena;
 
@@ -136,11 +136,18 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
-typedef void line_fn  (image_buffer Buffer, v2 Point1, v2 Point2, colour Colour);
-typedef void circle_fn(image_buffer Buffer, v2 Centre, f32 Radius, colour Colour);
-typedef void marker_fn(image_buffer Buffer, v2 CentrePos, f32 Radius, colour Colour);
-typedef void arc_fn   (image_buffer Buffer, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour);
-typedef void rect_fn  (image_buffer Buffer, v2 vMin, v2 vMax, colour Colour);
+struct draw_buffer;
+#define FN_LINE(  name) void name(struct draw_buffer *Draw, v2 Point1, v2 Point2, colour Colour)
+#define FN_CIRCLE(name) void name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_ARC(   name) void name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+#define FN_RECT(  name) void name(struct draw_buffer *Draw, v2 vMin, v2 vMax, colour Colour)
+#define FN_CLEAR( name) void name(image_buffer Buffer)
+
+typedef FN_LINE  (fn_line);
+typedef FN_CIRCLE(fn_circle);
+typedef FN_ARC   (fn_arc);
+typedef FN_RECT  (fn_rect);
+typedef FN_CLEAR (fn_clear);
 
 typedef struct draw_buffer
 {
@@ -150,14 +157,15 @@ typedef struct draw_buffer
 	} Kind;
 	// TODO: unions etc
 	image_buffer Buffer;
+	f32 StrokeWidth;
 
-	circle_fn *CircleLine;
-	circle_fn *CircleFill;
-	arc_fn    *ArcLine;
-	line_fn   *Line;
-	marker_fn *Crosshair;
-	rect_fn   *RectLine;
-	rect_fn   *RectFill;
+	fn_circle *CircleLine;
+	fn_circle *CircleFill;
+	fn_arc    *ArcLine;
+	fn_line   *Line;
+	fn_rect   *RectLine;
+	fn_rect   *RectFill;
+	fn_clear  *ClearBuffer;
 	// TODO: String
 } draw_buffer;
 
