@@ -109,8 +109,8 @@ DrawCrosshair(draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
 	v2 Y1 = {0.f, 1.f};
 	v2 XRad = {Radius, 0.f};
 	v2 YRad = {0.f, Radius};
-	fn_line *Line = Draw->Line;
 	draw_buffer tDraw = *Draw;
+	fn_line *Line = tDraw.Line;
 	tDraw.StrokeWidth = 1.f;
 	Line(&tDraw, V2Sub(Centre, X1), V2Sub(Centre, XRad), Colour);
 	Line(&tDraw, V2Add(Centre, X1), V2Add(Centre, XRad), Colour);
@@ -123,7 +123,7 @@ DrawClosestPtOnSegment(draw_buffer *Draw, v2 po, v2 lipoA, v2 lipoB)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnSegment(po, lipoA, V2Sub(lipoB, lipoA));
-	DrawCrosshair(Draw, po1, 5.f, RED);
+	DrawCrosshair(Draw, po1, ACTIVE_POINT_RADIUS, RED);
 	END_TIMED_BLOCK;
 }
 
@@ -132,7 +132,7 @@ DrawClosestPtOnCircle(draw_buffer *Draw, v2 po, v2 poFocus, f32 Radius)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnCircle(po, poFocus, Radius);
-	DrawCrosshair(Draw, po1, 5.f, RED);
+	DrawCrosshair(Draw, po1, ACTIVE_POINT_RADIUS, RED);
 	END_TIMED_BLOCK;
 }
 
@@ -141,7 +141,7 @@ DrawClosestPtOnArc(draw_buffer *Draw, v2 po, v2 poFocus, v2 poStart, v2 poEnd)
 {
 	BEGIN_TIMED_BLOCK;
 	v2 po1 = ClosestPtOnArc(po, poFocus, poStart, poEnd);
-	DrawCrosshair(Draw, po1, 5.f, RED);
+	DrawCrosshair(Draw, po1, ACTIVE_POINT_RADIUS, RED);
 	END_TIMED_BLOCK;
 }
 
@@ -149,8 +149,12 @@ internal inline void
 DrawActivePoint(draw_buffer *Draw, v2 po, colour Col)
 {
 	BEGIN_TIMED_BLOCK;
-	Draw->CircleFill(Draw, po, 3.f, Col);
-	Draw->CircleLine(Draw, po, 5.f, Col);
+	draw_buffer tDraw = *Draw;
+	fn_circle *CircleFill = tDraw.CircleFill;
+	fn_circle *CircleLine = tDraw.CircleLine;
+	tDraw.StrokeWidth = 1.f;
+	CircleFill(&tDraw, po, POINT_RADIUS, Col);
+	CircleLine(&tDraw, po, ACTIVE_POINT_RADIUS, Col);
 	END_TIMED_BLOCK;
 }
 
@@ -1617,10 +1621,10 @@ case_mode_extend_arc:
 	v2 AnimSnapMouseP = V2Lerp(State->pSnapMouseP, State->tSnapMouseP, SnapMouseP);
 	{ LOG("RENDER");
 	////////////////
-		DrawCrosshair(Draw, ScreenCentre, 5.f, LIGHT_GREY);
+		DrawCrosshair(Draw, ScreenCentre, ACTIVE_POINT_RADIUS, LIGHT_GREY);
 		// TODO: move up for other things
 		v2 SSSnapMouseP = ToScreen(AnimSnapMouseP);
-		DrawCrosshair(Draw, SSSnapMouseP, 5.f, GREY);
+		DrawCrosshair(Draw, SSSnapMouseP, ACTIVE_POINT_RADIUS, GREY);
 
 		/* if(State->InputMode == MODE_DragMove) */
 		/* { // offset dragged points and arc counterparts */
@@ -1649,7 +1653,7 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		RenderDrawing(*Draw, State, Basis, ScreenCentre, 0, 3.f);
+		RenderDrawing(*Draw, State, Basis, ScreenCentre, 0, POINT_RADIUS);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
 			foreachf(shape, Shape, *maShapesNearScreen)
@@ -1673,11 +1677,11 @@ case_mode_extend_arc:
 		/* 	for(uint i = 1; i <= State->iLastPoint; ++i) */
 		/* 	{ if(POINTLAYER(i) != POINT_Free) { ValidPointExists = 1; break; } } */
 		/* 	if(ValidPointExists) */
-		/* 	{ CircleLine(Draw->BufferDraw.Buffer, poSSClosest, 5.f, GREY); } */
+		/* 	{ CircleLine(Draw->BufferDraw.Buffer, poSSClosest, ACTIVE_POINT_RADIUS, GREY); } */
 
 		/* 	if(IsSnapped) */
 		/* 	{ // draw snapped point */
-		/* 		DrawCircleFill(Draw->BufferDraw.Buffer, poSSClosest, 3.f, BLUE); */ 
+		/* 		DrawCircleFill(Draw->BufferDraw.Buffer, poSSClosest, POINT_RADIUS, BLUE); */ 
 		/* 		// NOTE: Overdraws... */
 		/* 		DrawActivePoint(DrawDraw.Buffer, poSSClosest, BLUE); */
 		/* 	} */
@@ -1702,7 +1706,7 @@ case_mode_extend_arc:
 				if(DrawPreviewCircle)
 				{ Draw->CircleLine(Draw, SSSnapMouseP, SSLength, LIGHT_GREY); }
 				if(C_ShapeLock.EndedDown)
-				{ Draw->CircleLine(Draw, SSSnapMouseP, 3.f, LIGHT_GREY); }
+				{ Draw->CircleLine(Draw, SSSnapMouseP, POINT_RADIUS, LIGHT_GREY); }
 			} break;
 
 
@@ -1762,7 +1766,7 @@ case_mode_extend_arc:
 			/* 		v2 SSP = ToScreen(P); */
 			/* 		v2 SSPMoved = ToScreen(PMoved); */
 			/* 		Draw->Line(Draw, SSP, SSPMoved, LIGHT_GREY); */
-			/* 		DrawCircleFill(Draw->Buffer, SSPMoved, 3.f, BLUE); */
+			/* 		DrawCircleFill(Draw->Buffer, SSPMoved, POINT_RADIUS, BLUE); */
 			/* 	} */
 			/* } break; */
 

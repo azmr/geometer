@@ -15,6 +15,8 @@
 #define MOUSE_ANIMATION_SPEED 30.f
 #define DRAWER_ANIMATION_SPEED 10.f
 #define MAX_LAYERS 5
+#define POINT_RADIUS 4.f
+#define ACTIVE_POINT_RADIUS 6.f
 
 #include <types.h>
 /* #include "geometer_config.h" */

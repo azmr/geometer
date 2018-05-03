@@ -795,13 +795,13 @@ internal FN_ARC(OpenGLArcLine)
 	(void)Draw;
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
-	// TODO: are these absolute points or offsets?
 	GLArcCap(Centre, Radius, A, B);
 }
 
 internal FN_LINE(OpenGLLine)
 {
 	(void)Draw;
+	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLLineCap(Point1, Point2);
 }
@@ -927,6 +927,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 	draw_buffer Draw = {0};
 	Draw.Buffer      = *(image_buffer *) &Win32Buffer;
+	Draw.StrokeWidth = 2.f;
 
  	if(Win32CreateOpenGLContext(Window.Context))
 	{
