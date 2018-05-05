@@ -17,6 +17,7 @@
 #include <opengl/opengl.h>
 #include <opengl/opengl_primitives.h>
 /* #include "geometer_templibs.h" */
+#include "blit-fonts/blit32.h"
 
 #if INTERNAL
 #include <stdio.h>
@@ -838,6 +839,9 @@ internal FN_ClearBuffer(OpenGLClearBuffer)
 
 	glClearColor(1.f, 1.f, 1.f, 1.f);
 	glClear(GL_COLOR_BUFFER_BIT);
+
+	// Software as well
+	{ memset(Buffer.Memory, 0x00, Buffer.Width * Buffer.Height * BytesPerPixel); }
 }
 
 internal FN_DrawLine(SoftwareLine)
@@ -1011,7 +1015,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				IsModified(State) ? "[Modified]" : "",
 				Draw.Kind == DRAW_Hardware ? "[Hardware]" : "[Software]");
 		TitleOffset;
-#if 0 // probe frame time without drawing
+#if 1 // probe frame time without drawing
 		ssnprintf(TitleText + TitleOffset, sizeof(TitleText) - TitleOffset,
 				" | DEBUG: dtWork: %6.2fms, dt:%6.2fms;",
 				1000.f * State->dtWork,
@@ -1053,7 +1057,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		}
 
 
-		if(Input.New->Keyboard.F12.EndedDown && ! Input.Old->Keyboard.F12.EndedDown)
+		if(Input.New->Keyboard.F6.EndedDown && ! Input.Old->Keyboard.F6.EndedDown)
 		{ Draw.Kind = ! Draw.Kind; } // Toggle software/hardware rendering
 
 		if(Draw.Kind == DRAW_Hardware) {
@@ -1223,6 +1227,8 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			switch(Draw.Kind)
 			{
 				case DRAW_Hardware:
+					glBitmap(blit32_WIDTH, blit32_HEIGHT, 0, 0, 0, 0, (u8 *)&Blit32.Glyphs[blit_IndexFromASCII('a')]);
+					glDrawPixels(Win32Buffer.Width, Win32Buffer.Height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, Win32Buffer.Memory);
 					SwapBuffers(Window.Context);
 				break;
 
