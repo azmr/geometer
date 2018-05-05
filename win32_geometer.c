@@ -13,6 +13,11 @@
 #include <win32.h>
 #include <live_edit/win32_live_edit.h>
 #include "svg.h"
+#define OGL_MSAA 8
+#include <opengl/opengl.h>
+#include <opengl/opengl_primitives.h>
+/* #include "geometer_templibs.h" */
+#include "blit-fonts/blit32.h"
 
 #if INTERNAL
 #include <stdio.h>
@@ -20,6 +25,7 @@
 
 global_variable b32 GlobalRunning;
 global_variable b32 GlobalPause;
+global_variable f32 GlobalStroke = 2.5f;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
 #include <win32_gfx.h>
 #include <win32_input.h>
@@ -772,6 +778,99 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
+internal FN_DrawCircleLine(OpenGLCircleLine)
+{
+	GLStrokeWidth(Draw->StrokeWidth);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
+	GLCircleLine(Centre, Radius);
+}
+
+internal FN_DrawCircleFill(OpenGLCircleFill)
+{
+	(void)Draw;
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
+	GLCircleFill(Centre, Radius);
+}
+
+internal FN_DrawArcLine(OpenGLArcLine)
+{
+	GLStrokeWidth(Draw->StrokeWidth);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
+	GLArcCap(Centre, Radius, A, B);
+}
+
+internal FN_DrawLine(OpenGLLine)
+{
+	GLStrokeWidth(Draw->StrokeWidth);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
+	GLLineCap(Point1, Point2);
+}
+
+internal FN_DrawRectLine(OpenGLRectLine)
+{
+	GLStrokeWidth(Draw->StrokeWidth);
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLRectMinMaxLine(vMin, vMax);
+}
+
+internal FN_DrawRectFill(OpenGLRectFill)
+{
+	(void)Draw;
+	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	GLRectMinMaxFill(vMin, vMax);
+}
+
+internal FN_ClipBuffer(OpenGLClipBuffer)
+{
+	glScissor((GLint)Offset.X, (GLint)Offset.Y, (GLint)Size.X, (GLint)Size.Y);
+	return Buffer;
+}
+
+internal FN_ClearBuffer(OpenGLClearBuffer)
+{
+	f32 W = (f32)Buffer.Width, H = (f32)Buffer.Height;
+	glViewport(0, 0, Buffer.Width, Buffer.Height);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.f, W,
+			0.f, H,
+			0.0, 1.0);
+	glMatrixMode(GL_MODELVIEW);
+
+	glClearColor(1.f, 1.f, 1.f, 1.f);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	// Software as well
+	{ memset(Buffer.Memory, 0x00, Buffer.Width * Buffer.Height * BytesPerPixel); }
+}
+
+internal FN_DrawLine(SoftwareLine)
+{ DEBUGDrawLine(Draw->Buffer, Point1, Point2, Colour); }
+
+internal FN_DrawCircleLine(SoftwareCircleLine)
+{ CircleLine(Draw->Buffer, Centre, Radius, Colour); }
+internal FN_DrawCircleFill(SoftwareCircleFill)
+{ CircleFill(Draw->Buffer, Centre, Radius, Colour); }
+
+internal FN_DrawArcLine(SoftwareArcLine)
+{ ArcLine(Draw->Buffer, Centre, Radius, A, B, Colour); }
+
+internal FN_DrawRectLine(SoftwareRectLine)
+{ DrawRectangleLines(Draw->Buffer, vMin, vMax, Colour); }
+internal FN_DrawRectFill(SoftwareRectFill)
+{ DrawRectangleFilled(Draw->Buffer, vMin, vMax, Colour); }
+
+internal FN_ClipBuffer(SoftwareClipBuffer)
+{
+	Buffer.Memory = GetBufferLocation(Buffer, sizeof(u32), Offset);
+	Buffer.Width  = (i32)Size.X;
+	Buffer.Height = (i32)Size.Y;
+	return Buffer;
+}
+
+internal FN_ClearBuffer(SoftwareClearBuffer)
+{ memset(Buffer.Memory, 0xFF, Buffer.Width * Buffer.Height * BytesPerPixel); }
+
 int CALLBACK
 WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowCode)
 {
@@ -780,9 +879,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	ShowCode; CommandLine; PrevInstance;
 
 	win32_window Window;
-	GlobalRunning = 1;
-	if(!Win32BasicWindow(Instance, &Window, 960, 540, "Geometer", "Icon", "IconSmall"))
-	{ GlobalRunning = 0; }
+	GlobalRunning = !! Win32BasicWindow(Instance, &Window, 960, 540, "Geometer", "Icon", "IconSmall");
 
 	/* Win32SetIcon(Window.Handle, GIcon32, cGIcon32, GIcon16, cGIcon16); */
 
@@ -796,7 +893,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	Memory.PermanentStorage = VirtualAlloc(0, Memory.PermanentStorageSize + Memory.TransientStorageSize,
 			MEM_RESERVE|MEM_COMMIT, PAGE_READWRITE);
 	Memory.TransientStorage = (u8 *)Memory.PermanentStorage + Memory.PermanentStorageSize;
-	
+
 	if(!Memory.PermanentStorage || !Memory.TransientStorage)
 	{
 		OutputDebugStringA("Memory not allocated properly");
@@ -839,10 +936,26 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 									 0, "geometer.dll", "geometer_temp.dll", "lock.tmp");
 #endif // !SINGLE_EXECUTABLE
 
-	int ScreenWidth, ScreenHeight;
+	int ScreenWidth, ScreenHeight; // TODO: change to Window.ScreenWidth;
 	Win32ScreenResolution(Window.Handle, &ScreenWidth, &ScreenHeight);
 	win32_image_buffer Win32Buffer = {0};
 	Win32ResizeDIBSection(&Win32Buffer, ScreenWidth, ScreenHeight);
+
+	draw_buffer Draw = {0};
+	Draw.Buffer      = *(image_buffer *) &Win32Buffer;
+	Draw.StrokeWidth = 2.f;
+
+ 	if(Win32CreateOpenGLContext(Window.Context))
+	{
+		Draw.Kind = DRAW_Hardware;
+
+		glEnable(GL_SCISSOR_TEST);
+
+		GLStrokeWidth(GlobalStroke);
+		GLEnablePrimitiveSmoothing();
+	}
+	else
+	{ Draw.Kind = DRAW_Software; }
 
 	// ASSETS
 #if 1
@@ -893,31 +1006,34 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			}
 		}
 
-#if 0 // probe frame time without drawing
-		ssnprintf(TitleText, sizeof(TitleText), "%6.2fms %6.2fms %s - %s %s",
-				1000.f * State->dtWork,
-				1000.f * State->dt,
-				"Geometer",
-				FileHasName(State) ? State->FilePath : "[New File]",
-				IsModified(State) ? "[Modified]" : "");
-#else
 		// TODO: move to open/save?
-		ssnprintf(TitleText, sizeof(TitleText), "%s - %s %s", "Geometer",
+		int TitleOffset = ssnprintf(TitleText, sizeof(TitleText),
+				"%s - %s %s"
+				" %s"
+				, "Geometer",
 				FileHasName(State) ? State->FilePath : "[New File]",
-				IsModified(State) ? "[Modified]" : "");
+				IsModified(State) ? "[Modified]" : "",
+				Draw.Kind == DRAW_Hardware ? "[Hardware]" : "[Software]");
+		TitleOffset;
+#if 1 // probe frame time without drawing
+		ssnprintf(TitleText + TitleOffset, sizeof(TitleText) - TitleOffset,
+				" | DEBUG: dtWork: %6.2fms, dt:%6.2fms;",
+				1000.f * State->dtWork,
+				1000.f * State->dt
+				);
 #endif
 		SetWindowText(Window.Handle, TitleText);
 
 		// TODO: only fill buffer inside client
-		RECT ClientRect;
-		GetClientRect(Window.Handle, &ClientRect);
-		int ClientWidth = ClientRect.right - ClientRect.left;
-		int ClientHeight = ClientRect.bottom - ClientRect.top;
-		Win32Buffer.Width = ClientWidth;
-		Win32Buffer.Height = ClientHeight;
-		Win32Buffer.Info.bmiHeader.biWidth = ClientWidth;
+		int ClientWidth = 0, ClientHeight = 0;
+		Win32ClientWidthHeight(Window.Handle, &ClientWidth, &ClientHeight);
+		Win32Buffer.Width                   = ClientWidth;
+		Win32Buffer.Height                  = ClientHeight;
+		Win32Buffer.Info.bmiHeader.biWidth  = ClientWidth;
 		Win32Buffer.Info.bmiHeader.biHeight = ClientHeight;
-		Win32Buffer.Pitch = ClientWidth * BytesPerPixel;
+		Win32Buffer.Pitch                   = ClientWidth * BytesPerPixel;
+
+		Draw.Buffer = *(image_buffer *) &Win32Buffer;
 
 		UpdateKeyboard(Input);
 
@@ -940,8 +1056,29 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			Input.New->Mouse.P.Y += 134;
 		}
 
-		image_buffer GameImageBuffer = *(image_buffer *) &Win32Buffer;
-		Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+
+		if(Input.New->Keyboard.F6.EndedDown && ! Input.Old->Keyboard.F6.EndedDown)
+		{ Draw.Kind = ! Draw.Kind; } // Toggle software/hardware rendering
+
+		if(Draw.Kind == DRAW_Hardware) {
+			Draw.DrawCircleLine = OpenGLCircleLine;
+			Draw.DrawCircleFill = OpenGLCircleFill;
+			Draw.DrawArcLine    = OpenGLArcLine;
+			Draw.DrawLine       = OpenGLLine;
+			Draw.DrawRectLine   = OpenGLRectLine;
+			Draw.DrawRectFill   = OpenGLRectFill;
+			Draw.ClipBuffer     = OpenGLClipBuffer;
+			Draw.ClearBuffer    = OpenGLClearBuffer;
+		} else {
+			Draw.DrawCircleLine  = SoftwareCircleLine;
+			Draw.DrawCircleFill = SoftwareCircleFill;
+			Draw.DrawArcLine    = SoftwareArcLine;
+			Draw.DrawLine       = SoftwareLine;
+			Draw.DrawRectLine   = SoftwareRectLine;
+			Draw.DrawRectFill   = SoftwareRectFill;
+			Draw.ClipBuffer     = SoftwareClipBuffer;
+			Draw.ClearBuffer    = SoftwareClearBuffer;
+		}
 
 /* #if DEBUGVAR_LazyRender */
 #if 0
@@ -953,68 +1090,68 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		{
 #if !SINGLE_EXECUTABLE
 			Win32ReloadLibOnRecompile(&Lib); 
-			update_and_render *UpdateAndRender = ((update_and_render *)Lib.Functions[0].Function);
+			update_and_render *UpdateAndRender = (update_and_render *)Lib.Functions[0].Function;
 			Assert(UpdateAndRender && "loaded library function.");
 #endif // !SINGLE_EXECUTABLE
 
-			platform_request PlatRequest = UpdateAndRender(&GameImageBuffer, &Memory, Input);
+			platform_request PlatRequest = UpdateAndRender(&Draw, &Memory, Input);
 
 			switch(PlatRequest.Action)
 			{ // open/close/save file
 				case FILE_Close:
-					{
-						GlobalRunning = 0;
-					} break;
+				{
+					GlobalRunning = 0;
+				} break;
 
 				case FILE_Save:
-					{ // save file, possibly to new name & window
-						Save(State, Window.Handle, PlatRequest.NewWindow);
-					} break;
+				{ // save file, possibly to new name & window
+					Save(State, Window.Handle, PlatRequest.NewWindow);
+				} break;
 
 				case FILE_ExportSVG:
-					{
-						ExportSVG(State, Window.Handle);
-					} break;
+				{
+					ExportSVG(State, Window.Handle);
+				} break;
 
 				case FILE_Open:
-					{ // open file in same or new window
-						OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
-						char *DialogTitle = PlatRequest.NewWindow ? "Open in new window" : 0;
-						char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
-						if(OpenPath)
-						{
-							if(PlatRequest.NewWindow)
-							{
-								LOG("OPEN NEW GEOMETER WINDOW");
-								Assert(Win32OpenGeometerWindow(OpenPath));
-								free(OpenPath); // allocc'd above
-							}
-							else if(Win32ConfirmFileClose(State, Window.Handle))
-							{
-								HardReset(State, OpenedFile);
-								OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
-							}
-							// else cancelled
-						}
-					} break;
-
-				case FILE_New:
-					{ // new file in same or new window
+				{ // open file in same or new window
+					OPENFILENAME File = OpenFilenameDefault(Window.Handle, State->cchFilePath);
+					char *DialogTitle = PlatRequest.NewWindow ? "Open in new window" : 0;
+					char *OpenPath = Win32GetOpenFilename(Window.Handle, &File, DialogTitle);
+					if(OpenPath)
+					{
 						if(PlatRequest.NewWindow)
 						{
 							LOG("OPEN NEW GEOMETER WINDOW");
-							Assert(Win32OpenGeometerWindow(""));
+							DoAssert(Win32OpenGeometerWindow(OpenPath));
+							free(OpenPath); // allocc'd above
 						}
 						else if(Win32ConfirmFileClose(State, Window.Handle))
 						{
 							HardReset(State, OpenedFile);
+							OpenFileInCurrentWindow(State, OpenPath, File.nMaxFile, Window.Handle);
 						}
 						// else cancelled
-					} break;
+					}
+				} break;
+
+				case FILE_New:
+				{ // new file in same or new window
+					if(PlatRequest.NewWindow)
+					{
+						LOG("OPEN NEW GEOMETER WINDOW");
+						DoAssert(Win32OpenGeometerWindow(""));
+					}
+					else if(Win32ConfirmFileClose(State, Window.Handle))
+					{
+						HardReset(State, OpenedFile);
+					}
+					// else cancelled
+				} break;
 
 				default:
-					{ // do nothing
-					}
+				{ // do nothing
+				}
 			}
 
 #if INTERNAL && DEBUG_LOG_ACTIONS
@@ -1025,6 +1162,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 
 #if 1
 			// TODO (ui fix): cursor is set to normal if moving on the help screen
+			// TODO: use win32buffer instead of clientheight
 			f32 MX = Input.New->Mouse.P.X;
 			f32 MY = Input.New->Mouse.P.Y;
 			if(0.f <= MX && MX <= ClientWidth && // mouse is inside client area
@@ -1034,30 +1172,27 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				{
 					SetCursor(Cursors[CURSOR_Pan]);
 				}
-				else
+				else switch(State->InputMode)
 				{
-					switch(State->InputMode)
-					{
-						case MODE_Normal:
-							{ SetCursor(Cursors[CURSOR_Normal]); } break;
-						case MODE_SetBasis:
-							{ SetCursor(Cursors[CURSOR_Basis]); } break;
-						case MODE_BoxSelect:
-						case MODE_DragMove:
-						case MODE_AddToSelection:
-						case MODE_RmFromSelection:
-						case MODE_Selected:
-							{ SetCursor(Cursors[CURSOR_Select]); } break;
-						case MODE_SetLength:
-						case MODE_QuickPtOrSeg:
-						case MODE_Draw:
-						case MODE_ExtendArc:
-						case MODE_ExtendSeg:
-						case MODE_SetPerp:
-							{ SetCursor(Cursors[CURSOR_Draw]); } break;
-						default:
-							{ Assert(!"No cursor set for this input mode"); }
-					}
+					case MODE_Normal:
+						{ SetCursor(Cursors[CURSOR_Normal]); } break;
+					case MODE_SetBasis:
+						{ SetCursor(Cursors[CURSOR_Basis]); } break;
+					case MODE_BoxSelect:
+					case MODE_DragMove:
+					case MODE_AddToSelection:
+					case MODE_RmFromSelection:
+					case MODE_Selected:
+						{ SetCursor(Cursors[CURSOR_Select]); } break;
+					case MODE_SetLength:
+					case MODE_QuickPtOrSeg:
+					case MODE_Draw:
+					case MODE_ExtendArc:
+					case MODE_ExtendSeg:
+					case MODE_SetPerp:
+						{ SetCursor(Cursors[CURSOR_Draw]); } break;
+					default:
+						{ Assert(!"No cursor set for this input mode"); }
 				}
 			}
 #else
@@ -1089,7 +1224,23 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			}
 #endif
 
+			switch(Draw.Kind)
+			{
+				case DRAW_Hardware:
+					glBitmap(blit32_WIDTH, blit32_HEIGHT, 0, 0, 0, 0, (u8 *)&Blit32.Glyphs[blit_IndexFromASCII('a')]);
+					glDrawPixels(Win32Buffer.Width, Win32Buffer.Height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, Win32Buffer.Memory);
+					SwapBuffers(Window.Context);
+				break;
 
+				case DRAW_Software:
+					Fullscreen = Win32DisplayBufferInWindow(&Win32Buffer, Window);
+				break;
+
+				default:
+					Assert(! "Unknown render method");
+			}
+
+			// TODO: optional internal reallocation
 			ReallocateArenas(State, Window.Handle);
 		}
 
@@ -1112,5 +1263,5 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 #if SINGLE_EXECUTABLE
 #undef DEBUG_PREFIX
 #define DEBUG_PREFIX Win32
-#endif // SINGLE_EXECUTABLE
 DECLARE_DEBUG_RECORDS;
+#endif // SINGLE_EXECUTABLE

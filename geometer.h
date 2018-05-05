@@ -8,13 +8,15 @@
 #define POINTLAYER(i)  Pull(State->maPointLayer, i)
 #define SHAPES(i)      Pull(State->maShapes, i)
 #define ACTIONS(i)     Pull(State->maActions, i)
-#define DEBUG_LOG_ACTIONS 1
+#define DEBUG_LOG_ACTIONS 0
 #define DEFAULT_LENGTH 20.f
 #define cSTART_POINTS 32
 #define BASIS_ANIMATION_SPEED 8.f
 #define MOUSE_ANIMATION_SPEED 30.f
 #define DRAWER_ANIMATION_SPEED 10.f
 #define MAX_LAYERS 5
+#define POINT_RADIUS 4.f
+#define ACTIVE_POINT_RADIUS 6.f
 
 #include <types.h>
 /* #include "geometer_config.h" */
@@ -34,18 +36,6 @@
 	DEBUG_HIERARCHY_KIND(debug_variable, Observed) \
 	DEBUG_HIERARCHY_KIND(debug_record, Profiling)
 #include <live_edit/hierarchy.h>
-
-typedef struct debug_text
-{
-#define DEBUG_TEXT_SIZE 16384
-	uint Length;
-	char Text[DEBUG_TEXT_SIZE];
-} debug_text;
-static debug_text DebugText;
-#define DebugAdd(txt, ...) DebugText.Length += ssnprintf(DebugText.Text, DEBUG_TEXT_SIZE, "%s"txt, DebugText.Text, __VA_ARGS__)
-#define DebugClear() if(DebugText.Length > DEBUG_TEXT_SIZE) DebugText.Length = DEBUG_TEXT_SIZE;\
-					 for(unsigned int i = 0; i < DebugText.Length; ++i)  DebugText.Text[i] = 0
-#define DebugReplace(txt, ...) DebugClear(); DebugAdd(txt, __VA_ARGS__)
 
 // minimal prefix to prevent collision with stdio
 #define STB_SPRINTF_DECORATE(fn) s##fn
@@ -72,8 +62,8 @@ typedef action_v2 action;
 typedef basis_v2 basis;
 typedef shape_v1 shape;    shape gZeroShape;
 typedef arena_type(shape);  typedef union shape_arena shape_arena;
-typedef arena_type(v2);     typedef union v2_arena   v2_arena; // repeated from macro - just for syntax highlighting
-typedef arena_type(u8);     typedef union u8_arena   u8_arena; // repeated from macro - just for syntax highlighting
+typedef arena_type(v2);     typedef union v2_arena   v2_arena;   // repeated from macro - just for syntax highlighting
+typedef arena_type(u8);     typedef union u8_arena   u8_arena;   // repeated from macro - just for syntax highlighting
 typedef arena_type(uint);   typedef union uint_arena uint_arena; // repeated from macro - just for syntax highlighting
 typedef arena_type(action); typedef union action_arena action_arena;
 
@@ -148,17 +138,59 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
+struct draw_buffer;
+#define FN_DrawLine(      name) void         name(struct draw_buffer *Draw, v2 Point1, v2 Point2,  colour Colour)
+#define FN_DrawCircleFill(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawCircleLine(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawArcLine(   name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+#define FN_DrawRectFill(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_DrawRectLine(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_ClearBuffer(   name) void         name(image_buffer Buffer)
+#define FN_ClipBuffer(    name) image_buffer name(image_buffer Buffer,  v2 Offset, v2 Size)
+
+#define DRAW_FNS \
+	DRAW_FN(DrawLine) \
+	DRAW_FN(DrawCircleFill) \
+	DRAW_FN(DrawCircleLine) \
+	DRAW_FN(DrawArcLine) \
+	DRAW_FN(DrawRectFill) \
+	DRAW_FN(DrawRectLine) \
+	DRAW_FN(ClearBuffer) \
+	DRAW_FN(ClipBuffer) \
+
+#define DRAW_FN(name)\
+typedef FN_## name (fn_## name);
+DRAW_FNS
+#undef DRAW_FN
+
+typedef struct draw_buffer
+{
+	enum {
+		DRAW_Software,
+		DRAW_Hardware,
+	} Kind;
+	// TODO: unions etc
+	image_buffer Buffer;
+	f32 StrokeWidth;
+
+#define DRAW_FN(name)\
+	fn_##name *name;
+	DRAW_FNS
+#undef DRAW_FN
+	// TODO: String
+} draw_buffer;
+
 typedef void drawstring(image_buffer *ImgBuffer, font *Font, char *Str, f32 SizeInEms, f32 XOffset, f32 YOffset, b32 InvDirection, colour Colour);
 typedef struct debug
 {
-	image_buffer *Buffer;
+	image_buffer Buffer;
 	drawstring *Print;
 	font Font;
 	v2 P;
 	f32 FontSize;
 } debug;
 global_variable debug Debug;
-#define DebugPrint() Debug.Print(Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
+#define DebugPrint() Debug.Print(&Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
 
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
@@ -220,7 +252,7 @@ typedef struct state
 
 #include "geometer_core.c"
 
-#define UPDATE_AND_RENDER(name) platform_request name(image_buffer *ScreenBuffer, memory *Memory, input Input)
+#define UPDATE_AND_RENDER(name) platform_request name(draw_buffer *Draw, memory *Memory, input Input)
 
 DECLARE_DEBUG_FUNCTION;
 
