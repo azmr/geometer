@@ -139,17 +139,29 @@ ShapeEq(shape S1, shape S2)
 }
 
 struct draw_buffer;
-#define FN_LINE(  name) void name(struct draw_buffer *Draw, v2 Point1, v2 Point2, colour Colour)
-#define FN_CIRCLE(name) void name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
-#define FN_ARC(   name) void name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
-#define FN_RECT(  name) void name(struct draw_buffer *Draw, v2 vMin, v2 vMax, colour Colour)
-#define FN_CLEAR( name) void name(image_buffer Buffer)
+#define FN_DrawLine(      name) void         name(struct draw_buffer *Draw, v2 Point1, v2 Point2,  colour Colour)
+#define FN_DrawCircleFill(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawCircleLine(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawArcLine(   name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+#define FN_DrawRectFill(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_DrawRectLine(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_ClearBuffer(   name) void         name(image_buffer Buffer)
+#define FN_ClipBuffer(    name) image_buffer name(image_buffer Buffer,  v2 Offset, v2 Size)
 
-typedef FN_LINE  (fn_line);
-typedef FN_CIRCLE(fn_circle);
-typedef FN_ARC   (fn_arc);
-typedef FN_RECT  (fn_rect);
-typedef FN_CLEAR (fn_clear);
+#define DRAW_FNS \
+	DRAW_FN(DrawLine) \
+	DRAW_FN(DrawCircleFill) \
+	DRAW_FN(DrawCircleLine) \
+	DRAW_FN(DrawArcLine) \
+	DRAW_FN(DrawRectFill) \
+	DRAW_FN(DrawRectLine) \
+	DRAW_FN(ClearBuffer) \
+	DRAW_FN(ClipBuffer) \
+
+#define DRAW_FN(name)\
+typedef FN_## name (fn_## name);
+DRAW_FNS
+#undef DRAW_FN
 
 typedef struct draw_buffer
 {
@@ -161,13 +173,10 @@ typedef struct draw_buffer
 	image_buffer Buffer;
 	f32 StrokeWidth;
 
-	fn_circle *CircleLine;
-	fn_circle *CircleFill;
-	fn_arc    *ArcLine;
-	fn_line   *Line;
-	fn_rect   *RectLine;
-	fn_rect   *RectFill;
-	fn_clear  *ClearBuffer;
+#define DRAW_FN(name)\
+	fn_##name *name;
+	DRAW_FNS
+#undef DRAW_FN
 	// TODO: String
 } draw_buffer;
 

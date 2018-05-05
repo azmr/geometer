@@ -101,6 +101,11 @@
 v2 gDebugV2;
 v2 gDebugPoint;
 
+#define DRAW_FN(name)\
+fn_##name *name;
+DRAW_FNS
+#undef DRAW_FN
+
 internal inline void
 #define DrawCrosshair GeoDrawCrosshair
 DrawCrosshair(draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
@@ -110,12 +115,11 @@ DrawCrosshair(draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
 	v2 XRad = {Radius, 0.f};
 	v2 YRad = {0.f, Radius};
 	draw_buffer tDraw = *Draw;
-	fn_line *Line = tDraw.Line;
 	tDraw.StrokeWidth = 1.f;
-	Line(&tDraw, V2Sub(Centre, X1), V2Sub(Centre, XRad), Colour);
-	Line(&tDraw, V2Add(Centre, X1), V2Add(Centre, XRad), Colour);
-	Line(&tDraw, V2Add(Centre, Y1), V2Add(Centre, YRad), Colour);
-	Line(&tDraw, V2Sub(Centre, Y1), V2Sub(Centre, YRad), Colour);
+	DrawLine(&tDraw, V2Sub(Centre, X1), V2Sub(Centre, XRad), Colour);
+	DrawLine(&tDraw, V2Add(Centre, X1), V2Add(Centre, XRad), Colour);
+	DrawLine(&tDraw, V2Add(Centre, Y1), V2Add(Centre, YRad), Colour);
+	DrawLine(&tDraw, V2Sub(Centre, Y1), V2Sub(Centre, YRad), Colour);
 }
 
 internal inline void
@@ -150,11 +154,9 @@ DrawActivePoint(draw_buffer *Draw, v2 po, colour Col)
 {
 	BEGIN_TIMED_BLOCK;
 	draw_buffer tDraw = *Draw;
-	fn_circle *CircleFill = tDraw.CircleFill;
-	fn_circle *CircleLine = tDraw.CircleLine;
 	tDraw.StrokeWidth = 1.f;
-	CircleFill(&tDraw, po, POINT_RADIUS, Col);
-	CircleLine(&tDraw, po, ACTIVE_POINT_RADIUS, Col);
+	DrawCircleFill(&tDraw, po, POINT_RADIUS, Col);
+	DrawCircleLine(&tDraw, po, ACTIVE_POINT_RADIUS, Col);
 	END_TIMED_BLOCK;
 }
 
@@ -162,7 +164,7 @@ DrawActivePoint(draw_buffer *Draw, v2 po, colour Col)
 internal inline void
 DrawArcFromPoints(draw_buffer *Draw, v2 Centre, v2 A, v2 B, colour Colour)
 {
-	Draw->ArcLine(Draw, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
+	DrawArcLine(Draw, Centre, Dist(Centre, A), V2Sub(A, Centre), V2Sub(B, Centre), Colour);
 }
 
 internal inline b32
@@ -498,10 +500,10 @@ DrawAABB(draw_buffer *Draw, aabb AABB, colour Col)
 	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
 	v2 BottomRight = V2(AABB.MaxX, AABB.MinY);
 
-	Draw->Line(Draw, TopLeft,    TopRight,    Col);
-	Draw->Line(Draw, TopLeft,    BottomLeft,  Col);
-	Draw->Line(Draw, TopRight,   BottomRight, Col);
-	Draw->Line(Draw, BottomLeft, BottomRight, Col);
+	DrawLine(Draw, TopLeft,    TopRight,    Col);
+	DrawLine(Draw, TopLeft,    BottomLeft,  Col);
+	DrawLine(Draw, TopRight,   BottomRight, Col);
+	DrawLine(Draw, BottomLeft, BottomRight, Col);
 }
 
 internal inline aabb
@@ -574,49 +576,57 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 
 #define ToScreen(p) V2CanvasToScreen(Basis, p, ScreenCentre)
 internal void
-RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 ScreenCentre, uint PointLayer, f32 PtRadius)
+RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 AreaSize, uint iLayer, f32 PtRadius)
 {
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
+	Draw.Buffer = ClipBuffer(Draw.Buffer, AreaOffset, AreaSize);
+	v2 ScreenCentre = V2Add(AreaOffset, V2Mult(0.5, AreaSize));
+	AreaSize = V2( (f32)Draw.Buffer.Width, (f32)Draw.Buffer.Height );
+	if(Draw.Kind == DRAW_Software)
+	{ ScreenCentre = V2Mult(0.5, AreaSize); }
+
+	if(iLayer)
+	{ Draw.StrokeWidth = 1.0f; }
 	foreachf(shape, Shape, maShapesNearScreen)
 	{ // DRAW SHAPES
 
 		uint ShapeLayer = POINTLAYER(Shape.P[0]);
 		Assert(ShapeLayer != 0);
-		if((! PointLayer || ShapeLayer == PointLayer))
+		if(iLayer == 0 || ShapeLayer == iLayer)
 		{
 			colour LayerColour = BLACK;
 			if(ShapeLayer != State->iCurrentLayer)
-			{ LayerColour = PreMultiplyColour(BLACK, 0.25f); }
+			{ LayerColour = PreMultiplyColour(LayerColour, 0.25f); }
 
 			switch(Shape.Kind)
 			{
 				case SHAPE_Segment:
-					{
-						v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
-						v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
-						Draw.Line(&Draw, poA, poB, LayerColour);
-					} break;
+				{
+					v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
+					v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
+					DrawLine(&Draw, poA, poB, LayerColour);
+				} break;
 
 				case SHAPE_Circle:
-					{
-						v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
-						v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
-						f32 Radius = Dist(poFocus, poRadius);
-						Assert(Radius);
-						Draw.CircleLine(&Draw, poFocus, Radius, LayerColour);
-					} break;
+				{
+					v2 poFocus  = ToScreen(POINTS_OS(Shape.Circle.ipoFocus));
+					v2 poRadius = ToScreen(POINTS_OS(Shape.Circle.ipoRadius));
+					f32 Radius  = Dist(poFocus, poRadius);
+					Assert(Radius);
+					DrawCircleLine(&Draw, poFocus, Radius, LayerColour);
+				} break;
 
 				case SHAPE_Arc:
-					{
-						v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
-						v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
-						v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
-						DrawArcFromPoints(&Draw, poFocus, poStart, poEnd, LayerColour); 
-					} break;
+				{
+					v2 poFocus = ToScreen(POINTS_OS(Shape.Arc.ipoFocus));
+					v2 poStart = ToScreen(POINTS_OS(Shape.Arc.ipoStart));
+					v2 poEnd   = ToScreen(POINTS_OS(Shape.Arc.ipoEnd));
+					DrawArcFromPoints(&Draw, poFocus, poStart, poEnd, LayerColour); 
+				} break;
 
 				default:
-					{ Assert(!"Tried to draw unknown shape"); }
+				{ Assert(! "Tried to draw unknown shape"); }
 			}
 		}
 	}
@@ -625,10 +635,10 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 ScreenCentre, uint
 	LOG("\tDRAW POINTS");
 	char PointIndex[32] = {0};
 	foreachf1(v2, po, maPointsOnScreen)
-	if(POINTSTATUS(ipo) && (! PointLayer || POINTLAYER(ipo) == PointLayer))
+	if(POINTSTATUS(ipo) && (! iLayer || POINTLAYER(ipo) == iLayer))
 	{ // draw on-screen points
 		v2 SSPoint = ToScreen(po);
-		Draw.CircleFill(&Draw, SSPoint, PtRadius, LIGHT_GREY);
+		DrawCircleFill(&Draw, SSPoint, PtRadius, LIGHT_GREY);
 	}
 
 	DEBUG_LIVE_if(Points_Numbering)
@@ -653,6 +663,9 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 ScreenCentre, uint
 			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
 		}
 	}
+
+	// reset for OpenGL
+	ClipBuffer(Draw.Buffer, ZeroV2, AreaSize);
 }
 
 UPDATE_AND_RENDER(UpdateAndRender)
@@ -669,6 +682,13 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	ScreenSize.Y = (f32)Draw->Buffer.Height;
 	v2 ScreenCentre = V2Mult(0.5f, ScreenSize);
 	platform_request File = {0};
+
+	{
+#define DRAW_FN(name)\
+		name = Draw->name;
+		DRAW_FNS
+#undef DRAW_FN
+	}
 
 	memory_arena TempArena;
 	InitArena(&TempArena, Memory->TransientStorage, Memory->TransientStorageSize);
@@ -702,7 +722,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 	// Clear BG
 	BEGIN_NAMED_TIMED_BLOCK(ClearBG);
-	Draw->ClearBuffer(Draw->Buffer);
+	ClearBuffer(Draw->Buffer);
 	END_NAMED_TIMED_BLOCK(ClearBG);
 	/* DrawRectangleFilled(Draw.Buffer, Origin, ScreenSize, WHITE); */
 
@@ -1653,7 +1673,7 @@ case_mode_extend_arc:
 		/* 	} */
 		/* } */
 
-		RenderDrawing(*Draw, State, Basis, ScreenCentre, 0, POINT_RADIUS);
+		RenderDrawing(*Draw, State, Basis, Origin, ScreenSize, 0, POINT_RADIUS);
 		DEBUG_LIVE_if(Shapes_ShowClosestPoint)
 		{
 			foreachf(shape, Shape, *maShapesNearScreen)
@@ -1704,15 +1724,15 @@ case_mode_extend_arc:
 			{
 				// TODO (UI): animate when (un)snapping
 				if(DrawPreviewCircle)
-				{ Draw->CircleLine(Draw, SSSnapMouseP, SSLength, LIGHT_GREY); }
+				{ DrawCircleLine(Draw, SSSnapMouseP, SSLength, LIGHT_GREY); }
 				if(C_ShapeLock.EndedDown)
-				{ Draw->CircleLine(Draw, SSSnapMouseP, POINT_RADIUS, LIGHT_GREY); }
+				{ DrawCircleLine(Draw, SSSnapMouseP, POINT_RADIUS, LIGHT_GREY); }
 			} break;
 
 
 			case MODE_SetBasis:
 			{
-				Draw->Line(Draw, poSSSaved, SSSnapMouseP, RED);
+				DrawLine(Draw, poSSSaved, SSSnapMouseP, RED);
 			} break;
 
 
@@ -1721,14 +1741,14 @@ case_mode_extend_arc:
 				if( ! V2WithinEpsilon(SnapMouseP, poSelect, POINT_EPSILON) && ! C_PanMod.EndedDown)
 				{ SSLength = Dist(poSSSelect, SSSnapMouseP); }
 				if(DrawPreviewCircle)
-				{ Draw->CircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
-				Draw->Line(Draw, poSSSelect, SSSnapMouseP, LIGHT_GREY);
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
+				DrawLine(Draw, poSSSelect, SSSnapMouseP, LIGHT_GREY);
 			} break;
 
 
 			case MODE_QuickPtOrSeg:
 			{
-				Draw->Line(Draw, poSSSelect, SSSnapMouseP, BLUE);
+				DrawLine(Draw, poSSSelect, SSSnapMouseP, BLUE);
 				DrawActivePoint(Draw, poSSSelect, RED);
 			} break;
 
@@ -1765,8 +1785,8 @@ case_mode_extend_arc:
 			/* 		v2 PMoved = V2Add(P, DragDir); */
 			/* 		v2 SSP = ToScreen(P); */
 			/* 		v2 SSPMoved = ToScreen(PMoved); */
-			/* 		Draw->Line(Draw, SSP, SSPMoved, LIGHT_GREY); */
-			/* 		DrawCircleFill(Draw->Buffer, SSPMoved, POINT_RADIUS, BLUE); */
+			/* 		DrawLine(Draw, SSP, SSPMoved, LIGHT_GREY); */
+			/* 		DrawCircleFill(DrawBuffer, SSPMoved, POINT_RADIUS, BLUE); */
 			/* 	} */
 			/* } break; */
 
@@ -1781,10 +1801,10 @@ case_mode_extend_arc:
 				}
 				// preview circle at given length and segment
 				if(DrawPreviewCircle)
-				{ Draw->CircleLine(Draw, poSSSelect, SSLength, BLUE); }
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, BLUE); }
 				DrawActivePoint(Draw, poSSAtDist, RED);
 				DrawActivePoint(Draw, poSSSelect, RED);
-				Draw->Line(Draw, poSSSelect, poSSEnd, BLUE);
+				DrawLine(Draw, poSSSelect, poSSEnd, BLUE);
 			} break;
 
 
@@ -1794,13 +1814,13 @@ case_mode_extend_arc:
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
 				v2 poSSStart = ToScreen(poArcStart);
-				Draw->Line(Draw, poSSSelect, poSSStart, LIGHT_GREY);
+				DrawLine(Draw, poSSSelect, poSSStart, LIGHT_GREY);
 				if(DrawPreviewCircle && V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
-				{ Draw->CircleLine(Draw, poSSSelect, SSLength, BLACK); }
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, BLACK); }
 				else
 				{
 					v2 poSSEnd   = ToScreen(poArcEnd);
-					Draw->Line(Draw, poSSSelect, poSSEnd, LIGHT_GREY);
+					DrawLine(Draw, poSSSelect, poSSEnd, LIGHT_GREY);
 					DrawArcFromPoints(Draw, poSSSelect, poSSStart, poSSEnd, BLACK);
 				}
 			} break;
@@ -1812,9 +1832,9 @@ case_mode_extend_arc:
 				v2 poSSOnLine = ToScreen(poOnLine);
 				DrawFullScreenLine(Draw->Buffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
 				if(State->InputMode == MODE_ExtendSeg)
-				{ Draw->Line(Draw, poSSSelect, poSSOnLine, BLACK); }
+				{ DrawLine(Draw, poSSSelect, poSSOnLine, BLACK); }
 				if(DrawPreviewCircle)
-				{ Draw->CircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
 				DrawActivePoint(Draw, poSSOnLine, RED);
 			} break;
 
@@ -1827,15 +1847,15 @@ case_mode_extend_arc:
 					v2 poSSStart = ToScreen(poSelect);
 					v2 poSSPerp  = ToScreen(V2Add(poSelect, PerpDir));
 					v2 poSSNPerp = ToScreen(V2Add(poSelect, V2Neg(PerpDir)));
-					Draw->Line(Draw, poSSStart, SSSnapMouseP, LIGHT_GREY);
-					Draw->Line(Draw, poSSNPerp, poSSPerp, LIGHT_GREY);
+					DrawLine(Draw, poSSStart, SSSnapMouseP, LIGHT_GREY);
+					DrawLine(Draw, poSSNPerp, poSSPerp, LIGHT_GREY);
 				}
 			} break;
 		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{ // draw debug vector
-			Draw->Line(Draw, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
+			DrawLine(Draw, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
@@ -1858,28 +1878,26 @@ case_mode_extend_arc:
 			ThumbBasis.Zoom *= (f32)cThumbs;
 			v2 TargetThumbSize = V2Mult(ThumbScreenFraction, ScreenSize);
 			v2 ThumbSize = { Lerp(0, tLayerDrawer, TargetThumbSize.X), TargetThumbSize.Y };
-			v2 ThumbBL = { ScreenSize.X - ThumbSize.X - 1, 0 };
+			v2 ThumbBL = { ScreenSize.X - ThumbSize.X, 0.f };
 			// TODO (fix): sometimes clips before the edge of the thumbnail)
 			for(uint iThumb = 0; iThumb++ < cThumbs;)
 			{
 				v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y }; // V2Add(ThumbBL, ThumbSize);
-				image_buffer ThumbBuffer = { GetBufferLocation(Draw->Buffer, sizeof(u32), ThumbBL),
-					(i32)ThumbSize.X, (i32)ThumbSize.Y, Draw->Buffer.Pitch };
-				draw_buffer ThumbDraw = *Draw;
-				ThumbDraw.Buffer = ThumbBuffer;
-				Draw->RectFill(Draw, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
-				RenderDrawing(ThumbDraw, State, ThumbBasis, V2Mult(0.5f, TargetThumbSize), iThumb, 2.f);
-				if(iThumb == State->iCurrentLayer)
-				{
-					DrawRectangleLines(Draw->Buffer, ThumbBL, ThumbTR, BLUE);
-					DrawRectangleLines(Draw->Buffer, V2(ThumbBL.X+1.f, ThumbBL.Y+1.f),
-							V2(ThumbTR.X-1.f, ThumbTR.Y-1.f), BLUE);
-					DrawRectangleLines(Draw->Buffer, V2(ThumbBL.X+2.f, ThumbBL.Y+2.f),
-							V2(ThumbTR.X-2.f, ThumbTR.Y-2.f), BLUE);
-				}
-				else
-				{ DrawRectangleLines(Draw->Buffer, ThumbBL, ThumbTR, LIGHT_GREY); }
+				DrawRectFill(Draw, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
+				RenderDrawing(*Draw, State, ThumbBasis, ThumbBL, ThumbSize, iThumb, 2.f);
+				if(iThumb != State->iCurrentLayer)
+				{ DrawRectLine(Draw, ThumbBL, ThumbTR, LIGHT_GREY); }
 				ThumbBL.Y += ThumbSize.Y;
+			}
+
+			{
+				ThumbBL.Y = ThumbSize.Y * (State->iCurrentLayer - 1);
+				v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y };
+				v2 One = {1.f, 1.f};
+				v2 Two = {2.f, 2.f};
+				DrawRectLine(Draw, ThumbBL, ThumbTR, BLUE);
+				DrawRectLine(Draw, V2Add(ThumbBL, One), V2Sub(ThumbTR, One), BLUE);
+				DrawRectLine(Draw, V2Add(ThumbBL, Two), V2Sub(ThumbTR, Two), BLUE);
 			}
 		}
 
@@ -1892,7 +1910,7 @@ case_mode_extend_arc:
 
 	if(State->ShowHelpInfo)
 	{ LOG("PRINT HELP");
-		Draw->RectFill(Draw, Origin, ScreenSize, PreMultiplyColour(WHITE, 0.8f));
+		DrawRectFill(Draw, Origin, ScreenSize, PreMultiplyColour(WHITE, 0.8f));
 		char LeftHelpBuffer[] =
 			"Drawing\n"
 			"=======\n"

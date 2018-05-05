@@ -13,6 +13,7 @@
 #include <win32.h>
 #include <live_edit/win32_live_edit.h>
 #include "svg.h"
+#define OGL_MSAA 8
 #include <opengl/opengl.h>
 #include <opengl/opengl_primitives.h>
 /* #include "geometer_templibs.h" */
@@ -23,7 +24,7 @@
 
 global_variable b32 GlobalRunning;
 global_variable b32 GlobalPause;
-global_variable f32 GlobalStroke;
+global_variable f32 GlobalStroke = 2.5f;
 global_variable WINDOWPLACEMENT GlobalWindowPosition = {sizeof(GlobalWindowPosition)};
 #include <win32_gfx.h>
 #include <win32_input.h>
@@ -776,52 +777,55 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
-internal FN_CIRCLE(OpenGLCircleLine)
+internal FN_DrawCircleLine(OpenGLCircleLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
-	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleLine(Centre, Radius);
 }
 
-internal FN_CIRCLE(OpenGLCircleFill)
+internal FN_DrawCircleFill(OpenGLCircleFill)
 {
 	(void)Draw;
-	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleFill(Centre, Radius);
 }
 
-internal FN_ARC(OpenGLArcLine)
+internal FN_DrawArcLine(OpenGLArcLine)
 {
-	(void)Draw;
 	GLStrokeWidth(Draw->StrokeWidth);
-	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLArcCap(Centre, Radius, A, B);
 }
 
-internal FN_LINE(OpenGLLine)
+internal FN_DrawLine(OpenGLLine)
 {
-	(void)Draw;
 	GLStrokeWidth(Draw->StrokeWidth);
-	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLLineCap(Point1, Point2);
 }
 
-internal FN_RECT(OpenGLRectangleLines)
+internal FN_DrawRectLine(OpenGLRectLine)
 {
-	(void)Draw;
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxLine(vMin, vMax);
 }
 
-internal FN_RECT(OpenGLRectangleFilled)
+internal FN_DrawRectFill(OpenGLRectFill)
 {
 	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxFill(vMin, vMax);
 }
 
-internal FN_CLEAR(OpenGLClearBuffer)
+internal FN_ClipBuffer(OpenGLClipBuffer)
+{
+	glScissor((GLint)Offset.X, (GLint)Offset.Y, (GLint)Size.X, (GLint)Size.Y);
+	return Buffer;
+}
+
+internal FN_ClearBuffer(OpenGLClearBuffer)
 {
 	f32 W = (f32)Buffer.Width, H = (f32)Buffer.Height;
 	glViewport(0, 0, Buffer.Width, Buffer.Height);
@@ -836,23 +840,31 @@ internal FN_CLEAR(OpenGLClearBuffer)
 	glClear(GL_COLOR_BUFFER_BIT);
 }
 
-internal FN_LINE(SoftwareLine)
+internal FN_DrawLine(SoftwareLine)
 { DEBUGDrawLine(Draw->Buffer, Point1, Point2, Colour); }
 
-internal FN_CIRCLE(SoftwareCircleLine)
+internal FN_DrawCircleLine(SoftwareCircleLine)
 { CircleLine(Draw->Buffer, Centre, Radius, Colour); }
-internal FN_CIRCLE(SoftwareCircleFill)
-{ DrawCircleFill(Draw->Buffer, Centre, Radius, Colour); }
+internal FN_DrawCircleFill(SoftwareCircleFill)
+{ CircleFill(Draw->Buffer, Centre, Radius, Colour); }
 
-internal FN_ARC(SoftwareArcLine)
+internal FN_DrawArcLine(SoftwareArcLine)
 { ArcLine(Draw->Buffer, Centre, Radius, A, B, Colour); }
 
-internal FN_RECT  (SoftwareRectLine)
+internal FN_DrawRectLine(SoftwareRectLine)
 { DrawRectangleLines(Draw->Buffer, vMin, vMax, Colour); }
-internal FN_RECT  (SoftwareRectFill)
+internal FN_DrawRectFill(SoftwareRectFill)
 { DrawRectangleFilled(Draw->Buffer, vMin, vMax, Colour); }
 
-internal FN_CLEAR(SoftwareClearBuffer)
+internal FN_ClipBuffer(SoftwareClipBuffer)
+{
+	Buffer.Memory = GetBufferLocation(Buffer, sizeof(u32), Offset);
+	Buffer.Width  = (i32)Size.X;
+	Buffer.Height = (i32)Size.Y;
+	return Buffer;
+}
+
+internal FN_ClearBuffer(SoftwareClearBuffer)
 { memset(Buffer.Memory, 0xFF, Buffer.Width * Buffer.Height * BytesPerPixel); }
 
 int CALLBACK
@@ -932,30 +944,14 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
  	if(Win32CreateOpenGLContext(Window.Context))
 	{
 		Draw.Kind = DRAW_Hardware;
-		Draw.CircleLine  = OpenGLCircleLine;
-		Draw.CircleFill  = OpenGLCircleFill;
-		Draw.ArcLine     = OpenGLArcLine;
-		Draw.Line        = OpenGLLine;
-		Draw.RectLine    = OpenGLRectangleLines;
-		Draw.RectFill    = OpenGLRectangleFilled;
-		Draw.ClearBuffer = OpenGLClearBuffer;
 
-		GlobalStroke = 2.5f;
+		glEnable(GL_SCISSOR_TEST);
+
 		GLStrokeWidth(GlobalStroke);
 		GLEnablePrimitiveSmoothing();
 	}
-
 	else
-	{
-		Draw.Kind = DRAW_Software;
-		Draw.CircleLine  = SoftwareCircleLine;
-		Draw.CircleFill  = SoftwareCircleFill;
-		Draw.ArcLine     = SoftwareArcLine;
-		Draw.Line        = SoftwareLine;
-		Draw.RectLine    = SoftwareRectLine;
-		Draw.RectFill    = SoftwareRectFill;
-		Draw.ClearBuffer = SoftwareClearBuffer;
-	}
+	{ Draw.Kind = DRAW_Software; }
 
 	// ASSETS
 #if 1
@@ -989,7 +985,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 	b32 Fullscreen = 0;
 	char TitleText[2048] = {0};
 
-	b32 RenderingViaHardware = 0;
 	while(GlobalRunning)
 	{
 		FrameTimer.Start = Win32GetWallClock();
@@ -1014,7 +1009,7 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 				, "Geometer",
 				FileHasName(State) ? State->FilePath : "[New File]",
 				IsModified(State) ? "[Modified]" : "",
-				RenderingViaHardware ? "[Hardware]" : "[Software]");
+				Draw.Kind == DRAW_Hardware ? "[Hardware]" : "[Software]");
 		TitleOffset;
 #if 0 // probe frame time without drawing
 		ssnprintf(TitleText + TitleOffset, sizeof(TitleText) - TitleOffset,
@@ -1057,6 +1052,29 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			Input.New->Mouse.P.Y += 134;
 		}
 
+
+		if(Input.New->Keyboard.F12.EndedDown && ! Input.Old->Keyboard.F12.EndedDown)
+		{ Draw.Kind = ! Draw.Kind; } // Toggle software/hardware rendering
+
+		if(Draw.Kind == DRAW_Hardware) {
+			Draw.DrawCircleLine = OpenGLCircleLine;
+			Draw.DrawCircleFill = OpenGLCircleFill;
+			Draw.DrawArcLine    = OpenGLArcLine;
+			Draw.DrawLine       = OpenGLLine;
+			Draw.DrawRectLine   = OpenGLRectLine;
+			Draw.DrawRectFill   = OpenGLRectFill;
+			Draw.ClipBuffer     = OpenGLClipBuffer;
+			Draw.ClearBuffer    = OpenGLClearBuffer;
+		} else {
+			Draw.DrawCircleLine  = SoftwareCircleLine;
+			Draw.DrawCircleFill = SoftwareCircleFill;
+			Draw.DrawArcLine    = SoftwareArcLine;
+			Draw.DrawLine       = SoftwareLine;
+			Draw.DrawRectLine   = SoftwareRectLine;
+			Draw.DrawRectFill   = SoftwareRectFill;
+			Draw.ClipBuffer     = SoftwareClipBuffer;
+			Draw.ClearBuffer    = SoftwareClearBuffer;
+		}
 
 /* #if DEBUGVAR_LazyRender */
 #if 0
@@ -1205,7 +1223,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			switch(Draw.Kind)
 			{
 				case DRAW_Hardware:
-					RenderingViaHardware = 1;
 					SwapBuffers(Window.Context);
 				break;
 
