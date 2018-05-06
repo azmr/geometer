@@ -791,10 +791,12 @@ internal FN(OpenGL, DrawCircleFill)
 	GLCircleFill(Centre, Radius);
 }
 
-internal FN(OpenGL, DrawCircleSmear)
+// TODO: other smears
+internal FN(OpenGL, DrawCircleLineSmear)
 {
-	(void)Draw;
-	GLCircleLinearSmear(Centre, Radius, Smear, StartAlpha, EndAlpha, Colour);
+	colour StartColour = BLANK_COLOUR;
+	colour EndColour = PreMultiplyColour(Colour, 0.3f);
+	GLCircleLinearSmear(Centre, Radius, Draw->Smear, StartColour, EndColour);
 }
 
 internal FN(OpenGL, DrawArcLine)
@@ -868,13 +870,11 @@ internal FN(Software, DrawCircleLine)
 internal FN(Software, DrawCircleFill)
 { CircleFill(Draw->Buffer, Centre, Radius, Colour); }
 
-
-internal FN(Software, DrawCircleSmear)
+internal FN(Software, DrawCircleLineSmear)
 {
 #if 1
 	// do nothing
-	(void)Draw; (void)StartAlpha; (void)EndAlpha; (void)Smear;
-	(void)Radius; (void)Centre; (void)Colour;
+	(void)Draw; (void)Radius; (void)Centre; (void)Colour;
 
 #elif 0
 	// Multiple lines trailing behind

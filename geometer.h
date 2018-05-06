@@ -139,17 +139,22 @@ ShapeEq(shape S1, shape S2)
 	return Result;
 }
 
+// TODO: other smears
+
+#define FN_CIRCLE(name) void name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_2VEC(name, v_1, v_2) void name(struct draw_buffer *Draw, v2 v_1, v2 v_2, colour Colour)
+
 struct draw_buffer;
-#define FN_DrawSeg(        name) void         name(struct draw_buffer *Draw, v2 Point1, v2 Point2,  colour Colour)
-#define FN_DrawLine(       name) void         name(struct draw_buffer *Draw, v2 P,      v2 Dir,     colour Colour)
-#define FN_DrawCircleFill( name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
-#define FN_DrawCircleLine( name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
-#define FN_DrawCircleSmear(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 Smear, f32 StartAlpha, f32 EndAlpha, colour Colour)
-#define FN_DrawArcLine(    name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
-#define FN_DrawRectFill(   name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
-#define FN_DrawRectLine(   name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
-#define FN_ClearBuffer(    name) void         name(image_buffer Buffer)
-#define FN_ClipBuffer(     name) image_buffer name(image_buffer Buffer, v2 Offset, v2 Size)
+#define FN_DrawSeg(       name) FN_2VEC(name, Point1, Point2)
+#define FN_DrawLine(      name) FN_2VEC(name, P, Dir)
+#define FN_DrawCircleFill(name) FN_CIRCLE(name)
+#define FN_DrawCircleLine(name) FN_CIRCLE(name)
+#define FN_DrawRectFill(  name) FN_2VEC(name, vMin, vMax)
+#define FN_DrawRectLine(  name) FN_2VEC(name, vMin, vMax)
+#define FN_DrawArcLine(   name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+#define FN_ClearBuffer(   name) void         name(image_buffer Buffer)
+#define FN_ClipBuffer(    name) image_buffer name(image_buffer Buffer, v2 Offset, v2 Size)
+#define FN_DrawCircleLineSmear(name) FN_CIRCLE(name)
 
 #define FN(prefix, fn) FN_##fn (prefix ## fn)
 
@@ -158,7 +163,7 @@ struct draw_buffer;
 	DRAW_FN(DrawLine) \
 	DRAW_FN(DrawCircleFill) \
 	DRAW_FN(DrawCircleLine) \
-	DRAW_FN(DrawCircleSmear) \
+	DRAW_FN(DrawCircleLineSmear) \
 	DRAW_FN(DrawArcLine) \
 	DRAW_FN(DrawRectFill) \
 	DRAW_FN(DrawRectLine) \
@@ -179,6 +184,7 @@ typedef struct draw_buffer
 	// TODO: unions etc
 	image_buffer Buffer;
 	f32 StrokeWidth;
+	v2 Smear;
 
 #define DRAW_FN(name)\
 	fn_##name *name;
@@ -198,6 +204,12 @@ typedef struct debug
 } debug;
 global_variable debug Debug;
 #define DebugPrint() Debug.Print(&Debug.Buffer, &Debug.Font, DebugText.Text, Debug.FontSize, Debug.P.X, Debug.P.Y, 0, BLACK)
+
+typedef enum {
+	FX_Smear,
+
+	FX_COUNT,
+} fx;
 
 // TODO: add prev valid shape snap point for when cursor is at circle centre
 typedef struct state
@@ -252,6 +264,7 @@ typedef struct state
 	v2 pSnapMouseP; // TODO (opt): remove?
 	f32 tSnapMouseP;
 
+	b8 FX[FX_COUNT];
 	u8 SavedStatus[2];
 	// NOTE: woefully underspecced:
 	u64 OverflowTest;

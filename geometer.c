@@ -729,6 +729,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 
 		State->iSaveAction = State->iCurrentAction;
 		State->iCurrentLayer = 1;
+		State->FX[FX_Smear] = 1;
 
 		Memory->IsInitialized = 1;
 	}
@@ -760,7 +761,6 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	else					 { State->tBasis = 1.f; }
 	basis Basis = AnimateBasis(pBASIS, State->tBasis, BASIS);
 
-	local_persist f32 StartAlpha, EndAlpha = 1.f, dAlpha = 0.01f;
 	keyboard_state Keyboard = Input.New->Keyboard;
 	mouse_state Mouse  = Input.New->Mouse;
 	mouse_state pMouse = Input.Old->Mouse;
@@ -792,30 +792,18 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		b32 Up    = C_PanUp.EndedDown;
 		b32 Left  = C_PanLeft.EndedDown;
 		b32 Right = C_PanRight.EndedDown;
-		/* f32 PanSpeed = 15.f * Basis.Zoom; */
+		f32 PanSpeed = 15.f * Basis.Zoom;
 		if(Down != Up)
 		{
-#if 0
 			if   (Down)   { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed, Perp(NewBasis.XAxis))); }
 			else/*Up*/    { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed, Perp(NewBasis.XAxis))); }
-#else
-			if   (Down)   { EndAlpha -= dAlpha; }
-			else/*Up*/    { EndAlpha += dAlpha; }
-			EndAlpha = Clamp01(EndAlpha);
-#endif
 			BasisIsChanged = 1;
 		}
 
 		if(Left != Right)
 		{
-#if 0
 			if   (Left)   { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed,      NewBasis.XAxis )); }
 			else/*Right*/ { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed,      NewBasis.XAxis )); }
-#else
-			if   (Left)   { StartAlpha -= dAlpha; }
-			else/*Right*/ { StartAlpha += dAlpha; }
-			StartAlpha = Clamp01(StartAlpha);
-#endif
 			BasisIsChanged = 1;
 		}
 
@@ -1764,6 +1752,7 @@ input_mode_extendseg:
 		v2 poSSSelect = ToScreen(poSelect);
 		v2 poSSSaved  = ToScreen(State->poSaved);
 		b32 DrawPreviewCircle = ! ScreenIsInsideCircle(ScreenBB, poSSSelect, SSLength * SSLength);
+		Draw->Smear = V2Sub(pSSSnapMouseP, SSSnapMouseP);
 		switch(State->InputMode)
 		{ // draw mode-dependent preview
 			case MODE_Normal:
@@ -1771,15 +1760,8 @@ input_mode_extendseg:
 				// TODO (UI): animate when (un)snapping
 				if(DrawPreviewCircle)
 				{
-#if 0
-					pSSSnapMouseP;
-#else
-					DEBUG_LIVE_if(Effects_Smear)
-					{ DrawCircleSmear(Draw, SSSnapMouseP, SSLength, V2Sub(pSSSnapMouseP, SSSnapMouseP), StartAlpha, EndAlpha, Col_Preview); }
-					char SmearBuf[512];
-					ssprintf(SmearBuf, "Start Alpha: %.3f; End Alpha: %.3f", StartAlpha, EndAlpha);
-					blit16_TextExplicit(Draw->Buffer.Memory, 0xFF000000, 2, -Draw->Buffer.Width, Draw->Buffer.Height, 0, 300, 50, SmearBuf);
-#endif
+					if(State->FX[FX_Smear])
+					{ DrawCircleLineSmear(Draw, SSSnapMouseP, SSLength, Col_Preview); }
 					DrawCircleLine(Draw, SSSnapMouseP, SSLength,     Col_Preview);
 				}
 				if(C_ShapeLock.EndedDown)
