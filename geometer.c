@@ -96,7 +96,31 @@
 #define C_LayerRev     Keyboard.Shift
 #define C_LayerChange  Keyboard.Tab // TODO: change to 1?
 #define C_LayerDrawer  Keyboard.T
+
 /////////////////////////////////////////
+
+#define Col_DrawPreview   BLUE
+#define Col_Preview       LIGHT_GREY
+#define Col_ArcCircle     LIGHT_GREY
+#define Col_ArcLines      LIGHT_GREY
+#define Col_LineExtend    LIGHT_GREY
+
+#define Col_Shape         BLACK
+#define Col_ShapeOffLayer LIGHT_GREY
+
+#define Col_Perp          LIGHT_GREY
+#define Col_SetLength     LIGHT_GREY
+#define Col_BasisLine     RED
+
+#define Col_ThumbOutline  LIGHT_GREY
+#define Col_ThumbSelected BLUE
+#define Col_Text          BLACK
+
+#define Col_Pt            LIGHT_GREY
+#define Col_ActivePt      RED
+#define Col_SelectedPt    ORANGE
+#define Col_UnselectedPt  MAGENTA
+#define Col_SelectBox     GREY
 
 v2 gDebugV2;
 v2 gDebugPoint;
@@ -110,16 +134,16 @@ internal inline void
 #define DrawCrosshair GeoDrawCrosshair
 DrawCrosshair(draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
 {
-	v2 X1 = {1.f, 0.f};
-	v2 Y1 = {0.f, 1.f};
+	v2 X1 = {2.f, 0.f};
+	v2 Y1 = {0.f, 2.f};
 	v2 XRad = {Radius, 0.f};
 	v2 YRad = {0.f, Radius};
 	draw_buffer tDraw = *Draw;
 	tDraw.StrokeWidth = 1.f;
-	DrawLine(&tDraw, V2Sub(Centre, X1), V2Sub(Centre, XRad), Colour);
-	DrawLine(&tDraw, V2Add(Centre, X1), V2Add(Centre, XRad), Colour);
-	DrawLine(&tDraw, V2Add(Centre, Y1), V2Add(Centre, YRad), Colour);
-	DrawLine(&tDraw, V2Sub(Centre, Y1), V2Sub(Centre, YRad), Colour);
+	DrawSeg(&tDraw, V2Sub(Centre, X1), V2Sub(Centre, XRad), Colour);
+	DrawSeg(&tDraw, V2Add(Centre, X1), V2Add(Centre, XRad), Colour);
+	DrawSeg(&tDraw, V2Add(Centre, Y1), V2Add(Centre, YRad), Colour);
+	DrawSeg(&tDraw, V2Sub(Centre, Y1), V2Sub(Centre, YRad), Colour);
 }
 
 internal inline void
@@ -500,10 +524,10 @@ DrawAABB(draw_buffer *Draw, aabb AABB, colour Col)
 	v2 BottomLeft  = V2(AABB.MinX, AABB.MinY);
 	v2 BottomRight = V2(AABB.MaxX, AABB.MinY);
 
-	DrawLine(Draw, TopLeft,    TopRight,    Col);
-	DrawLine(Draw, TopLeft,    BottomLeft,  Col);
-	DrawLine(Draw, TopRight,   BottomRight, Col);
-	DrawLine(Draw, BottomLeft, BottomRight, Col);
+	DrawSeg(Draw, TopLeft,    TopRight,    Col);
+	DrawSeg(Draw, TopLeft,    BottomLeft,  Col);
+	DrawSeg(Draw, TopRight,   BottomRight, Col);
+	DrawSeg(Draw, BottomLeft, BottomRight, Col);
 }
 
 internal inline aabb
@@ -605,7 +629,7 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 Are
 				{
 					v2 poA = ToScreen(POINTS_OS(Shape.Line.P1));
 					v2 poB = ToScreen(POINTS_OS(Shape.Line.P2));
-					DrawLine(&Draw, poA, poB, LayerColour);
+					DrawSeg(&Draw, poA, poB, LayerColour);
 				} break;
 
 				case SHAPE_Circle:
@@ -638,7 +662,7 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 Are
 	if(POINTSTATUS(ipo) && (! iLayer || POINTLAYER(ipo) == iLayer))
 	{ // draw on-screen points
 		v2 SSPoint = ToScreen(po);
-		DrawCircleFill(&Draw, SSPoint, PtRadius, LIGHT_GREY);
+		DrawCircleFill(&Draw, SSPoint, PtRadius, Col_Pt);
 	}
 
 	DEBUG_LIVE_if(Points_Numbering)
@@ -1724,15 +1748,15 @@ case_mode_extend_arc:
 			{
 				// TODO (UI): animate when (un)snapping
 				if(DrawPreviewCircle)
-				{ DrawCircleLine(Draw, SSSnapMouseP, SSLength, LIGHT_GREY); }
+				{ DrawCircleLine(Draw, SSSnapMouseP, SSLength,     Col_Preview); }
 				if(C_ShapeLock.EndedDown)
-				{ DrawCircleLine(Draw, SSSnapMouseP, POINT_RADIUS, LIGHT_GREY); }
+				{ DrawCircleLine(Draw, SSSnapMouseP, POINT_RADIUS, Col_Preview); }
 			} break;
 
 
 			case MODE_SetBasis:
 			{
-				DrawLine(Draw, poSSSaved, SSSnapMouseP, RED);
+				DrawSeg(Draw, poSSSaved, SSSnapMouseP, Col_BasisLine);
 			} break;
 
 
@@ -1741,15 +1765,15 @@ case_mode_extend_arc:
 				if( ! V2WithinEpsilon(SnapMouseP, poSelect, POINT_EPSILON) && ! C_PanMod.EndedDown)
 				{ SSLength = Dist(poSSSelect, SSSnapMouseP); }
 				if(DrawPreviewCircle)
-				{ DrawCircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
-				DrawLine(Draw, poSSSelect, SSSnapMouseP, LIGHT_GREY);
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, Col_Preview); }
+				DrawSeg(Draw, poSSSelect, SSSnapMouseP, Col_SetLength);
 			} break;
 
 
 			case MODE_QuickPtOrSeg:
 			{
-				DrawLine(Draw, poSSSelect, SSSnapMouseP, BLUE);
-				DrawActivePoint(Draw, poSSSelect, RED);
+				DrawSeg(Draw, poSSSelect, SSSnapMouseP, Col_DrawPreview);
+				DrawActivePoint(Draw, poSSSelect, Col_ActivePt);
 			} break;
 
 
@@ -1760,20 +1784,20 @@ case_mode_extend_arc:
 				{
 					P = ToScreen(P);
 					if(PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(Draw, P, ORANGE); }
+					{ DrawActivePoint(Draw, P, Col_SelectedPt); }
 				}
 			} // fallthrough
 			case MODE_RmFromSelection:
 			case MODE_Selected:
 			{
-				DrawAABB(Draw, SelectionAABB, GREY);
+				DrawAABB(Draw, SelectionAABB, Col_SelectBox);
 				foreachf(uint, ipo, *maSelectedPoints)    if(ipo)
 				{
 					v2 P = POINTS(ipo);
 					if(State->InputMode == MODE_RmFromSelection && PointInAABB(P, SelectionAABB))
-					{ DrawActivePoint(Draw, ToScreen(P), MAGENTA); }
+					{ DrawActivePoint(Draw, ToScreen(P), Col_UnselectedPt); }
 					else
-					{ DrawActivePoint(Draw, ToScreen(P), ORANGE); }
+					{ DrawActivePoint(Draw, ToScreen(P), Col_SelectedPt); }
 				}
 			} break;
 
@@ -1785,7 +1809,7 @@ case_mode_extend_arc:
 			/* 		v2 PMoved = V2Add(P, DragDir); */
 			/* 		v2 SSP = ToScreen(P); */
 			/* 		v2 SSPMoved = ToScreen(PMoved); */
-			/* 		DrawLine(Draw, SSP, SSPMoved, LIGHT_GREY); */
+			/* 		DrawSeg(Draw, SSP, SSPMoved, LIGHT_GREY); */
 			/* 		DrawCircleFill(DrawBuffer, SSPMoved, POINT_RADIUS, BLUE); */
 			/* 	} */
 			/* } break; */
@@ -1801,27 +1825,27 @@ case_mode_extend_arc:
 				}
 				// preview circle at given length and segment
 				if(DrawPreviewCircle)
-				{ DrawCircleLine(Draw, poSSSelect, SSLength, BLUE); }
-				DrawActivePoint(Draw, poSSAtDist, RED);
-				DrawActivePoint(Draw, poSSSelect, RED);
-				DrawLine(Draw, poSSSelect, poSSEnd, BLUE);
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, Col_DrawPreview); }
+				DrawActivePoint(Draw, poSSAtDist, Col_ActivePt);
+				DrawActivePoint(Draw, poSSSelect, Col_ActivePt);
+				DrawSeg(Draw, poSSSelect, poSSEnd, Col_DrawPreview);
 			} break;
 
 
 			case MODE_ExtendArc:
 			{ // preview drawing arc
-				DrawActivePoint(Draw, poSSSelect, RED);
+				DrawActivePoint(Draw, poSSSelect, Col_ActivePt);
 				LOG("\tDRAW HALF-FINISHED ARC");
 				v2 poStart = State->poArcStart;
 				v2 poSSStart = ToScreen(poArcStart);
-				DrawLine(Draw, poSSSelect, poSSStart, LIGHT_GREY);
+				DrawSeg(Draw, poSSSelect, poSSStart, Col_ArcLines);
 				if(DrawPreviewCircle && V2WithinEpsilon(poStart, poAtDist, POINT_EPSILON))
-				{ DrawCircleLine(Draw, poSSSelect, SSLength, BLACK); }
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, Col_Shape); }
 				else
 				{
 					v2 poSSEnd   = ToScreen(poArcEnd);
-					DrawLine(Draw, poSSSelect, poSSEnd, LIGHT_GREY);
-					DrawArcFromPoints(Draw, poSSSelect, poSSStart, poSSEnd, BLACK);
+					DrawSeg(Draw, poSSSelect, poSSEnd, Col_ArcLines);
+					DrawArcFromPoints(Draw, poSSSelect, poSSStart, poSSEnd, Col_Shape);
 				}
 			} break;
 
@@ -1830,12 +1854,12 @@ case_mode_extend_arc:
 			{ // preview extending a line
 				v2 poSSDir = ToScreen(State->poSaved);
 				v2 poSSOnLine = ToScreen(poOnLine);
-				DrawFullScreenLine(Draw->Buffer, poSSSelect, V2Sub(poSSDir, poSSSelect), LIGHT_GREY);
+				DrawLine(Draw, poSSSelect, V2Sub(poSSDir, poSSSelect), Col_LineExtend);
 				if(State->InputMode == MODE_ExtendSeg)
-				{ DrawLine(Draw, poSSSelect, poSSOnLine, BLACK); }
+				{ DrawSeg(Draw, poSSSelect, poSSOnLine, Col_Shape); }
 				if(DrawPreviewCircle)
-				{ DrawCircleLine(Draw, poSSSelect, SSLength, LIGHT_GREY); }
-				DrawActivePoint(Draw, poSSOnLine, RED);
+				{ DrawCircleLine(Draw, poSSSelect, SSLength, Col_Preview); }
+				DrawActivePoint(Draw, poSSOnLine, Col_ActivePt);
 			} break;
 
 
@@ -1847,15 +1871,15 @@ case_mode_extend_arc:
 					v2 poSSStart = ToScreen(poSelect);
 					v2 poSSPerp  = ToScreen(V2Add(poSelect, PerpDir));
 					v2 poSSNPerp = ToScreen(V2Add(poSelect, V2Neg(PerpDir)));
-					DrawLine(Draw, poSSStart, SSSnapMouseP, LIGHT_GREY);
-					DrawLine(Draw, poSSNPerp, poSSPerp, LIGHT_GREY);
+					DrawSeg(Draw, poSSStart, SSSnapMouseP, Col_Perp);
+					DrawSeg(Draw, poSSNPerp, poSSPerp,     Col_Perp);
 				}
 			} break;
 		}
 
 		if(!V2Equals(gDebugV2, ZeroV2))
 		{ // draw debug vector
-			DrawLine(Draw, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
+			DrawSeg(Draw, ScreenCentre, V2Add(ScreenCentre, gDebugV2), ORANGE);
 		}
 		if(!V2Equals(gDebugPoint, ZeroV2))
 		{ // draw debug point
@@ -1886,7 +1910,7 @@ case_mode_extend_arc:
 				DrawRectFill(Draw, ThumbBL, ThumbTR, PreMultiplyColour(WHITE, 0.8f));
 				RenderDrawing(*Draw, State, ThumbBasis, ThumbBL, ThumbSize, iThumb, 2.f);
 				if(iThumb != State->iCurrentLayer)
-				{ DrawRectLine(Draw, ThumbBL, ThumbTR, LIGHT_GREY); }
+				{ DrawRectLine(Draw, ThumbBL, ThumbTR, Col_ThumbOutline); }
 				ThumbBL.Y += ThumbSize.Y;
 			}
 
@@ -1895,9 +1919,9 @@ case_mode_extend_arc:
 				v2 ThumbTR = { ScreenSize.X, ThumbBL.Y + ThumbSize.Y };
 				v2 One = {1.f, 1.f};
 				v2 Two = {2.f, 2.f};
-				DrawRectLine(Draw, ThumbBL, ThumbTR, BLUE);
-				DrawRectLine(Draw, V2Add(ThumbBL, One), V2Sub(ThumbTR, One), BLUE);
-				DrawRectLine(Draw, V2Add(ThumbBL, Two), V2Sub(ThumbTR, Two), BLUE);
+				DrawRectLine(Draw,             ThumbBL,             ThumbTR, Col_ThumbSelected);
+				DrawRectLine(Draw, V2Add(ThumbBL, One), V2Sub(ThumbTR, One), Col_ThumbSelected);
+				DrawRectLine(Draw, V2Add(ThumbBL, Two), V2Sub(ThumbTR, Two), Col_ThumbSelected);
 			}
 		}
 
@@ -2019,7 +2043,7 @@ case_mode_extend_arc:
 				ssprintf(TextInfoBuffer, "%s%02u (%f, %f)\n", TextInfoBuffer, i, po.X, po.Y);
 			}
 			DrawString(&Draw->Buffer, &State->DefaultFont, TextInfoBuffer, TextSize,
-					ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, BLACK);
+					ScreenSize.X - 320.f, ScreenSize.Y - 4.5f*TextSize, 0, Col_Text);
 		}
 	}
 

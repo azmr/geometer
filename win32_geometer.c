@@ -17,7 +17,6 @@
 #include <opengl/opengl.h>
 #include <opengl/opengl_primitives.h>
 /* #include "geometer_templibs.h" */
-#include "blit-fonts/blit32.h"
 
 #if INTERNAL
 #include <stdio.h>
@@ -778,42 +777,50 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
-internal FN_DrawCircleLine(OpenGLCircleLine)
+internal FN_DrawCircleLine(OpenGLDrawCircleLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleLine(Centre, Radius);
 }
 
-internal FN_DrawCircleFill(OpenGLCircleFill)
+internal FN_DrawCircleFill(OpenGLDrawCircleFill)
 {
 	(void)Draw;
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleFill(Centre, Radius);
 }
 
-internal FN_DrawArcLine(OpenGLArcLine)
+internal FN_DrawArcLine(OpenGLDrawArcLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLArcCap(Centre, Radius, A, B);
 }
 
-internal FN_DrawLine(OpenGLLine)
+internal FN_DrawSeg(OpenGLDrawSeg)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLLineCap(Point1, Point2);
 }
 
-internal FN_DrawRectLine(OpenGLRectLine)
+internal FN_DrawLine(OpenGLDrawLine)
+{
+	draw_buffer tDraw = *Draw;
+	GLStrokeWidth(tDraw.StrokeWidth);
+	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
+	GLFullScreenLine(P, Dir, tDraw.Buffer.Width, tDraw.Buffer.Height);
+}
+
+internal FN_DrawRectLine(OpenGLDrawRectLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxLine(vMin, vMax);
 }
 
-internal FN_DrawRectFill(OpenGLRectFill)
+internal FN_DrawRectFill(OpenGLDrawRectFill)
 {
 	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
@@ -844,20 +851,23 @@ internal FN_ClearBuffer(OpenGLClearBuffer)
 	{ memset(Buffer.Memory, 0x00, Buffer.Width * Buffer.Height * BytesPerPixel); }
 }
 
-internal FN_DrawLine(SoftwareLine)
+internal FN_DrawSeg(SoftwareDrawSeg)
 { DEBUGDrawLine(Draw->Buffer, Point1, Point2, Colour); }
 
-internal FN_DrawCircleLine(SoftwareCircleLine)
+internal FN_DrawLine(SoftwareDrawLine)
+{ DrawFullScreenLine(Draw->Buffer, P, Dir, Colour); }
+
+internal FN_DrawCircleLine(SoftwareDrawCircleLine)
 { CircleLine(Draw->Buffer, Centre, Radius, Colour); }
-internal FN_DrawCircleFill(SoftwareCircleFill)
+internal FN_DrawCircleFill(SoftwareDrawCircleFill)
 { CircleFill(Draw->Buffer, Centre, Radius, Colour); }
 
-internal FN_DrawArcLine(SoftwareArcLine)
+internal FN_DrawArcLine(SoftwareDrawArcLine)
 { ArcLine(Draw->Buffer, Centre, Radius, A, B, Colour); }
 
-internal FN_DrawRectLine(SoftwareRectLine)
+internal FN_DrawRectLine(SoftwareDrawRectLine)
 { DrawRectangleLines(Draw->Buffer, vMin, vMax, Colour); }
-internal FN_DrawRectFill(SoftwareRectFill)
+internal FN_DrawRectFill(SoftwareDrawRectFill)
 { DrawRectangleFilled(Draw->Buffer, vMin, vMax, Colour); }
 
 internal FN_ClipBuffer(SoftwareClipBuffer)
@@ -1061,23 +1071,15 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 		{ Draw.Kind = ! Draw.Kind; } // Toggle software/hardware rendering
 
 		if(Draw.Kind == DRAW_Hardware) {
-			Draw.DrawCircleLine = OpenGLCircleLine;
-			Draw.DrawCircleFill = OpenGLCircleFill;
-			Draw.DrawArcLine    = OpenGLArcLine;
-			Draw.DrawLine       = OpenGLLine;
-			Draw.DrawRectLine   = OpenGLRectLine;
-			Draw.DrawRectFill   = OpenGLRectFill;
-			Draw.ClipBuffer     = OpenGLClipBuffer;
-			Draw.ClearBuffer    = OpenGLClearBuffer;
+#define DRAW_FN(name)\
+			Draw.name = OpenGL## name;
+			DRAW_FNS
+#undef  DRAW_FN
 		} else {
-			Draw.DrawCircleLine  = SoftwareCircleLine;
-			Draw.DrawCircleFill = SoftwareCircleFill;
-			Draw.DrawArcLine    = SoftwareArcLine;
-			Draw.DrawLine       = SoftwareLine;
-			Draw.DrawRectLine   = SoftwareRectLine;
-			Draw.DrawRectFill   = SoftwareRectFill;
-			Draw.ClipBuffer     = SoftwareClipBuffer;
-			Draw.ClearBuffer    = SoftwareClearBuffer;
+#define DRAW_FN(name)\
+			Draw.name = Software## name;
+			DRAW_FNS
+#undef  DRAW_FN
 		}
 
 /* #if DEBUGVAR_LazyRender */
@@ -1227,7 +1229,6 @@ WinMain(HINSTANCE Instance, HINSTANCE PrevInstance, LPSTR CommandLine, int ShowC
 			switch(Draw.Kind)
 			{
 				case DRAW_Hardware:
-					glBitmap(blit32_WIDTH, blit32_HEIGHT, 0, 0, 0, 0, (u8 *)&Blit32.Glyphs[blit_IndexFromASCII('a')]);
 					glDrawPixels(Win32Buffer.Width, Win32Buffer.Height, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV, Win32Buffer.Memory);
 					SwapBuffers(Window.Context);
 				break;
