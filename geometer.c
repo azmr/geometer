@@ -1421,6 +1421,7 @@ case_mode_draw:
 							State->PerpDir = ZeroV2;
 
 							State->InputMode = MODE_ExtendSeg;
+							goto input_mode_extendseg;
 						}
 						Assert(CurrentActionIsByUser(State)); 
 					}
@@ -1534,6 +1535,7 @@ case_mode_extend_arc:
 
 				case MODE_ExtendSeg:
 				{ // find point on shape closest to mouse along line
+input_mode_extendseg:
 					// TODO (fix): preview point pulling away from shape on shape snap
 					// TODO (fix): should be snapping to opposite side of circle
 					v2 TestStart = State->poSelect; 
@@ -1854,11 +1856,10 @@ case_mode_extend_arc:
 			{ // preview extending a line
 				v2 poSSDir = ToScreen(State->poSaved);
 				v2 poSSOnLine = ToScreen(poOnLine);
-				DrawLine(Draw, poSSSelect, V2Sub(poSSDir, poSSSelect), Col_LineExtend);
-				if(State->InputMode == MODE_ExtendSeg)
-				{ DrawSeg(Draw, poSSSelect, poSSOnLine, Col_Shape); }
 				if(DrawPreviewCircle)
 				{ DrawCircleLine(Draw, poSSSelect, SSLength, Col_Preview); }
+				DrawLine(Draw, poSSSelect, V2Sub(poSSDir, poSSSelect), Col_LineExtend);
+				DrawSeg(Draw, poSSSelect, poSSOnLine, Col_Shape);
 				DrawActivePoint(Draw, poSSOnLine, Col_ActivePt);
 			} break;
 
