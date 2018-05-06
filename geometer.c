@@ -7,14 +7,17 @@
 // =====
 //
 // - Find (and colour) lines intersecting at a given point
-// Undos
-// -----
+// - Undos
 //  	- should saves remove 'superfluous' actions - i.e. take out remove points/indirections?
 //  	- undo history (show overall/with layers)
 //  	- undo by absolute and layer order
 // - Change storage of intersections, so they don't all need to be recomputed on changes
+// 	    - only compute those from shapesnear mouse?
 // - Spatially partition(?) shapes
-// - Togglable layers (should points be separate from layers, but have status set per layer?)
+// - Layers
+// 		- Togglable layers 
+// 		- Infinite layers
+// 		- Scrollable layers
 // - For fast movements, make sweep effect, rather than ugly multiple line effect 
 // - Deal with perfect overlaps that aren't identical (i.e. one line/arc is longer)
 // - Resizable windo (maintain centre vs maintain absolute position)
@@ -757,6 +760,7 @@ UPDATE_AND_RENDER(UpdateAndRender)
 	else					 { State->tBasis = 1.f; }
 	basis Basis = AnimateBasis(pBASIS, State->tBasis, BASIS);
 
+	local_persist f32 StartAlpha, EndAlpha = 1.f, dAlpha = 0.01f;
 	keyboard_state Keyboard = Input.New->Keyboard;
 	mouse_state Mouse  = Input.New->Mouse;
 	mouse_state pMouse = Input.Old->Mouse;
@@ -788,18 +792,30 @@ UPDATE_AND_RENDER(UpdateAndRender)
 		b32 Up    = C_PanUp.EndedDown;
 		b32 Left  = C_PanLeft.EndedDown;
 		b32 Right = C_PanRight.EndedDown;
-		f32 PanSpeed = 15.f * Basis.Zoom;
+		/* f32 PanSpeed = 15.f * Basis.Zoom; */
 		if(Down != Up)
 		{
+#if 0
 			if   (Down)   { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed, Perp(NewBasis.XAxis))); }
 			else/*Up*/    { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed, Perp(NewBasis.XAxis))); }
+#else
+			if   (Down)   { EndAlpha -= dAlpha; }
+			else/*Up*/    { EndAlpha += dAlpha; }
+			EndAlpha = Clamp01(EndAlpha);
+#endif
 			BasisIsChanged = 1;
 		}
 
 		if(Left != Right)
 		{
+#if 0
 			if   (Left)   { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult(-PanSpeed,      NewBasis.XAxis )); }
 			else/*Right*/ { NewBasis.Offset = V2Add(NewBasis.Offset, V2Mult( PanSpeed,      NewBasis.XAxis )); }
+#else
+			if   (Left)   { StartAlpha -= dAlpha; }
+			else/*Right*/ { StartAlpha += dAlpha; }
+			StartAlpha = Clamp01(StartAlpha);
+#endif
 			BasisIsChanged = 1;
 		}
 
@@ -1672,6 +1688,7 @@ input_mode_extendseg:
 	////////////////
 		DrawCrosshair(Draw, ScreenCentre, ACTIVE_POINT_RADIUS, LIGHT_GREY);
 		// TODO: move up for other things
+		v2 pSSSnapMouseP = ToScreen(State->pSnapMouseP);
 		v2 SSSnapMouseP = ToScreen(AnimSnapMouseP);
 		DrawCrosshair(Draw, SSSnapMouseP, ACTIVE_POINT_RADIUS, GREY);
 
@@ -1753,7 +1770,18 @@ input_mode_extendseg:
 			{
 				// TODO (UI): animate when (un)snapping
 				if(DrawPreviewCircle)
-				{ DrawCircleLine(Draw, SSSnapMouseP, SSLength,     Col_Preview); }
+				{
+#if 0
+					pSSSnapMouseP;
+#else
+					DEBUG_LIVE_if(Effects_Smear)
+					{ DrawCircleSmear(Draw, SSSnapMouseP, SSLength, V2Sub(pSSSnapMouseP, SSSnapMouseP), StartAlpha, EndAlpha, Col_Preview); }
+					char SmearBuf[512];
+					ssprintf(SmearBuf, "Start Alpha: %.3f; End Alpha: %.3f", StartAlpha, EndAlpha);
+					blit16_TextExplicit(Draw->Buffer.Memory, 0xFF000000, 2, -Draw->Buffer.Width, Draw->Buffer.Height, 0, 300, 50, SmearBuf);
+#endif
+					DrawCircleLine(Draw, SSSnapMouseP, SSLength,     Col_Preview);
+				}
 				if(C_ShapeLock.EndedDown)
 				{ DrawCircleLine(Draw, SSSnapMouseP, POINT_RADIUS, Col_Preview); }
 			} break;

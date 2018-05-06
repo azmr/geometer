@@ -777,35 +777,41 @@ HardReset(state *State, FILE *OpenFile)
 	*State = NewState;
 }
 
-internal FN_DrawCircleLine(OpenGLDrawCircleLine)
+internal FN(OpenGL, DrawCircleLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleLine(Centre, Radius);
 }
 
-internal FN_DrawCircleFill(OpenGLDrawCircleFill)
+internal FN(OpenGL, DrawCircleFill)
 {
 	(void)Draw;
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLCircleFill(Centre, Radius);
 }
 
-internal FN_DrawArcLine(OpenGLDrawArcLine)
+internal FN(OpenGL, DrawCircleSmear)
+{
+	(void)Draw;
+	GLCircleLinearSmear(Centre, Radius, Smear, StartAlpha, EndAlpha, Colour);
+}
+
+internal FN(OpenGL, DrawArcLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLArcCap(Centre, Radius, A, B);
 }
 
-internal FN_DrawSeg(OpenGLDrawSeg)
+internal FN(OpenGL, DrawSeg)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R, Colour.G, Colour.B, Colour.A);
 	GLLineCap(Point1, Point2);
 }
 
-internal FN_DrawLine(OpenGLDrawLine)
+internal FN(OpenGL, DrawLine)
 {
 	draw_buffer tDraw = *Draw;
 	GLStrokeWidth(tDraw.StrokeWidth);
@@ -813,27 +819,27 @@ internal FN_DrawLine(OpenGLDrawLine)
 	GLFullScreenLine(P, Dir, tDraw.Buffer.Width, tDraw.Buffer.Height);
 }
 
-internal FN_DrawRectLine(OpenGLDrawRectLine)
+internal FN(OpenGL, DrawRectLine)
 {
 	GLStrokeWidth(Draw->StrokeWidth);
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxLine(vMin, vMax);
 }
 
-internal FN_DrawRectFill(OpenGLDrawRectFill)
+internal FN(OpenGL, DrawRectFill)
 {
 	(void)Draw;
 	glColor4f(Colour.R,Colour.G, Colour.B, Colour.A);
 	GLRectMinMaxFill(vMin, vMax);
 }
 
-internal FN_ClipBuffer(OpenGLClipBuffer)
+internal FN(OpenGL, ClipBuffer)
 {
 	glScissor((GLint)Offset.X, (GLint)Offset.Y, (GLint)Size.X, (GLint)Size.Y);
 	return Buffer;
 }
 
-internal FN_ClearBuffer(OpenGLClearBuffer)
+internal FN(OpenGL, ClearBuffer)
 {
 	f32 W = (f32)Buffer.Width, H = (f32)Buffer.Height;
 	glViewport(0, 0, Buffer.Width, Buffer.Height);
@@ -851,26 +857,55 @@ internal FN_ClearBuffer(OpenGLClearBuffer)
 	{ memset(Buffer.Memory, 0x00, Buffer.Width * Buffer.Height * BytesPerPixel); }
 }
 
-internal FN_DrawSeg(SoftwareDrawSeg)
+internal FN(Software, DrawSeg)
 { DEBUGDrawLine(Draw->Buffer, Point1, Point2, Colour); }
 
-internal FN_DrawLine(SoftwareDrawLine)
+internal FN(Software, DrawLine)
 { DrawFullScreenLine(Draw->Buffer, P, Dir, Colour); }
 
-internal FN_DrawCircleLine(SoftwareDrawCircleLine)
+internal FN(Software, DrawCircleLine)
 { CircleLine(Draw->Buffer, Centre, Radius, Colour); }
-internal FN_DrawCircleFill(SoftwareDrawCircleFill)
+internal FN(Software, DrawCircleFill)
 { CircleFill(Draw->Buffer, Centre, Radius, Colour); }
 
-internal FN_DrawArcLine(SoftwareDrawArcLine)
+
+internal FN(Software, DrawCircleSmear)
+{
+#if 1
+	// do nothing
+	(void)Draw; (void)StartAlpha; (void)EndAlpha; (void)Smear;
+	(void)Radius; (void)Centre; (void)Colour;
+
+#elif 0
+	// Multiple lines trailing behind
+	v2 PerpDir = Perp(Smear);
+	v2 Left    = V2Sub(Centre, V2Mag(Radius, PerpDir));
+	v2 Right   = V2Add(Centre, V2Mag(Radius, PerpDir));
+	for(int i = 0, N = 4; i <= N; ++i) {
+		f32 Frac = (f32)i / (f32)N;
+		Frac...
+	}
+#else
+	DEBUGDrawLine(Draw->Buffer, 
+	// multiple circles
+	/* int const Max = 4; */
+	/* image_buffer Buffer = Draw->Buffer; */
+	/* for(int i = 0; i <= Max; ++i) { */
+	/* 	v2 Offset = V2Mult((f32)i/(f32)Max, Smear); */
+	/* 	CircleLine(Buffer, V2Add(Centre, Offset), Radius, Colour); */
+	/* } */
+#endif
+}
+
+internal FN(Software, DrawArcLine)
 { ArcLine(Draw->Buffer, Centre, Radius, A, B, Colour); }
 
-internal FN_DrawRectLine(SoftwareDrawRectLine)
+internal FN(Software, DrawRectLine)
 { DrawRectangleLines(Draw->Buffer, vMin, vMax, Colour); }
-internal FN_DrawRectFill(SoftwareDrawRectFill)
+internal FN(Software, DrawRectFill)
 { DrawRectangleFilled(Draw->Buffer, vMin, vMax, Colour); }
 
-internal FN_ClipBuffer(SoftwareClipBuffer)
+internal FN(Software, ClipBuffer)
 {
 	Buffer.Memory = GetBufferLocation(Buffer, sizeof(u32), Offset);
 	Buffer.Width  = (i32)Size.X;
@@ -878,7 +913,7 @@ internal FN_ClipBuffer(SoftwareClipBuffer)
 	return Buffer;
 }
 
-internal FN_ClearBuffer(SoftwareClearBuffer)
+internal FN(Software, ClearBuffer)
 { memset(Buffer.Memory, 0xFF, Buffer.Width * Buffer.Height * BytesPerPixel); }
 
 int CALLBACK

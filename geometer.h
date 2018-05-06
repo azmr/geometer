@@ -35,6 +35,7 @@
 	DEBUG_HIERARCHY_KIND(debug_variable, Live) \
 	DEBUG_HIERARCHY_KIND(debug_variable, Observed) \
 	DEBUG_HIERARCHY_KIND(debug_record, Profiling)
+#define DEBUG_HIERARCHY_MULTIPLE 4
 #include <live_edit/hierarchy.h>
 
 // minimal prefix to prevent collision with stdio
@@ -139,21 +140,25 @@ ShapeEq(shape S1, shape S2)
 }
 
 struct draw_buffer;
-#define FN_DrawSeg(       name) void         name(struct draw_buffer *Draw, v2 Point1, v2 Point2,  colour Colour)
-#define FN_DrawLine(      name) void         name(struct draw_buffer *Draw, v2 P,      v2 Dir,     colour Colour)
-#define FN_DrawCircleFill(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
-#define FN_DrawCircleLine(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
-#define FN_DrawArcLine(   name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
-#define FN_DrawRectFill(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
-#define FN_DrawRectLine(  name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
-#define FN_ClearBuffer(   name) void         name(image_buffer Buffer)
-#define FN_ClipBuffer(    name) image_buffer name(image_buffer Buffer, v2 Offset, v2 Size)
+#define FN_DrawSeg(        name) void         name(struct draw_buffer *Draw, v2 Point1, v2 Point2,  colour Colour)
+#define FN_DrawLine(       name) void         name(struct draw_buffer *Draw, v2 P,      v2 Dir,     colour Colour)
+#define FN_DrawCircleFill( name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawCircleLine( name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, colour Colour)
+#define FN_DrawCircleSmear(name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 Smear, f32 StartAlpha, f32 EndAlpha, colour Colour)
+#define FN_DrawArcLine(    name) void         name(struct draw_buffer *Draw, v2 Centre, f32 Radius, v2 A, v2 B, colour Colour)
+#define FN_DrawRectFill(   name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_DrawRectLine(   name) void         name(struct draw_buffer *Draw, v2 vMin,   v2 vMax,    colour Colour)
+#define FN_ClearBuffer(    name) void         name(image_buffer Buffer)
+#define FN_ClipBuffer(     name) image_buffer name(image_buffer Buffer, v2 Offset, v2 Size)
+
+#define FN(prefix, fn) FN_##fn (prefix ## fn)
 
 #define DRAW_FNS \
 	DRAW_FN(DrawSeg) \
 	DRAW_FN(DrawLine) \
 	DRAW_FN(DrawCircleFill) \
 	DRAW_FN(DrawCircleLine) \
+	DRAW_FN(DrawCircleSmear) \
 	DRAW_FN(DrawArcLine) \
 	DRAW_FN(DrawRectFill) \
 	DRAW_FN(DrawRectLine) \
