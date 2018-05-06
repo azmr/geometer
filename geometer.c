@@ -602,22 +602,24 @@ ScreenIsInsideCircle(aabb ScreenBB, v2 poSSFocus, f32 SSRadiusSq)
 internal void
 RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 AreaSize, uint iLayer, f32 PtRadius)
 {
+	enum { MainCanvasDrawing };
 	LOG("\tDRAW SHAPES");
 	shape_arena maShapesNearScreen = State->maShapesNearScreen;
+	// changes buffer dimensions if software rendering, otherwise does OpenGL scissor
 	Draw.Buffer = ClipBuffer(Draw.Buffer, AreaOffset, AreaSize);
 	v2 ScreenCentre = V2Add(AreaOffset, V2Mult(0.5, AreaSize));
 	AreaSize = V2( (f32)Draw.Buffer.Width, (f32)Draw.Buffer.Height );
 	if(Draw.Kind == DRAW_Software)
 	{ ScreenCentre = V2Mult(0.5, AreaSize); }
 
-	if(iLayer)
+	if(iLayer != MainCanvasDrawing)
 	{ Draw.StrokeWidth = 1.0f; }
 	foreachf(shape, Shape, maShapesNearScreen)
 	{ // DRAW SHAPES
 
 		uint ShapeLayer = POINTLAYER(Shape.P[0]);
 		Assert(ShapeLayer != 0);
-		if(iLayer == 0 || ShapeLayer == iLayer)
+		if(iLayer == MainCanvasDrawing || ShapeLayer == iLayer)
 		{
 			colour LayerColour = BLACK;
 			if(ShapeLayer != State->iCurrentLayer)
@@ -665,6 +667,7 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 Are
 		DrawCircleFill(&Draw, SSPoint, PtRadius, Col_Pt);
 	}
 
+	if(iLayer == MainCanvasDrawing)
 	DEBUG_LIVE_if(Points_Numbering)
 	{ // write index number next to points and intersections
 		foreachf(v2, po, State->maPoints)
@@ -682,13 +685,13 @@ RenderDrawing(draw_buffer Draw, state *State, basis Basis, v2 AreaOffset, v2 Are
 		}
 		foreachf(shape, Shape, State->maShapes)
 		{
-			v2 SSP = ToScreen(POINTS(Shape.P[2]));
-			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", Shape.P[2], POINTLAYER(Shape.P[2]));
-			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y - 5.f, 0, MAGENTA);
+			v2 SSP = ToScreen(POINTS(Shape.P[1]));
+			ssnprintf(PointIndex, sizeof(PointIndex), "%u (L%u)", Shape.P[1], POINTLAYER(Shape.P[2]));
+			DrawString(&Draw.Buffer, &State->DefaultFont, PointIndex, 15.f, SSP.X + 5.f, SSP.Y + 5.f, 0, MAGENTA);
 		}
 	}
 
-	// reset for OpenGL
+	// reset scissor for OpenGL
 	ClipBuffer(Draw.Buffer, ZeroV2, AreaSize);
 }
 
